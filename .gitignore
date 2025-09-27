@@ -1,0 +1,12 @@
+# Never upload raw or parsed health data
+data/raw/
+data/parsed/
+db/health.db
+
+# Ignore Python cache files
+__pycache__/
+*.pyc
+
+# Ignore virtual environments
+.venv/
+env/
