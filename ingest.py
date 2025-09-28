@@ -1,7 +1,7 @@
 import zipfile
 import sqlite3
 from pathlib import Path
-from typing import Callable, Iterable, Optional, Sequence, Tuple
+from typing import Any, Callable, Iterable, Optional, Sequence, Tuple
 from lxml import etree
 
 from parsers import parse_conditions, parse_encounters, parse_labs, parse_medications, parse_patient
@@ -11,7 +11,7 @@ from parsers import parse_conditions, parse_encounters, parse_labs, parse_medica
 # =====================
 RAW_DIR = Path("data/raw")
 PARSED_DIR = Path("data/parsed")
-DB_PATH = Path("db/health.db")
+DB_PATH = Path("db/health_records.db")
 SCHEMA_FILE = Path("schema.sql")
 
 ProviderKey = Tuple[str, str, str, str]
@@ -152,7 +152,7 @@ def find_encounter_id(
             return digits[:8]
         return None
 
-    def run_query(base_sql: str, base_params: list[str], order_clause: str) -> Optional[int]:
+    def run_query(base_sql: str, base_params: list[Any], order_clause: str) -> Optional[int]:
         if provider_id is not None:
             params_with_provider = tuple(base_params + [provider_id])
             sql_with_provider = base_sql + " AND COALESCE(provider_id, -1) = COALESCE(?, -1)" + order_clause

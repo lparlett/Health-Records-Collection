@@ -1,0 +1,10 @@
+# config.yaml
+
+# Path to your SQLite DB (relative to repo root)
+db_path: "db/health_records.db"
+
+
+# Default settings
+default_row_limit: 50
+page_title: "Health Records Viewer"
+layout: "wide"
