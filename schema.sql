@@ -16,20 +16,37 @@ CREATE INDEX IF NOT EXISTS idx_patient_name ON patient(family_name, given_name);
 CREATE INDEX IF NOT EXISTS idx_patient_dob ON patient(birth_date);
 
 -- =====================
+-- Providers
+-- =====================
+CREATE TABLE IF NOT EXISTS provider (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    npi TEXT,
+    specialty TEXT,
+    organization TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_provider_name ON provider(name);
+
+-- =====================
 -- Encounters
 -- =====================
 CREATE TABLE IF NOT EXISTS encounter (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     patient_id INTEGER NOT NULL,
     encounter_date TEXT,
-    provider_name TEXT,
+    provider_id INTEGER,
+    source_encounter_id TEXT,
     encounter_type TEXT,
     notes TEXT,
-    FOREIGN KEY(patient_id) REFERENCES patient(id) ON DELETE CASCADE
+    FOREIGN KEY(patient_id) REFERENCES patient(id) ON DELETE CASCADE,
+    FOREIGN KEY(provider_id) REFERENCES provider(id) ON DELETE SET NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_encounter_patient ON encounter(patient_id);
 CREATE INDEX IF NOT EXISTS idx_encounter_date ON encounter(encounter_date);
+CREATE INDEX IF NOT EXISTS idx_encounter_provider ON encounter(provider_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_encounter_unique ON encounter(patient_id, encounter_date, provider_id, source_encounter_id);
 
 -- =====================
 -- Medications
@@ -67,14 +84,18 @@ CREATE TABLE IF NOT EXISTS lab_result (
     reference_range TEXT,
     abnormal_flag TEXT,
     date TEXT,
-    ordering_provider TEXT,
-    performing_org TEXT,
+    ordering_provider_id INTEGER,
+    performing_org_id INTEGER,
     FOREIGN KEY(patient_id) REFERENCES patient(id) ON DELETE CASCADE,
-    FOREIGN KEY(encounter_id) REFERENCES encounter(id) ON DELETE SET NULL
+    FOREIGN KEY(encounter_id) REFERENCES encounter(id) ON DELETE SET NULL,
+    FOREIGN KEY(ordering_provider_id) REFERENCES provider(id) ON DELETE SET NULL,
+    FOREIGN KEY(performing_org_id) REFERENCES provider(id) ON DELETE SET NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_lab_patient ON lab_result(patient_id);
 CREATE INDEX IF NOT EXISTS idx_lab_test_date ON lab_result(test_name, date);
+CREATE INDEX IF NOT EXISTS idx_lab_ordering_provider ON lab_result(ordering_provider_id);
+CREATE INDEX IF NOT EXISTS idx_lab_performing_org ON lab_result(performing_org_id);
 
 -- =====================
 -- Allergies
@@ -101,10 +122,29 @@ CREATE TABLE IF NOT EXISTS condition (
     onset_date TEXT,
     status TEXT,
     notes TEXT,
-    FOREIGN KEY(patient_id) REFERENCES patient(id) ON DELETE CASCADE
+    provider_id INTEGER,
+    encounter_id INTEGER,
+    code TEXT,
+    code_system TEXT,
+    code_display TEXT,
+    FOREIGN KEY(patient_id) REFERENCES patient(id) ON DELETE CASCADE,
+    FOREIGN KEY(provider_id) REFERENCES provider(id) ON DELETE SET NULL,
+    FOREIGN KEY(encounter_id) REFERENCES encounter(id) ON DELETE SET NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_condition_patient ON condition(patient_id);
+CREATE INDEX IF NOT EXISTS idx_condition_code ON condition(code);
+
+CREATE TABLE IF NOT EXISTS condition_code (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    condition_id INTEGER NOT NULL,
+    code TEXT NOT NULL,
+    code_system TEXT,
+    display_name TEXT,
+    FOREIGN KEY(condition_id) REFERENCES condition(id) ON DELETE CASCADE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_condition_code_unique ON condition_code(condition_id, code, code_system);
 
 -- =====================
 -- Immunizations
