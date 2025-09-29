@@ -189,15 +189,32 @@ CREATE TABLE IF NOT EXISTS procedure (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     patient_id INTEGER NOT NULL,
     encounter_id INTEGER,
+    provider_id INTEGER,
     name TEXT,
-    cpt_icd_code TEXT,
+    code TEXT,
+    code_system TEXT,
+    code_display TEXT,
+    status TEXT,
     date TEXT,
     notes TEXT,
     FOREIGN KEY(patient_id) REFERENCES patient(id) ON DELETE CASCADE,
-    FOREIGN KEY(encounter_id) REFERENCES encounter(id) ON DELETE SET NULL
+    FOREIGN KEY(encounter_id) REFERENCES encounter(id) ON DELETE SET NULL,
+    FOREIGN KEY(provider_id) REFERENCES provider(id) ON DELETE SET NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_proc_patient ON procedure(patient_id);
+CREATE INDEX IF NOT EXISTS idx_proc_provider ON procedure(provider_id);
+
+CREATE TABLE IF NOT EXISTS procedure_code (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    procedure_id INTEGER NOT NULL,
+    code TEXT NOT NULL,
+    code_system TEXT,
+    display_name TEXT,
+    FOREIGN KEY(procedure_id) REFERENCES procedure(id) ON DELETE CASCADE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_procedure_code_unique ON procedure_code(procedure_id, code, code_system);
 
 -- =====================
 -- Attachments (PDFs, Images, etc.)
