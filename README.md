@@ -6,7 +6,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Project Status](https://img.shields.io/badge/status-in%20progress-yellow.svg)](#)
 
-Tools for unifying personal electronic health record (EHR) exports into a local SQLite database and browsing them with a Streamlit dashboard.
+Tools for unifying personal electronic health record (EHR) exports into a local SQLite database and browsing them with a Streamlit dashboard. Note that this repository does **not** contain any protected health information or personally identifiable information.
 
 ---
 
