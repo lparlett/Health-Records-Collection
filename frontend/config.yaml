@@ -6,5 +6,5 @@ db_path: "db/health_records.db"
 
 # Default settings
 default_row_limit: 50
-page_title: "Health Records Viewer"
+page_title: "My Health Records Viewer"
 layout: "wide"

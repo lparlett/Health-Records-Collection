@@ -1,21 +1,57 @@
+"""Medication extraction utilities for CCD documents.
+
+This module provides functions to parse and extract medication administration details
+from Continuity of Care Document (CCD) XML files. It focuses on 
+identifying medication entries, including their names, dosages, 
+routes, frequencies, start and end dates, statuses, notes, providers, 
+and RxNorm codes.
+"""
+
 from __future__ import annotations
 
-from typing import Dict, List, Optional
+from typing import List, Optional, TypedDict
 
 from lxml import etree
 
 from .common import XSI_NS, extract_provider_name, get_text_by_id
 
-MedicationEntry = Dict[str, Optional[str]]
 
 
-def parse_medications(tree: etree._ElementTree, ns: dict[str, str]) -> List[MedicationEntry]:
+class MedicationEntry(TypedDict, total=False):
+    name: Optional[str]
+    rxnorm: Optional[str]
+    dose: Optional[str]
+    route: Optional[str]
+    frequency: Optional[str]
+    start: Optional[str]
+    end: Optional[str]
+    status: Optional[str]
+    notes: Optional[str]
+    provider: Optional[str]
+    author_time: Optional[str]
+    source_id: Optional[str]
+
+
+def parse_medications(tree: etree._ElementTree, 
+                      ns: dict[str, str]) -> List[MedicationEntry]:
+    """Extract medication administrations from a CCD document.
+
+    Args:
+        tree: The XML tree of the CCD document.
+        ns: The namespace mapping for XPath queries.
+    Returns:
+        A list of dictionaries, each representing a medication entry 
+        with details.
+    """
     medications: List[MedicationEntry] = []
-    med_nodes = tree.xpath(
+    raw_med_nodes = tree.xpath(
         ".//hl7:substanceAdministration[hl7:templateId[@root='2.16.840.1.113883.10.20.22.4.16']]",
         namespaces=ns,
     )
-    for med in med_nodes:
+    if not isinstance(raw_med_nodes, list):
+        return medications
+
+    for med in [node for node in raw_med_nodes if isinstance(node, etree._Element)]:
         code_el = med.find(".//hl7:manufacturedMaterial/hl7:code", namespaces=ns)
         med_name: Optional[str] = None
         rxnorm_code: Optional[str] = None
@@ -90,10 +126,11 @@ def parse_medications(tree: etree._ElementTree, ns: dict[str, str]) -> List[Medi
                 break
 
         status: Optional[str] = None
-        status_nodes = med.xpath(
+        raw_status_nodes = med.xpath(
             "hl7:entryRelationship/hl7:observation[hl7:code[@code='33999-4']]/hl7:value",
             namespaces=ns,
         )
+        status_nodes = [el for el in raw_status_nodes if isinstance(el, etree._Element)]
         status_value = status_nodes[0] if status_nodes else None
         if status_value is not None:
             status = (status_value.get("displayName") or status_value.get("code") or "").strip() or None
