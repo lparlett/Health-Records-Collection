@@ -5,7 +5,7 @@ import sqlite3
 from textwrap import dedent
 from typing import Iterator
 
-__all__ = ["ensure_provider_schema"]
+__all__ = ["ensure_schema"]
 
 
 def _iter_provider_migrations() -> Iterator[str]:
@@ -33,6 +33,16 @@ def _iter_provider_migrations() -> Iterator[str]:
          WHERE normalized_key IS NULL OR TRIM(normalized_key) = ''
     """
     yield """
+        DELETE FROM provider
+              WHERE normalized_key IS NOT NULL
+                AND rowid NOT IN (
+                    SELECT MIN(rowid)
+                      FROM provider
+                     WHERE normalized_key IS NOT NULL
+                     GROUP BY normalized_key
+                )
+    """
+    yield """
         CREATE UNIQUE INDEX IF NOT EXISTS uniq_provider_normalized_key
             ON provider(normalized_key)
     """
@@ -49,7 +59,7 @@ def ensure_provider_schema(conn: sqlite3.Connection) -> None:
 
     def add_column(column: str, ddl: str) -> None:
         if column not in columns:
-            conn.execute(f"ALTER TABLE provider ADD COLUMN {ddl}")
+            conn.execute(f"ALTER TABLE provider ADD COLUMN {column} {ddl}")
             columns.add(column)
 
     add_column("given_name", "TEXT")
@@ -62,3 +72,37 @@ def ensure_provider_schema(conn: sqlite3.Connection) -> None:
 
     for statement in _iter_provider_migrations():
         conn.execute(dedent(statement))
+
+
+def ensure_medication_constraints(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        DELETE FROM medication
+              WHERE rowid NOT IN (
+                    SELECT MIN(rowid)
+                      FROM medication
+                     GROUP BY patient_id,
+                              COALESCE(encounter_id, -1),
+                              COALESCE(name, ''),
+                              COALESCE(dose, ''),
+                              COALESCE(start_date, '')
+              )
+        """
+    )
+    conn.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS uniq_medication_composite
+            ON medication (
+                patient_id,
+                COALESCE(encounter_id, -1),
+                COALESCE(name, ''),
+                COALESCE(dose, ''),
+                COALESCE(start_date, '')
+            )
+        """
+    )
+
+
+def ensure_schema(conn: sqlite3.Connection) -> None:
+    ensure_provider_schema(conn)
+    ensure_medication_constraints(conn)

@@ -13,7 +13,7 @@ from parsers import (
     parse_patient,
     parse_procedures,
 )
-from db.schema import ensure_provider_schema
+from db.schema import ensure_schema
 from services.patient import insert_patient
 from services.encounters import insert_encounters
 from services.conditions import insert_conditions
@@ -34,7 +34,7 @@ def init_db() -> sqlite3.Connection:
     if SCHEMA_FILE.exists():
         with open(SCHEMA_FILE, "r", encoding="utf-8") as f:
             conn.executescript(f.read())
-    ensure_provider_schema(conn)
+    ensure_schema(conn)
     return conn
 
 
