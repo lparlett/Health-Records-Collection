@@ -20,10 +20,22 @@ CREATE INDEX IF NOT EXISTS idx_patient_dob ON patient(birth_date);
 -- =====================
 CREATE TABLE IF NOT EXISTS provider (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+<<<<<<< HEAD
     name TEXT NOT NULL,
     npi TEXT,
     specialty TEXT,
     organization TEXT
+=======
+    name TEXT,
+    given_name TEXT,
+    family_name TEXT,
+    credentials TEXT,
+    npi TEXT,
+    specialty TEXT,
+    organization TEXT,
+    normalized_key TEXT,
+    entity_type TEXT NOT NULL DEFAULT 'person'
+>>>>>>> 831c0d2f3d1f49be1cfebf4124c3ded16afacec9
 );
 
 CREATE INDEX IF NOT EXISTS idx_provider_name ON provider(name);
@@ -46,7 +58,10 @@ CREATE TABLE IF NOT EXISTS encounter (
 CREATE INDEX IF NOT EXISTS idx_encounter_patient ON encounter(patient_id);
 CREATE INDEX IF NOT EXISTS idx_encounter_date ON encounter(encounter_date);
 CREATE INDEX IF NOT EXISTS idx_encounter_provider ON encounter(provider_id);
+<<<<<<< HEAD
 CREATE UNIQUE INDEX IF NOT EXISTS idx_encounter_unique ON encounter(patient_id, encounter_date, provider_id, source_encounter_id);
+=======
+>>>>>>> 831c0d2f3d1f49be1cfebf4124c3ded16afacec9
 
 -- =====================
 -- Medications
@@ -98,6 +113,7 @@ CREATE INDEX IF NOT EXISTS idx_lab_ordering_provider ON lab_result(ordering_prov
 CREATE INDEX IF NOT EXISTS idx_lab_performing_org ON lab_result(performing_org_id);
 
 -- =====================
+<<<<<<< HEAD
 -- Allergies
 -- =====================
 CREATE TABLE IF NOT EXISTS allergy (
@@ -113,6 +129,8 @@ CREATE TABLE IF NOT EXISTS allergy (
 CREATE INDEX IF NOT EXISTS idx_allergy_patient ON allergy(patient_id);
 
 -- =====================
+=======
+>>>>>>> 831c0d2f3d1f49be1cfebf4124c3ded16afacec9
 -- Conditions / Problems
 -- =====================
 CREATE TABLE IF NOT EXISTS condition (
@@ -147,6 +165,7 @@ CREATE TABLE IF NOT EXISTS condition_code (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_condition_code_unique ON condition_code(condition_id, code, code_system);
 
 -- =====================
+<<<<<<< HEAD
 -- Immunizations
 -- =====================
 CREATE TABLE IF NOT EXISTS immunization (
@@ -183,6 +202,8 @@ CREATE INDEX IF NOT EXISTS idx_vital_patient ON vital(patient_id);
 CREATE INDEX IF NOT EXISTS idx_vital_type_date ON vital(vital_type, date);
 
 -- =====================
+=======
+>>>>>>> 831c0d2f3d1f49be1cfebf4124c3ded16afacec9
 -- Procedures
 -- =====================
 CREATE TABLE IF NOT EXISTS procedure (
@@ -216,6 +237,7 @@ CREATE TABLE IF NOT EXISTS procedure_code (
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_procedure_code_unique ON procedure_code(procedure_id, code, code_system);
 
+<<<<<<< HEAD
 -- =====================
 -- Attachments (PDFs, Images, etc.)
 -- =====================
@@ -245,3 +267,6 @@ CREATE TABLE IF NOT EXISTS provenance (
 );
 
 CREATE INDEX IF NOT EXISTS idx_prov_patient ON provenance(patient_id);
+=======
+-- Keep remaining tables as previously defined
+>>>>>>> 831c0d2f3d1f49be1cfebf4124c3ded16afacec9
