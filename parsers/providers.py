@@ -22,8 +22,18 @@ KEYWORDS = (
     ' of ',
 )
 
+
+__all__ = [
+    "normalize_spaces",
+    "parse_person_name",
+    "normalize_person_key",
+    "normalize_organization_key",
+    "is_probable_organization",
+]
+
+
 def normalize_spaces(value: str) -> str:
-    """Return a lowercase string with all whitespace removed."""    
+    """Return a lowercase string with all whitespace removed."""
     return ''.join(value.split()).lower()
 
 
@@ -123,6 +133,12 @@ def is_probable_organization(name: str) -> bool:
     if any(keyword in lower for keyword in KEYWORDS):
         return True
     tokens = lower.split()
-    if len(tokens) >= 3 and any(token in {'of', 'for', 'and', 'medical', 'health', 'hospital', 'clinic', 'physicians', 'associates', 'services', 'group', 'institute', 'university'} for token in tokens):
+    if len(tokens) >= 3 and any(
+        token in {
+            'of', 'for', 'and', 'medical', 'health', 'hospital', 'clinic',
+            'physicians', 'associates', 'services', 'group', 'institute', 'university'
+        }
+        for token in tokens
+    ):
         return True
     return False

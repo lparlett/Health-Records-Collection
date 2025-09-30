@@ -2,6 +2,7 @@
 data/raw/
 data/parsed/
 db/health.db
+db/health_records.db
 
 # Ignore Python cache files
 __pycache__/
@@ -10,4 +11,4 @@ __pycache__/
 # Ignore virtual environments
 .venv/
 env/
-db/health_records.db
+
