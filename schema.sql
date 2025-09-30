@@ -1,4 +1,4 @@
-﻿PRAGMA foreign_keys = ON;
+PRAGMA foreign_keys = ON;
 
 -- =====================
 -- Core Patient Table
@@ -250,3 +250,33 @@ CREATE TABLE IF NOT EXISTS provenance (
 );
 
 CREATE INDEX IF NOT EXISTS idx_prov_patient ON provenance(patient_id);
+
+-- =====================
+-- Progress Notes
+-- =====================
+CREATE TABLE IF NOT EXISTS progress_note (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    patient_id INTEGER NOT NULL,
+    encounter_id INTEGER,
+    provider_id INTEGER,
+    note_title TEXT,
+    note_datetime TEXT,
+    note_text TEXT NOT NULL,
+    note_hash TEXT NOT NULL,
+    source_note_id TEXT,
+    FOREIGN KEY(patient_id) REFERENCES patient(id) ON DELETE CASCADE,
+    FOREIGN KEY(encounter_id) REFERENCES encounter(id) ON DELETE SET NULL,
+    FOREIGN KEY(provider_id) REFERENCES provider(id) ON DELETE SET NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_progress_note_unique
+    ON progress_note (
+        patient_id,
+        COALESCE(encounter_id, -1),
+        COALESCE(provider_id, -1),
+        note_hash
+    );
+
+CREATE INDEX IF NOT EXISTS idx_progress_note_patient ON progress_note(patient_id);
+CREATE INDEX IF NOT EXISTS idx_progress_note_encounter ON progress_note(encounter_id);
+CREATE INDEX IF NOT EXISTS idx_progress_note_provider ON progress_note(provider_id);

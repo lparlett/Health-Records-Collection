@@ -3,6 +3,7 @@
 import zipfile
 import sqlite3
 from pathlib import Path
+
 from lxml import etree
 
 from parsers import (
@@ -12,6 +13,7 @@ from parsers import (
     parse_medications,
     parse_patient,
     parse_procedures,
+    parse_progress_notes,
 )
 from db.schema import ensure_schema
 from services.patient import insert_patient
@@ -20,6 +22,7 @@ from services.conditions import insert_conditions
 from services.procedures import insert_procedures
 from services.medications import insert_medications
 from services.labs import insert_labs
+from services.progress_notes import insert_progress_notes
 
 RAW_DIR = Path("data/raw")
 PARSED_DIR = Path("data/parsed")
@@ -61,6 +64,7 @@ def parse_ccd(xml_file: Path) -> dict[str, object]:
     labs = parse_labs(tree, ns)
     conditions = parse_conditions(tree, ns)
     procedures = parse_procedures(tree, ns)
+    progress_notes = parse_progress_notes(tree, ns)
 
     return {
         "patient": patient,
@@ -69,6 +73,7 @@ def parse_ccd(xml_file: Path) -> dict[str, object]:
         "labs": labs,
         "conditions": conditions,
         "procedures": procedures,
+        "progress_notes": progress_notes,
     }
 
 
@@ -97,6 +102,7 @@ def main() -> None:
             procedures = parsed.get("procedures") or []
             medications = parsed.get("medications") or []
             labs = parsed.get("labs") or []
+            progress_notes = parsed.get("progress_notes") or []
 
             if not isinstance(encounters, list):
                 encounters = []
@@ -108,6 +114,8 @@ def main() -> None:
                 medications = []
             if not isinstance(labs, list):
                 labs = []
+            if not isinstance(progress_notes, list):
+                progress_notes = []
 
             pid = insert_patient(conn, patient_data, zip_file.name)
             insert_encounters(conn, pid, encounters)
@@ -115,6 +123,7 @@ def main() -> None:
             insert_procedures(conn, pid, procedures)
             dup_meds = insert_medications(conn, pid, medications)
             insert_labs(conn, pid, labs)
+            notes_added, notes_dups = insert_progress_notes(conn, pid, progress_notes)
 
             message = (
                 f"Inserted patient {given} {family} with "
@@ -126,6 +135,7 @@ def main() -> None:
             )
             if dup_meds:
                 message += f" (skipped {dup_meds} duplicate meds)"
+            message += f"; progress notes added: {notes_added}, duplicates: {notes_dups}"
             print(message)
     conn.close()
 
