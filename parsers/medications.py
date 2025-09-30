@@ -7,11 +7,8 @@ statuses, notes, providers, and RxNorm codes.
 """
 
 from __future__ import annotations
-
 from typing import List, Optional, Set, Tuple, TypedDict
-
 from lxml import etree
-
 from .common import XSI_NS, extract_provider_name, get_text_by_id
 
 
@@ -37,7 +34,6 @@ class MedicationEntry(TypedDict, total=False):
     patient_id: Optional[str]
     start_bucket: Optional[str]
     end_bucket: Optional[str]
-
 
 def _bucket_date(value: Optional[str]) -> Optional[str]:
     if not value:
@@ -145,7 +141,6 @@ def parse_medications(
     ns: dict[str, str],
     existing_keys: Optional[Set[MedicationKey]] = None,
 ) -> List[MedicationEntry]:
-    """Extract medication administrations and related metadata from a CCD tree."""
     root = tree.getroot() if isinstance(tree, etree._ElementTree) else None
     encompassing_encounter = None
     service_event = None
