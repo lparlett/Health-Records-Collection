@@ -2,6 +2,11 @@
 data/raw/
 data/parsed/
 db/health.db
+<<<<<<< HEAD
+=======
+db/health_records.db
+db/health_records.db-journal
+>>>>>>> 831c0d2f3d1f49be1cfebf4124c3ded16afacec9
 
 # Ignore Python cache files
 __pycache__/
@@ -9,4 +14,9 @@ __pycache__/
 
 # Ignore virtual environments
 .venv/
+<<<<<<< HEAD
 env/
+=======
+env/
+
+>>>>>>> 831c0d2f3d1f49be1cfebf4124c3ded16afacec9
