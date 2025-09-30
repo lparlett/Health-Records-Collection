@@ -1,31 +1,21 @@
-<<<<<<< HEAD
 """Medication extraction utilities for CCD documents.
 
 This module provides functions to parse and extract medication administration details
-from Continuity of Care Document (CCD) XML files. It focuses on 
-identifying medication entries, including their names, dosages, 
-routes, frequencies, start and end dates, statuses, notes, providers, 
-and RxNorm codes.
+from Continuity of Care Document (CCD) XML files. It focuses on identifying medication
+entries, including their names, dosages, routes, frequencies, start and end dates,
+statuses, notes, providers, and RxNorm codes.
 """
 
 from __future__ import annotations
 
-from typing import List, Optional, TypedDict
-=======
-"""Medication extraction utilities for CCD documents.""" 
-from __future__ import annotations
-
 from typing import List, Optional, Set, Tuple, TypedDict
->>>>>>> 831c0d2f3d1f49be1cfebf4124c3ded16afacec9
 
 from lxml import etree
 
 from .common import XSI_NS, extract_provider_name, get_text_by_id
 
-<<<<<<< HEAD
-=======
+
 MedicationKey = Tuple[str, str, str, str, str]
->>>>>>> 831c0d2f3d1f49be1cfebf4124c3ded16afacec9
 
 
 class MedicationEntry(TypedDict, total=False):
@@ -41,21 +31,6 @@ class MedicationEntry(TypedDict, total=False):
     provider: Optional[str]
     author_time: Optional[str]
     source_id: Optional[str]
-<<<<<<< HEAD
-
-
-def parse_medications(tree: etree._ElementTree, 
-                      ns: dict[str, str]) -> List[MedicationEntry]:
-    """Extract medication administrations from a CCD document.
-
-    Args:
-        tree: The XML tree of the CCD document.
-        ns: The namespace mapping for XPath queries.
-    Returns:
-        A list of dictionaries, each representing a medication entry 
-        with details.
-    """
-=======
     encounter_source_id: Optional[str]
     encounter_start: Optional[str]
     encounter_end: Optional[str]
@@ -170,6 +145,7 @@ def parse_medications(
     ns: dict[str, str],
     existing_keys: Optional[Set[MedicationKey]] = None,
 ) -> List[MedicationEntry]:
+    """Extract medication administrations and related metadata from a CCD tree."""
     root = tree.getroot() if isinstance(tree, etree._ElementTree) else None
     encompassing_encounter = None
     service_event = None
@@ -185,7 +161,6 @@ def parse_medications(
     if encompassing_encounter is None and service_event is None:
         return []
 
->>>>>>> 831c0d2f3d1f49be1cfebf4124c3ded16afacec9
     medications: List[MedicationEntry] = []
     raw_med_nodes = tree.xpath(
         ".//hl7:substanceAdministration[hl7:templateId[@root='2.16.840.1.113883.10.20.22.4.16']]",
@@ -194,8 +169,6 @@ def parse_medications(
     if not isinstance(raw_med_nodes, list):
         return medications
 
-<<<<<<< HEAD
-=======
     doc_encounter_el = tree.find(
         "hl7:componentOf/hl7:encompassingEncounter",
         namespaces=ns,
@@ -216,7 +189,6 @@ def parse_medications(
     seen_entries: Set[MedicationKey] = set()
     registry = existing_keys if existing_keys is not None else None
 
->>>>>>> 831c0d2f3d1f49be1cfebf4124c3ded16afacec9
     for med in [node for node in raw_med_nodes if isinstance(node, etree._Element)]:
         code_el = med.find(".//hl7:manufacturedMaterial/hl7:code", namespaces=ns)
         med_name: Optional[str] = None
@@ -233,28 +205,17 @@ def parse_medications(
         sig_ref = med.find("hl7:text/hl7:reference", namespaces=ns)
         if sig_ref is not None and sig_ref.get("value"):
             sig_text = get_text_by_id(tree, ns, sig_ref.get("value"))
-<<<<<<< HEAD
-        med_id = None
-        id_el = med.find("hl7:id", namespaces=ns)
-        if id_el is not None:
-            med_id = id_el.get("extension") or id_el.get("root")
-=======
 
         med_id = None
         id_el = med.find("hl7:id", namespaces=ns)
         if id_el is not None:
             med_id = (id_el.get("extension") or id_el.get("root") or "").strip() or None
->>>>>>> 831c0d2f3d1f49be1cfebf4124c3ded16afacec9
 
         author_time = None
         author_time_el = med.find("hl7:author/hl7:time", namespaces=ns)
         if author_time_el is not None:
-<<<<<<< HEAD
-            author_time = author_time_el.get("value")
-=======
             value = (author_time_el.get("value") or "").strip()
             author_time = value or None
->>>>>>> 831c0d2f3d1f49be1cfebf4124c3ded16afacec9
 
         provider_name = extract_provider_name(
             med,
@@ -263,8 +224,6 @@ def parse_medications(
             ns,
         )
 
-<<<<<<< HEAD
-=======
         med_encounter_el = _find_medication_encounter(med, ns)
         med_prefix = "encounter" if med_encounter_el is not None else None
         (
@@ -283,26 +242,17 @@ def parse_medications(
             encounter_start = doc_encounter_start
         if not encounter_end and doc_encounter_end:
             encounter_end = doc_encounter_end
->>>>>>> 831c0d2f3d1f49be1cfebf4124c3ded16afacec9
 
         start_el = med.find("hl7:effectiveTime/hl7:low", namespaces=ns)
         start = start_el.get("value") if start_el is not None else None
         end_el = med.find("hl7:effectiveTime/hl7:high", namespaces=ns)
         end = end_el.get("value") if end_el is not None else None
-<<<<<<< HEAD
-=======
         start_bucket = _bucket_date(start)
         end_bucket = _bucket_date(end)
->>>>>>> 831c0d2f3d1f49be1cfebf4124c3ded16afacec9
 
         route_el = med.find("hl7:routeCode", namespaces=ns)
         route: Optional[str] = None
         if route_el is not None:
-<<<<<<< HEAD
-            route = (route_el.get("displayName") or route_el.get("code") or "").strip() or None
-            if not route:
-                route = (route_el.findtext("hl7:originalText", namespaces=ns) or "").strip() or None
-=======
             route = (
                 route_el.get("displayName")
                 or route_el.get("code")
@@ -312,7 +262,6 @@ def parse_medications(
                 route = (
                     route_el.findtext("hl7:originalText", namespaces=ns) or ""
                 ).strip() or None
->>>>>>> 831c0d2f3d1f49be1cfebf4124c3ded16afacec9
 
         dose: Optional[str] = None
         dose_el = med.find("hl7:doseQuantity", namespaces=ns)
@@ -320,21 +269,12 @@ def parse_medications(
             dose_value = (dose_el.get("value") or "").strip()
             dose_unit = (dose_el.get("unit") or "").strip()
             if dose_value or dose_unit:
-<<<<<<< HEAD
-                dose = " ".join([part for part in (dose_value, dose_unit) if part])
-
-        frequency: Optional[str] = None
-        for eff in med.findall("hl7:effectiveTime", namespaces=ns):
-            xsi_type = eff.get(f"{{{XSI_NS}}}type")
-            if xsi_type and xsi_type.upper() == "PIVL_TS":
-=======
                 dose = " ".join(part for part in (dose_value, dose_unit) if part)
 
         frequency: Optional[str] = None
         for eff in med.findall("hl7:effectiveTime", namespaces=ns):
             xsi_type = (eff.get(f"{{{XSI_NS}}}type") or "").upper()
             if xsi_type == "PIVL_TS":
->>>>>>> 831c0d2f3d1f49be1cfebf4124c3ded16afacec9
                 period = eff.find("hl7:period", namespaces=ns)
                 if period is not None:
                     period_value = (period.get("value") or "").strip()
@@ -356,12 +296,6 @@ def parse_medications(
             "hl7:entryRelationship/hl7:observation[hl7:code[@code='33999-4']]/hl7:value",
             namespaces=ns,
         )
-<<<<<<< HEAD
-        status_nodes = [el for el in raw_status_nodes if isinstance(el, etree._Element)]
-        status_value = status_nodes[0] if status_nodes else None
-        if status_value is not None:
-            status = (status_value.get("displayName") or status_value.get("code") or "").strip() or None
-=======
         if isinstance(raw_status_nodes, list):
             status_nodes = [el for el in raw_status_nodes if isinstance(el, etree._Element)]
         else:
@@ -373,7 +307,6 @@ def parse_medications(
                 or status_value.get("code")
                 or ""
             ).strip() or None
->>>>>>> 831c0d2f3d1f49be1cfebf4124c3ded16afacec9
         if status is None:
             status_code_el = med.find("hl7:statusCode", namespaces=ns)
             if status_code_el is not None:
@@ -389,24 +322,6 @@ def parse_medications(
         if not med_name:
             continue
 
-<<<<<<< HEAD
-        medications.append(
-            {
-                "name": med_name,
-                "rxnorm": rxnorm_code,
-                "dose": dose,
-                "route": route,
-                "frequency": frequency,
-                "start": start,
-                "end": end,
-                "status": status,
-                "notes": sig_text,
-                "provider": provider_name,
-                "author_time": author_time,
-                "source_id": med_id,
-            }
-        )
-=======
         entry: MedicationEntry = {
             "name": med_name,
             "rxnorm": rxnorm_code,
@@ -448,6 +363,6 @@ def parse_medications(
             registry.add(dedupe_key)
 
         medications.append(entry)
->>>>>>> 831c0d2f3d1f49be1cfebf4124c3ded16afacec9
 
     return medications
+
