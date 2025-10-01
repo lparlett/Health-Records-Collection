@@ -17,11 +17,12 @@ def test_parse_patient_minimal():
     </ClinicalDocument>
     """
     root = etree.fromstring(sample_xml.encode("utf-8"))
-    tree = etree.ElementTree(root)  
+    tree = etree.ElementTree(root)
     ns = {"hl7": "urn:hl7-org:v3"}
+
     result = patient.parse_patient(tree, ns)
 
-    name = result.get("name")
-    
-    assert isinstance(name, str)
-    assert "Jane" in name or "Doe" in name
+    assert result.get("given") == "Jane"
+    assert result.get("family") == "Doe"
+    assert result.get("dob") is None
+    assert result.get("gender") is None
