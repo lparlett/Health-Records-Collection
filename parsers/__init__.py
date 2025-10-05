@@ -5,6 +5,7 @@ from .conditions import parse_conditions
 from .encounters import parse_encounters
 from .procedures import parse_procedures
 from .progress_notes import parse_progress_notes
+from .vitals import parse_vitals
 
 __all__ = [
     "parse_patient",
@@ -14,4 +15,5 @@ __all__ = [
     "parse_encounters",
     "parse_procedures",
     "parse_progress_notes",
+    "parse_vitals",
 ]

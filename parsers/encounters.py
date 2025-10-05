@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Dict, List, Optional
+from typing import Dict, Iterable, List, Optional
 
 from lxml import etree
 
@@ -9,14 +9,21 @@ from .common import extract_provider_name, get_text_by_id
 EncounterEntry = Dict[str, Optional[str]]
 
 
-def _join_clean(parts: List[Optional[str]]) -> Optional[str]:
-    cleaned = [part.strip() for part in parts if part and part.strip()]
-    if not cleaned:
+def _join_clean(parts: Iterable[Optional[str]]) -> Optional[str]:
+    cleaned_parts: List[str] = []
+    for part in parts:
+        if not part:
+            continue
+        candidate = part.strip()
+        if candidate:
+            cleaned_parts.append(candidate)
+    if not cleaned_parts:
         return None
-    return " | ".join(cleaned)
+    return " | ".join(cleaned_parts)
 
 
-def _extract_time_range(node: etree._Element, ns: dict[str, str]) -> tuple[Optional[str], Optional[str]]:
+def _extract_time_range(node: Optional[etree._Element], 
+                        ns: dict[str, str]) -> tuple[Optional[str], Optional[str]]:
     start: Optional[str] = None
     end: Optional[str] = None
     if node is None:
@@ -37,20 +44,30 @@ def _extract_time_range(node: etree._Element, ns: dict[str, str]) -> tuple[Optio
     return start, end
 
 
-def parse_encounters(tree: etree._ElementTree, ns: dict[str, str]) -> List[EncounterEntry]:
+def parse_encounters(tree: etree._ElementTree, 
+                     ns: dict[str, str]) -> List[EncounterEntry]:
     encounters: List[EncounterEntry] = []
-    for enc in tree.xpath(".//hl7:encounter", namespaces=ns):
+    nodes = tree.xpath(".//hl7:encounter", namespaces=ns)
+    encounter_nodes: List[etree._Element] = []
+    if isinstance(nodes, list):
+        encounter_nodes = [node for node in nodes if isinstance(node, etree._Element)]
+    elif isinstance(nodes, etree._Element):
+        encounter_nodes = [nodes]
+
+    for enc in encounter_nodes:
         code_el = enc.find("hl7:code", namespaces=ns)
         encounter_code = code_el.get("code") if code_el is not None else None
         encounter_type: Optional[str] = None
         if code_el is not None:
             encounter_type = code_el.get("displayName")
             if not encounter_type:
-                ref = code_el.find("hl7:originalText/hl7:reference", namespaces=ns)
+                ref = code_el.find("hl7:originalText/hl7:reference",
+                                   namespaces=ns)
                 if ref is not None and ref.get("value"):
                     encounter_type = get_text_by_id(tree, ns, ref.get("value"))
             if not encounter_type:
-                translation = code_el.find("hl7:translation[@displayName]", namespaces=ns)
+                translation = code_el.find("hl7:translation[@displayName]",
+                                           namespaces=ns)
                 if translation is not None:
                     encounter_type = translation.get("displayName")
         if not encounter_type and encounter_code:
@@ -65,7 +82,8 @@ def parse_encounters(tree: etree._ElementTree, ns: dict[str, str]) -> List[Encou
         status = status_el.get("code") if status_el is not None else None
         mood = enc.get("moodCode")
 
-        start, end = _extract_time_range(enc.find("hl7:effectiveTime", namespaces=ns), ns)
+        start, end = _extract_time_range(enc.find("hl7:effectiveTime",
+                                                  namespaces=ns), ns)
 
         provider_name = extract_provider_name(
             enc,
@@ -80,12 +98,23 @@ def parse_encounters(tree: etree._ElementTree, ns: dict[str, str]) -> List[Encou
             namespaces=ns,
         )
         if location_el is not None:
-            location_text = location_el.xpath("string()")
+            location_text_raw = location_el.xpath("string()")
+            location_text = location_text_raw if isinstance(location_text_raw, str) else str(location_text_raw or "")
+            location_text = location_text.strip()
             if location_text:
                 location_name = " ".join(location_text.split())
 
+
         additional_notes: List[str] = []
-        for ref in enc.xpath("hl7:entryRelationship//hl7:text/hl7:reference", namespaces=ns):
+        reference_nodes = enc.xpath("hl7:entryRelationship//hl7:text/hl7:reference",
+                                    namespaces=ns)
+        iterable_refs: List[etree._Element] = []
+        if isinstance(reference_nodes, list):
+            iterable_refs = [node for node in reference_nodes if isinstance(node, etree._Element)]
+        elif isinstance(reference_nodes, etree._Element):
+            iterable_refs = [reference_nodes]
+
+        for ref in iterable_refs:
             ref_value = ref.get("value")
             if ref_value:
                 note_text = get_text_by_id(tree, ns, ref_value)
