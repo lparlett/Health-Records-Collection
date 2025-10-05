@@ -9,6 +9,7 @@ KEYWORDS = (
     ' clinic',
     ' health',
     ' medical',
+    ' medicine'
     ' center',
     ' centre',
     ' physicians',
