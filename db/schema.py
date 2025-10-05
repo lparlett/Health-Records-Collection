@@ -74,6 +74,16 @@ def ensure_provider_schema(conn: sqlite3.Connection) -> None:
         conn.execute(dedent(statement))
 
 
+
+
+
+def ensure_encounter_schema(conn: sqlite3.Connection) -> None:
+    cur = conn.cursor()
+    cur.execute("PRAGMA table_info(encounter)")
+    columns = {row[1] for row in cur.fetchall()}
+    if "reason_for_visit" not in columns:
+        conn.execute("ALTER TABLE encounter ADD COLUMN reason_for_visit TEXT")
+
 def ensure_medication_constraints(conn: sqlite3.Connection) -> None:
     conn.execute(
         """
@@ -105,6 +115,7 @@ def ensure_medication_constraints(conn: sqlite3.Connection) -> None:
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
     ensure_provider_schema(conn)
+    ensure_encounter_schema(conn)
     ensure_medication_constraints(conn)
     ensure_immunization_constraints(conn)
 

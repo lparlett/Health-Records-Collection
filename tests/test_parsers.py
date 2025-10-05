@@ -3,6 +3,7 @@ from lxml import etree
 import parsers.patient as patient
 import parsers.vitals as vitals
 import parsers.immunizations as immunizations
+import parsers.encounters as encounters
 
 
 def test_parse_patient_minimal():
@@ -143,3 +144,45 @@ def test_parse_immunizations_basic():
     assert record["cvx_codes"] == ["140"]
     assert record["product_name"] == "Influenza Quadrivalent"
     assert record["lot_number"] == "LOT-ABC"
+
+
+def test_parse_encounters_reason_for_visit():
+    sample_xml = """
+    <ClinicalDocument xmlns="urn:hl7-org:v3" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      <component>
+        <structuredBody>
+          <component>
+            <section>
+              <code code="29299-5" />
+              <title>Reason for Visit</title>
+              <text>
+                <list>
+                  <item>Headache</item>
+                  <item>Nausea</item>
+                </list>
+              </text>
+            </section>
+          </component>
+          <component>
+            <section>
+              <entry>
+                <encounter classCode="ENC" moodCode="EVN">
+                  <code code="AMB" displayName="Ambulatory" />
+                  <effectiveTime value="20240101" />
+                </encounter>
+              </entry>
+            </section>
+          </component>
+        </structuredBody>
+      </component>
+    </ClinicalDocument>
+    """
+    root = etree.fromstring(sample_xml.encode("utf-8"))
+    tree = etree.ElementTree(root)
+    ns = {"hl7": "urn:hl7-org:v3"}
+
+    result = encounters.parse_encounters(tree, ns)
+
+    assert len(result) == 1
+    encounter = result[0]
+    assert encounter["reason_for_visit"] == "Headache; Nausea"

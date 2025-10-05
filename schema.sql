@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS encounter (
     source_encounter_id TEXT,
     encounter_type TEXT,
     notes TEXT,
+    reason_for_visit TEXT,
     FOREIGN KEY(patient_id) REFERENCES patient(id) ON DELETE CASCADE,
     FOREIGN KEY(provider_id) REFERENCES provider(id) ON DELETE SET NULL
 );
