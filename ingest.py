@@ -15,6 +15,7 @@ from parsers import (
     parse_procedures,
     parse_progress_notes,
     parse_vitals,
+    parse_immunizations,
 )
 from db.schema import ensure_schema
 from services.patient import insert_patient
@@ -24,6 +25,7 @@ from services.procedures import insert_procedures
 from services.medications import insert_medications
 from services.labs import insert_labs
 from services.progress_notes import insert_progress_notes
+from services.immunizations import insert_immunizations
 from services.vitals import insert_vitals
 
 RAW_DIR = Path("data/raw")
@@ -68,6 +70,7 @@ def parse_ccd(xml_file: Path) -> dict[str, object]:
     procedures = parse_procedures(tree, ns)
     progress_notes = parse_progress_notes(tree, ns)
     vitals = parse_vitals(tree, ns)
+    immunizations = parse_immunizations(tree, ns)
 
     return {
         "patient": patient,
@@ -78,6 +81,7 @@ def parse_ccd(xml_file: Path) -> dict[str, object]:
         "procedures": procedures,
         "progress_notes": progress_notes,
         "vitals": vitals,
+        "immunizations": immunizations,
     }
 
 
@@ -107,6 +111,7 @@ def main() -> None:
             medications = parsed.get("medications") or []
             labs = parsed.get("labs") or []
             vitals = parsed.get("vitals") or []
+            immunizations = parsed.get("immunizations") or []
             progress_notes = parsed.get("progress_notes") or []
 
             if not isinstance(encounters, list):
@@ -121,6 +126,8 @@ def main() -> None:
                 labs = []
             if not isinstance(vitals, list):
                 vitals = []
+            if not isinstance(immunizations, list):
+                immunizations = []
             if not isinstance(progress_notes, list):
                 progress_notes = []
 
@@ -131,6 +138,7 @@ def main() -> None:
             dup_meds = insert_medications(conn, pid, medications)
             insert_labs(conn, pid, labs)
             insert_vitals(conn, pid, vitals)
+            insert_immunizations(conn, pid, immunizations)
             notes_added, notes_dups = insert_progress_notes(conn, pid, progress_notes)
 
             message = (
@@ -139,7 +147,8 @@ def main() -> None:
                 f"{len(conditions)} conditions, "
                 f"{len(procedures)} procedures, "
                 f"{len(medications)} meds, "
-                f"{len(labs)} labs and {len(vitals)} vitals"
+                f"{len(labs)} labs, {len(vitals)} vitals "
+                f"and {len(immunizations)} immunizations"
             )
             if dup_meds:
                 message += f" (skipped {dup_meds} duplicate meds)"

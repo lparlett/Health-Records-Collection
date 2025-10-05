@@ -106,3 +106,27 @@ def ensure_medication_constraints(conn: sqlite3.Connection) -> None:
 def ensure_schema(conn: sqlite3.Connection) -> None:
     ensure_provider_schema(conn)
     ensure_medication_constraints(conn)
+    ensure_immunization_constraints(conn)
+
+
+
+def ensure_immunization_constraints(conn: sqlite3.Connection) -> None:
+    conn.execute("""
+        DELETE FROM immunization
+              WHERE rowid NOT IN (
+                    SELECT MIN(rowid)
+                      FROM immunization
+                     GROUP BY patient_id,
+                              COALESCE(date_administered, ''),
+                              COALESCE(cvx_code, '')
+              )
+        """)
+    conn.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_immunization_unique
+            ON immunization (
+                patient_id,
+                COALESCE(date_administered, ''),
+                COALESCE(cvx_code, '')
+            )
+        """)
+

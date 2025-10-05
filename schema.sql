@@ -168,6 +168,12 @@ CREATE TABLE IF NOT EXISTS immunization (
 
 CREATE INDEX IF NOT EXISTS idx_immunization_patient ON immunization(patient_id);
 CREATE INDEX IF NOT EXISTS idx_immunization_date ON immunization(date_administered);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_immunization_unique
+    ON immunization (
+        patient_id,
+        COALESCE(date_administered, ''),
+        COALESCE(vaccine_name, '')
+    );
 
 -- =====================
 -- Vitals
