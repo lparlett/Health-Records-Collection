@@ -4,9 +4,10 @@
 [![Streamlit](https://img.shields.io/badge/Streamlit-dashboard-ff4b4b.svg?logo=streamlit)](https://streamlit.io)
 [![SQLite](https://img.shields.io/badge/SQLite-database-07405e.svg?logo=sqlite)](https://www.sqlite.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Project Status](https://img.shields.io/badge/status-in%20progress-yellow.svg)](#)
+[![AI-assisted with Codex](https://img.shields.io/badge/AI--Assisted-OpenAI_Codex-blueviolet?logo=openai&logoColor=white)](https://www.chatgpt.com)
+[![Project Status](https://img.shields.io/badge/status-in%20progress-yellow.svg)]
 
-Tools for unifying personal electronic health record (EHR) exports into a local SQLite database and browsing them with a Streamlit dashboard. Note that this repository does **not** contain any protected health information or personally identifiable information.
+Tools for unifying personal electronic health record (EHR) exports into a local SQLite database and browsing them with a Streamlit dashboard. Note that this repository does **not** contain any protected health information or personally identifiable information. This project used generative AI (OpenAI Codex) to assist in writing some scaffolding code; human developers reviewed, edited, integrated, and tested all output. See this project's [AI disclsoure](https://github.com/lparlett/Health-Records-Collection/blob/main/AI_dislosure.md) for prompt history.
 
 ---
 
@@ -53,7 +54,7 @@ Your database will be created at `db/health_records.db` and the dashboard will o
 
 ## 📂 Repository Layout
 
-```
+```bash
 data/                # Raw and parsed health record exports
 db/                  # SQLite database (overwritten on ingest)
 frontend/            # Streamlit UI
