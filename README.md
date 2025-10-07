@@ -1,110 +1,145 @@
 # Health Records Collection
 
-[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/release/python-3120/)
+<!-- markdownlint-disable MD013 -->
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/)
 [![Streamlit](https://img.shields.io/badge/Streamlit-dashboard-ff4b4b.svg?logo=streamlit)](https://streamlit.io)
 [![SQLite](https://img.shields.io/badge/SQLite-database-07405e.svg?logo=sqlite)](https://www.sqlite.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![AI-assisted with Codex](https://img.shields.io/badge/AI--Assisted-OpenAI_Codex-blueviolet?logo=openai&logoColor=white)](https://www.chatgpt.com)
-[![Project Status](https://img.shields.io/badge/status-in%20progress-yellow.svg)](https://github.com/lparlett/Health-Records-Collection/)
+[![AI-assisted with Codex](https://img.shields.io/badge/AI--Assisted-OpenAI_Codex-blueviolet?logo=openai&logoColor=white)](AI_disclosure.md)
+<!-- markdownlint-enable MD013 -->
 
-Tools for unifying personal electronic health record (EHR) exports into a local SQLite database and browsing them with a Streamlit dashboard. Note that this repository does **not** contain any protected health information or personally identifiable information. This project used generative AI (OpenAI Codex) to assist in writing some scaffolding code; human developers reviewed, edited, integrated, and tested all output. See this project's [AI disclsoure](https://github.com/lparlett/Health-Records-Collection/blob/main/AI_disclosure.md) for prompt history.
+Tools for unifying personal electronic health record (EHR) exports into a local
+SQLite database and exploring them with a Streamlit dashboard. The repository
+contains no protected health information; the ingest pipeline expects you to
+provide your own CCD exports. Portions of the scaffolding were drafted with
+generative AI and reviewed by human maintainers - see the full
+[AI disclosure](AI_disclosure.md) for details.
 
 ---
 
-## 🚀 Quickstart
+## Quick Start
+
+### Requirements
+
+- Python 3.12 or newer
+- SQLite (bundled with Python)
+- Streamlit-compatible browser (Chrome, Edge, Firefox, Safari)
+
+### Setup
 
 ```bash
 git clone <repo-url>
 cd Health-Records-Collection
 
-# (optional) create a virtual environment
 python -m venv .venv
 .venv\Scripts\Activate.ps1   # Windows PowerShell
-# or: source .venv/bin/activate
+# or: source .venv/bin/activate   # macOS/Linux
 
+pip install --upgrade pip
 pip install -r requirements.txt
-
-# Ingest health record exports (zip files placed in data/raw)
-python ingest.py
-
-# Launch the dashboard
-streamlit run frontend/app.py
 ```
 
-Your database will be created at `db/health_records.db` and the dashboard will open at [http://localhost:8501](http://localhost:8501).
+### Ingest and Explore
+
+1. Drop each CCD ZIP export into `data/raw/`.
+1. Run the ingestion workflow:
+
+   ```bash
+   python ingest.py
+   ```
+  
+   This creates or refreshes `db/health_records.db`, extracts ZIP contents into
+   `data/parsed/`, and populates all supported tables.
+1. Launch the dashboard:
+
+   ```bash
+   streamlit run frontend/app.py
+   ```
+  
+   Streamlit opens at [http://localhost:8501](http://localhost:8501) with an
+   encounter overview, table browser, and SQL scratchpad.
 
 ---
 
-## ✨ Features
+## How It Works
 
-- **CCD ingestion pipeline** (`ingest.py`)
-  - Unzips Continuity of Care Document (CCD) exports from `data/raw/`
-  - Parses patients, encounters, medications, labs, and conditions via modular parsers in `parsers/`
-  - Normalizes providers and links them across encounters, meds, labs, and conditions
-  - Persists data into SQLite using `schema.sql`
-- **Streamlit dashboard** (`frontend/app.py`)
-  - Table browser with configurable row limits
-  - Raw SQL query box for ad-hoc exploration
-- **Configurable**
-  - Database location, page title, layout, row limits via `frontend/config.yaml`
-- **Extensible**
-  - Add new parsers, schema extensions, or custom dashboard views
+- **Ingestion pipeline (`ingest.py`)**
+  - Unzips CCD packages from `data/raw/` into `data/parsed/` (skipping extracts
+    that already exist).
+  - Parses XML with lxml using modular parsers in `parsers/` for patients,
+    encounters, conditions, medications, labs, procedures, vitals,
+    immunizations, and progress notes.
+  - Normalizes providers, deduplicates medications and immunizations, and
+    invokes service modules in `services/` to load data into SQLite.
+  - Applies schema migrations on the fly via `db/schema.py` to keep older
+    databases compatible.
+
+- **Streamlit dashboard (`frontend/`)**
+  - `views.py` renders an Encounter Overview with expandable visit summaries,
+    including diagnoses and medications.
+  - Sidebar controls let you pick tables to preview using reusable widgets in
+    `ui_components.py`.
+  - A SQL query box allows ad-hoc exploration; results render with native
+    Streamlit dataframes.
+  - Connection utilities in `db_utils.py` keep the UI responsive with row
+    limits and read-only access.
+
+- **Schema & services (`schema.sql`, `services/`)**
+  - `schema.sql` defines core tables for patients, providers, encounters,
+    medications, lab results, allergies, conditions (with codes), procedures,
+    vitals, immunizations, attachments, provenance, and progress notes.
+  - Service modules encapsulate insert logic, deduplication, and foreign key
+    wiring for each domain.
+  - `db/schema.py` backfills missing columns, normalizes provider records, and
+    adds protective indexes.
 
 ---
 
-## 📂 Repository Layout
+## Repository Layout
 
-```bash
-data/                # Raw and parsed health record exports
-db/                  # SQLite database (overwritten on ingest)
-frontend/            # Streamlit UI
-  ├─ app.py
-  ├─ config.yaml
-  ├─ db_utils.py
-  ├─ ui_components.py
-  └─ views.py
-parsers/             # Modular CCD parsers
-ingest.py            # Main ingestion workflow
-schema.sql           # Database schema
-requirements.txt     # Dependencies
-tests/               # Unit tests (currently empty)
+```text
+data/               Raw ZIP exports (`raw/`) and extracted XML (`parsed/`)
+db/                 SQLite artifacts (`health_records.db`) and schema helpers
+frontend/           Streamlit application entry point, views, and utilities
+parsers/            CCD XML parsers grouped by domain
+services/           Persistence helpers for each domain table
+tests/              Pytest suite covering parsers, services,
+                    schema, and ingest flow
+ingest.py           Command-line ingestion workflow
+schema.sql          Canonical database definition
+requirements.txt    Locked Python dependencies
 ```
 
 ---
 
-## 🧱 Database Schema (Highlights)
+## Configuration & Customization
 
-Defined in `schema.sql` and auto-created during ingestion:
-
-- `patient` — demographics, source file reference  
-- `provider` — normalized names + metadata  
-- `encounter` — date, provider, notes, source IDs  
-- `medication` — dose, route, frequency, provider/encounter links  
-- `lab_result` — LOINC codes, values, provider + encounter IDs  
-- `condition` — problem list, provider/encounter, primary codes  
-- `condition_code` — one-to-many codes per condition  
-
-Additional placeholder tables exist (immunizations, vitals, procedures, attachments) for future parser expansion.
+- Update `frontend/config.yaml` to change the dashboard title, layout, database
+  path, or default row limits.
+- Extend parsing coverage by adding new modules in `parsers/` and wiring them
+  into `ingest.py`.
+- Modify or append tables by editing `schema.sql` and enhancing `db/schema.py`
+  to enforce migrations.
+- Regenerate the database at any time by deleting `db/health_records.db` and
+  rerunning `python ingest.py`.
 
 ---
 
-## 🛠️ Customization & Extensibility
+## Development
 
-- **Add new parsers** → implement in `parsers/`, register in `parsers/__init__.py`.  
-- **Schema changes** → update `schema.sql`, rebuild DB by deleting `db/health_records.db` and re-running `ingest.py`.  
-- **Dashboard tweaks** → edit `frontend/config.yaml` (database path, layout, row limits).  
-- **Testing** → add regression coverage under `tests/` (pytest recommended).
+- Run the automated tests with:
 
----
+  ```bash
+  pytest
+  ```
 
-## 🐞 Troubleshooting
-
-- **Missing `lxml` in your IDE** → ensure your IDE uses the same interpreter where you installed deps. You may also install `lxml-stubs` for type hints.  
-- **No encounters/conditions linked** → some CCDs omit provider/date info. Parsers fall back to partial matching — inspect parsed rows and refine heuristics.  
-- **Schema mismatch errors** → delete `db/health_records.db` and rebuild with `python ingest.py`.  
+- The project targets Python 3.12; please keep new dependencies pinned in
+  `requirements.txt`.
+- Follow the contributor guidelines in `CONTRIBUTING.md` and report security
+  concerns per `SECURITY.md`.
 
 ---
 
-## 📜 License
+## License
 
-MIT License. See `LICENSE` for details.
+MIT License. See [LICENSE](LICENSE) for full terms.
