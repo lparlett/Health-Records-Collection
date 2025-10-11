@@ -9,7 +9,9 @@ Parts of this codebase were developed with the help of the OpenAI Codex model (a
 
 **Disclaimer**: Use of AI in this repository does not absolve the authors of responsibility. Users should treat all code as subject to review and validation.  
 
-## Conversation Prompts by Function
+All post-implementation of AGENTS.md prompts can be found in the /docs/AI_prompts.md file.
+
+## pre-AGENTS.md Conversation Prompts by Function
 
 ### Development
 
