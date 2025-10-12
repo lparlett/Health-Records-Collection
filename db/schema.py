@@ -132,6 +132,12 @@ def ensure_medication_constraints(conn: sqlite3.Connection) -> None:
 
 def ensure_data_source_columns(conn: sqlite3.Connection) -> None:
     """Ensure core tables reference the shared data_source metadata."""
+    _add_column_if_missing(conn, "data_source", "document_created", "TEXT")
+    _add_column_if_missing(conn, "data_source", "repository_unique_id", "TEXT")
+    _add_column_if_missing(conn, "data_source", "document_hash", "TEXT")
+    _add_column_if_missing(conn, "data_source", "document_size", "INTEGER")
+    _add_column_if_missing(conn, "data_source", "author_institution", "TEXT")
+    _add_column_if_missing(conn, "data_source", "attachment_id", "INTEGER REFERENCES attachment(id)")
     column_ddl = "data_source_id INTEGER REFERENCES data_source(id)"
     for table in (
         "patient",

@@ -70,7 +70,8 @@ pip install -r requirements.txt
     encounters, conditions, medications, labs, procedures, vitals,
     immunizations, and progress notes.
   - Records file-level provenance in the `data_source` table (original filename,
-    archive, hash, ingest timestamp) and threads the resulting identifier
+    archive, SHA256 hash, creation time, repository ID, and author institution
+    pulled from XDM `METADATA.XML`) and threads the resulting identifier
     through every downstream insert.
   - Normalizes providers, deduplicates medications and immunizations, and
     invokes service modules in `services/` to load data into SQLite.
@@ -91,7 +92,7 @@ pip install -r requirements.txt
   - `schema.sql` defines core tables for patients, providers, encounters,
     medications, lab results, allergies, conditions (with codes), procedures,
     vitals, immunizations, attachments, and progress notes, each
-    linking back to `data_source` for provenance.
+    linking back to enriched `data_source` metadata.
   - Service modules encapsulate insert logic, deduplication, and foreign key
     wiring for each domain. `services/data_sources.py` manages provenance rows
     so other modules can reference a shared `data_source_id`.

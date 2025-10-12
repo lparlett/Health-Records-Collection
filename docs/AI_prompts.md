@@ -43,3 +43,6 @@ Next, thread source_archive into the ingestion pipeline.
 [2025-10-12 16:13:39 UTC] I will look into the venv issue. Do any of the ingest scripts need to be updated to account for the datasource ID?
 [2025-10-12 16:14:21 UTC] Sorry, I meant, do any of the parsing scripts need to be updated?
 [2025-10-12 17:00:24 UTC] Remove the data_provenance table from the schema - that functionality is now with the data_source table. Also remove the source_file field from patient.
+[2025-10-12 18:11:24 UTC] I want you to examine the METADATA.xml files in the data/ folder. I think these can be useful for the data_sources table. Next, ensure that if a document does not have an associated person, it is not ingested. METADATA.XML is causing a blank person to be added to the patients table.
+[2025-10-12 18:41:30 UTC] I have an attachment table where I can link to data_source files so that they can be read in the raw in streamlit. Create the code that populates the attachment information as the files are being ingested.
+[2025-10-12 18:55:11 UTC] The ingestion worked well! Get rid of the encounter ID in the attachment table. In the data_source table, add a FK to the attachment table.

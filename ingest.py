@@ -9,11 +9,13 @@ from __future__ import annotations
 """Main ingestion workflow for CCD archives."""
 
 import logging
+import mimetypes
 import sqlite3
 import zipfile
 from contextlib import closing
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Dict, Iterable, Optional
 
 from lxml import etree
 from db.schema import ensure_schema
@@ -28,8 +30,10 @@ from parsers import (
     parse_progress_notes,
     parse_vitals,
 )
+from services.attachments import upsert_attachment
+from services.common import clean_str
 from services.conditions import insert_conditions
-from services.data_sources import upsert_data_source
+from services.data_sources import link_attachment, upsert_data_source
 from services.encounters import insert_encounters
 from services.immunizations import insert_immunizations
 from services.labs import insert_labs
@@ -147,7 +151,12 @@ def ingest_archive(conn: sqlite3.Connection, archive_path: Path) -> None:
     destination = PARSED_DIR / archive_path.stem
     unzip_raw_files(archive_path, destination)
 
+    metadata_lookup = _load_metadata(destination)
+
     for xml_file in destination.rglob("*.xml"):
+        if xml_file.name.lower() == "metadata.xml":
+            logger.debug("Skipping metadata descriptor %s.", xml_file)
+            continue
         parsed = parse_ccd(xml_file)
         if not parsed:
             continue
@@ -157,17 +166,19 @@ def ingest_archive(conn: sqlite3.Connection, archive_path: Path) -> None:
             logger.warning("Skipping %s due to missing patient section.", xml_file.name)
             continue
 
-        given = str(patient_data.get("given", "")).strip()
-        family = str(patient_data.get("family", "")).strip()
+        given = clean_str(patient_data.get("given"))
+        family = clean_str(patient_data.get("family"))
         if not (given or family):
             logger.warning("Skipping %s due to incomplete patient identity.", xml_file.name)
             continue
 
         try:
+            meta_key = str(xml_file.resolve()).lower()
             data_source_id = upsert_data_source(
                 conn,
                 xml_file,
                 source_archive=archive_path.name,
+                metadata=metadata_lookup.get(meta_key),
             )
         except (OSError, sqlite3.DatabaseError) as exc:
             logger.warning(
@@ -177,56 +188,201 @@ def ingest_archive(conn: sqlite3.Connection, archive_path: Path) -> None:
             )
             continue
 
-        metadata = {
+        record_metadata = {
             "data_source_id": data_source_id,
             "source_archive": archive_path.name,
             "source_document": xml_file.name,
         }
-        patient_record = {**patient_data, **metadata}
+        patient_record = {**patient_data, **record_metadata}
 
         pid = insert_patient(conn, patient_record)
+        attachment_id = _record_attachment(
+            conn,
+            patient_id=pid,
+            data_source_id=data_source_id,
+            file_path=xml_file,
+        )
+        if attachment_id is not None:
+            try:
+                link_attachment(conn, data_source_id, attachment_id)
+            except sqlite3.DatabaseError as exc:
+                logger.warning(
+                    "Failed to link attachment %s to data source %s: %s",
+                    attachment_id,
+                    data_source_id,
+                    exc,
+                )
         insert_encounters(
             conn,
             pid,
-            _annotate_records(_as_record_list(parsed.get("encounters")), metadata),
+            _annotate_records(_as_record_list(parsed.get("encounters")), record_metadata),
         )
         insert_conditions(
             conn,
             pid,
-            _annotate_records(_as_record_list(parsed.get("conditions")), metadata),
+            _annotate_records(_as_record_list(parsed.get("conditions")), record_metadata),
         )
         insert_procedures(
             conn,
             pid,
-            _annotate_records(_as_record_list(parsed.get("procedures")), metadata),
+            _annotate_records(_as_record_list(parsed.get("procedures")), record_metadata),
         )
         insert_medications(
             conn,
             pid,
-            _annotate_records(_as_record_list(parsed.get("medications")), metadata),
+            _annotate_records(_as_record_list(parsed.get("medications")), record_metadata),
         )
         insert_labs(
             conn,
             pid,
-            _annotate_records(_as_record_list(parsed.get("labs")), metadata),
+            _annotate_records(_as_record_list(parsed.get("labs")), record_metadata),
         )
         insert_vitals(
             conn,
             pid,
-            _annotate_records(_as_record_list(parsed.get("vitals")), metadata),
+            _annotate_records(_as_record_list(parsed.get("vitals")), record_metadata),
         )
         insert_immunizations(
             conn,
             pid,
-            _annotate_records(_as_record_list(parsed.get("immunizations")), metadata),
+            _annotate_records(_as_record_list(parsed.get("immunizations")), record_metadata),
         )
         insert_progress_notes(
             conn,
             pid,
-            _annotate_records(_as_record_list(parsed.get("progress_notes")), metadata),
+            _annotate_records(_as_record_list(parsed.get("progress_notes")), record_metadata),
         )
         conn.commit()
         logger.info("Ingested %s for patient %s %s.", xml_file.name, given, family)
+
+
+def _load_metadata(root: Path) -> dict[str, dict[str, Any]]:
+    """Return a mapping of document path -> metadata extracted from METADATA.XML."""
+    metadata: dict[str, dict[str, Any]] = {}
+    ns = {"rim": "urn:oasis:names:tc:ebxml-regrep:xsd:rim:3.0"}
+    for metadata_path in root.rglob("METADATA.XML"):
+        try:
+            tree = etree.parse(str(metadata_path))
+        except (OSError, etree.XMLSyntaxError) as exc:
+            logger.warning("Unable to parse metadata %s: %s", metadata_path, exc)
+            continue
+        base_dir = metadata_path.parent.resolve()
+        for extrinsic in tree.xpath("//rim:ExtrinsicObject", namespaces=ns):
+            slots = _extract_slot_values(extrinsic, ns)
+            uris = slots.get("URI") or []
+            if not uris:
+                continue
+
+            meta_payload = {
+                "document_created": _normalise_creation_time(_first(slots.get("creationTime"))),
+                "repository_unique_id": _first(slots.get("repositoryUniqueId")),
+                "document_hash": _first(slots.get("hash")),
+                "document_size": _to_int(_first(slots.get("size"))),
+                "author_institution": _extract_author_institution(extrinsic, ns),
+            }
+
+            for uri in uris:
+                doc_path = (base_dir / uri).resolve()
+                # copy to avoid sharing between documents
+                metadata[str(doc_path).lower()] = {
+                    key: value for key, value in meta_payload.items() if value is not None
+                }
+    return metadata
+
+
+def _extract_slot_values(node: etree._Element, ns: dict[str, str]) -> dict[str, list[str]]:
+    values: dict[str, list[str]] = {}
+    for slot in node.xpath("rim:Slot", namespaces=ns):
+        name = slot.get("name")
+        if not name:
+            continue
+        entries = [
+            (value.text or "").strip()
+            for value in slot.xpath("rim:ValueList/rim:Value", namespaces=ns)
+            if value.text and value.text.strip()
+        ]
+        if entries:
+            values[name] = entries
+    return values
+
+
+def _extract_author_institution(node: etree._Element, ns: dict[str, str]) -> Optional[str]:
+    for classification in node.xpath("rim:Classification", namespaces=ns):
+        for slot in classification.xpath("rim:Slot", namespaces=ns):
+            if slot.get("name") != "authorInstitution":
+                continue
+            entries = [
+                (value.text or "").strip()
+                for value in slot.xpath("rim:ValueList/rim:Value", namespaces=ns)
+                if value.text and value.text.strip()
+            ]
+            if entries:
+                return entries[0]
+    return None
+
+
+def _first(values: Optional[list[str]]) -> Optional[str]:
+    if not values:
+        return None
+    return values[0]
+
+
+def _to_int(value: Optional[str]) -> Optional[int]:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return None
+
+
+def _normalise_creation_time(raw: Optional[str]) -> Optional[str]:
+    if not raw:
+        return None
+    try:
+        dt = datetime.strptime(raw, "%Y%m%d%H%M%S")
+    except ValueError:
+        return raw
+    return dt.replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _record_attachment(
+    conn: sqlite3.Connection,
+    *,
+    patient_id: int,
+    data_source_id: int,
+    file_path: Path,
+) -> Optional[int]:
+    """Persist attachment metadata for the raw document."""
+    try:
+        relative_path = _relative_attachment_path(file_path)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("Unable to resolve attachment path for %s: %s", file_path, exc)
+        relative_path = file_path
+
+    mime_type, _ = mimetypes.guess_type(str(file_path))
+    description = f"Raw CCD document ({file_path.name})"
+
+    try:
+        attachment_id = upsert_attachment(
+            conn,
+            patient_id=patient_id,
+            data_source_id=data_source_id,
+            file_path=relative_path,
+            mime_type=mime_type or "application/xml",
+            description=description,
+        )
+    except sqlite3.DatabaseError as exc:
+        logger.warning("Failed to record attachment for %s: %s", file_path, exc)
+        return None
+    return attachment_id
+
+def _relative_attachment_path(file_path: Path) -> Path:
+    """Return a path suitable for storage (relative to repo root when possible)."""
+    try:
+        return file_path.relative_to(Path.cwd())
+    except ValueError:
+        return file_path
 
 
 def _as_record_list(candidate: Any) -> list[dict[str, Any]]:

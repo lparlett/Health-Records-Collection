@@ -10,7 +10,14 @@ CREATE TABLE IF NOT EXISTS data_source (
     ingested_at TEXT NOT NULL,
     file_sha256 TEXT NOT NULL,
     source_archive TEXT,
-    UNIQUE(file_sha256)
+    document_created TEXT,
+    repository_unique_id TEXT,
+    document_hash TEXT,
+    document_size INTEGER,
+    author_institution TEXT,
+    attachment_id INTEGER,
+    UNIQUE(file_sha256),
+    FOREIGN KEY(attachment_id) REFERENCES attachment(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_data_source_ingested_at ON data_source(ingested_at);
@@ -266,13 +273,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_procedure_code_unique ON procedure_code(pr
 CREATE TABLE IF NOT EXISTS attachment (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     patient_id INTEGER NOT NULL,
-    encounter_id INTEGER,
     file_path TEXT,
     mime_type TEXT,
     description TEXT,
     data_source_id INTEGER,
     FOREIGN KEY(patient_id) REFERENCES patient(id) ON DELETE CASCADE,
-    FOREIGN KEY(encounter_id) REFERENCES encounter(id) ON DELETE SET NULL,
     FOREIGN KEY(data_source_id) REFERENCES data_source(id)
 );
 

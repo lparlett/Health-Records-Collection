@@ -62,3 +62,11 @@ def test_schema_includes_data_source_foreign_keys(tmp_path):
         assert (
             ("data_source_id", "data_source") in fk_targets
         ), f"{table} missing FK to data_source"
+
+    cursor.execute("PRAGMA table_info(data_source)")
+    ds_columns = {row[1] for row in cursor.fetchall()}
+    assert "attachment_id" in ds_columns
+
+    cursor.execute("PRAGMA foreign_key_list(data_source)")
+    ds_fk = {(row[3], row[2]) for row in cursor.fetchall()}
+    assert ("attachment_id", "attachment") in ds_fk
