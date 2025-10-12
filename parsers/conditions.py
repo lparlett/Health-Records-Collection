@@ -1,69 +1,87 @@
 from __future__ import annotations
 
-from typing import Dict, List, Optional
+# Purpose: Parse condition/problem list sections from CCD documents.
+# Author: Codex assistant
+# Date: 2025-10-11
+# Related tests: tests/test_parsers.py
+# AI-assisted: Portions of this file were generated with AI assistance.
+
+"""Condition parsing helpers for CCD ingestion."""
+
+from typing import Any, Sequence, cast
 
 from lxml import etree
 
 from .common import extract_provider_name, get_text_by_id
 
-ConditionEntry = Dict[str, object]
+ConditionEntry = dict[str, Any]
 
-
-SECTION_CODES = {
+SECTION_CODES: set[str] = {
     "11450-4",  # Problem List
     "11348-0",  # History of Past illness
     "29299-5",  # Problem list (report)
 }
 
-
-_ALLOWED_OBS_TEMPLATE_IDS = {
+_ALLOWED_OBS_TEMPLATE_IDS: set[str] = {
     "2.16.840.1.113883.10.20.22.4.4",  # Problem Observation
 }
 
 
-def _add_code(codes: List[Dict[str, Optional[str]]], element: Optional[etree._Element]) -> None:
+def _add_code(codes: list[dict[str, str | None]], element: etree._Element | None) -> None:
+    """Append a coded value to the output collection if it is unique.
+
+    Args:
+        codes: List that accumulates code dictionaries.
+        element: XML element containing ``code`` metadata.
+    """
     if element is None:
         return
+
     code = (element.get("code") or "").strip()
     if not code:
         return
-    system = (element.get("codeSystem") or "").strip()
+
+    system = (element.get("codeSystem") or "").strip() or None
     display = (element.get("displayName") or "").strip() or None
-    entry = {
-        "code": code,
-        "system": system or None,
-        "display": display,
-    }
+    entry = {"code": code, "system": system, "display": display}
     if entry not in codes:
         codes.append(entry)
 
 
-def _extract_status(observation: etree._Element, ns: dict[str, str]) -> Optional[str]:
+def _extract_status(observation: etree._Element, ns: dict[str, str]) -> str | None:
+    """Return the textual status label from an observation node."""
     status_value = observation.find(
         "hl7:entryRelationship[@typeCode='REFR']/hl7:observation/hl7:value",
         namespaces=ns,
     )
     if status_value is not None:
-        return (
-            (status_value.get("displayName") or status_value.get("code") or "").strip()
-            or None
-        )
+        label = (status_value.get("displayName") or status_value.get("code") or "").strip()
+        if label:
+            return label
+
     status_code = observation.find("hl7:statusCode", namespaces=ns)
     if status_code is not None:
-        return (status_code.get("code") or "").strip() or None
+        label = (status_code.get("code") or "").strip()
+        if label:
+            return label
     return None
 
 
-def _extract_time_range(node: Optional[etree._Element], ns: dict[str, str]) -> tuple[Optional[str], Optional[str]]:
-    start: Optional[str] = None
-    end: Optional[str] = None
+def _extract_time_range(
+    node: etree._Element | None,
+    ns: dict[str, str],
+) -> tuple[str | None, str | None]:
+    """Extract start/end timestamps from an HL7 effectiveTime construct."""
+    start: str | None = None
+    end: str | None = None
+
     if node is None:
         return start, end
+
     value = node.get("value")
     if value:
-        start = value
-        end = value
-        return start, end
+        return value, value
+
     low = node.find("hl7:low", namespaces=ns)
     high = node.find("hl7:high", namespaces=ns)
     if low is not None and low.get("value"):
@@ -73,29 +91,43 @@ def _extract_time_range(node: Optional[etree._Element], ns: dict[str, str]) -> t
     return start, end
 
 
-def parse_conditions(tree: etree._ElementTree, ns: dict[str, str]) -> List[ConditionEntry]:
-    conditions: List[ConditionEntry] = []
-    sections = [
-        section
-        for section in tree.xpath(".//hl7:section", namespaces=ns)
-        if section.find("hl7:code", namespaces=ns) is not None
-        and section.find("hl7:code", namespaces=ns).get("code") in SECTION_CODES
-    ]
+def parse_conditions(tree: etree._ElementTree, ns: dict[str, str]) -> list[ConditionEntry]:
+    """Parse patient problems and conditions from a CCD document.
 
-    seen_keys: set[tuple] = set()
+    Args:
+        tree: Root XML tree for a CCD document.
+        ns: Namespace dictionary used for XPath lookups.
+
+    Returns:
+        list[ConditionEntry]: Normalised condition entries appropriate for persistence.
+    """
+    conditions: list[ConditionEntry] = []
+    section_nodes = cast(Sequence[Any], tree.xpath(".//hl7:section", namespaces=ns))
+    sections: list[etree._Element] = []
+    for section in section_nodes:
+        if not isinstance(section, etree._Element):
+            continue
+        code_el = section.find("hl7:code", namespaces=ns)
+        if code_el is not None and code_el.get("code") in SECTION_CODES:
+            sections.append(section)
+
+    seen_keys: set[tuple[str | None, str | None, str | None]] = set()
 
     for section in sections:
         for entry in section.findall("hl7:entry", namespaces=ns):
             observation = entry.find(".//hl7:observation", namespaces=ns)
             if observation is None:
                 continue
+
             template_ids = {
-                tid.get("root") for tid in observation.findall("hl7:templateId", namespaces=ns)
+                template_id.get("root")
+                for template_id in observation.findall("hl7:templateId", namespaces=ns)
+                if isinstance(template_id, etree._Element)
             }
             if not (_ALLOWED_OBS_TEMPLATE_IDS & template_ids):
                 continue
 
-            notes_parts: List[str] = []
+            notes_parts: list[str] = []
             text_ref = observation.find("hl7:text/hl7:reference", namespaces=ns)
             obs_text = None
             if text_ref is not None and text_ref.get("value"):
@@ -104,7 +136,7 @@ def parse_conditions(tree: etree._ElementTree, ns: dict[str, str]) -> List[Condi
                     notes_parts.append(obs_text)
 
             value_el = observation.find("hl7:value", namespaces=ns)
-            codes: List[Dict[str, Optional[str]]] = []
+            codes: list[dict[str, str | None]] = []
             _add_code(codes, observation.find("hl7:code", namespaces=ns))
             _add_code(codes, value_el)
             if value_el is not None:
@@ -112,12 +144,10 @@ def parse_conditions(tree: etree._ElementTree, ns: dict[str, str]) -> List[Condi
                     _add_code(codes, translation)
 
             status = _extract_status(observation, ns)
-
             start, end = _extract_time_range(
                 observation.find("hl7:effectiveTime", namespaces=ns), ns
             )
 
-            # capture concern act times if present
             concern_act = entry.find("hl7:act", namespaces=ns)
             if concern_act is not None:
                 concern_start, concern_end = _extract_time_range(
@@ -137,7 +167,7 @@ def parse_conditions(tree: etree._ElementTree, ns: dict[str, str]) -> List[Condi
             author_time_el = observation.find("hl7:author/hl7:time", namespaces=ns)
             author_time = author_time_el.get("value") if author_time_el is not None else None
 
-            encounter_el = entry.find('.//hl7:encounter', namespaces=ns)
+            encounter_el = entry.find(".//hl7:encounter", namespaces=ns)
             encounter_source_id = None
             encounter_start = None
             encounter_end = None
@@ -155,15 +185,17 @@ def parse_conditions(tree: etree._ElementTree, ns: dict[str, str]) -> List[Condi
 
             name = obs_text
             if not name and value_el is not None:
-                name = (
-                    (value_el.get("displayName") or value_el.get("code") or "").strip()
-                    or None
-                )
+                name = (value_el.get("displayName") or value_el.get("code") or "").strip() or None
             if not name and codes:
                 name = codes[0].get("display") or codes[0].get("code")
 
-            # collect additional note references within act
-            for ref in entry.xpath(".//hl7:reference[@value]", namespaces=ns):
+            reference_nodes = cast(
+                Sequence[Any],
+                entry.xpath(".//hl7:reference[@value]", namespaces=ns),
+            )
+            for ref in reference_nodes:
+                if not isinstance(ref, etree._Element):
+                    continue
                 note_text = get_text_by_id(tree, ns, ref.get("value"))
                 if note_text and note_text not in notes_parts:
                     notes_parts.append(note_text)

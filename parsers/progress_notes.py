@@ -1,8 +1,15 @@
+# Purpose: Parse progress note narratives from CCD documents.
+# Author: Codex assistant
+# Date: 2025-10-11
+# Related tests: tests/test_parsers.py
+# AI-assisted: Portions of this file were generated with AI assistance.
+
 """Progress note parsing helpers."""
+
 from __future__ import annotations
 
 import re
-from typing import List, Optional, Tuple
+from typing import Any, Optional, Sequence, cast
 
 from lxml import etree
 
@@ -30,20 +37,56 @@ _TIME_PATTERN = re.compile(r"(\d{1,2}):(\d{2})\s*([AP]M)", re.IGNORECASE)
 _TZ_PATTERN = re.compile(r"\b([A-Z]{2,4})$")
 
 
-def parse_progress_notes(tree: etree._ElementTree, ns: dict[str, str]) -> List[dict[str, Optional[str]]]:
-    """Extract structured progress notes from CCD sections."""
-    notes: List[dict[str, Optional[str]]] = []
-    for section in tree.xpath(".//hl7:section", namespaces=ns):
+def _iter_elements(value: object) -> list[etree._Element]:
+    """Convert mixed XPath outputs into a list of XML elements."""
+    elements: list[etree._Element] = []
+    if isinstance(value, etree._Element):
+        elements.append(value)
+    elif isinstance(value, Sequence):
+        for item in value:
+            if isinstance(item, etree._Element):
+                elements.append(item)
+    return elements
+
+
+def _normalize_text(value: object) -> str | None:
+    """Return a trimmed string representation of XML or scalar data."""
+    if value is None:
+        return None
+    if isinstance(value, bytes):
+        text = value.decode("utf-8", errors="ignore")
+    elif isinstance(value, str):
+        text = value
+    else:
+        text = str(value)
+    text = text.strip()
+    return text or None
+
+
+def parse_progress_notes(tree: etree._ElementTree, ns: dict[str, str]) -> list[dict[str, Optional[str]]]:
+    """Extract structured progress notes from CCD sections.
+
+    Args:
+        tree: Root XML tree representing the CCD document.
+        ns: Namespace dictionary used for XPath lookups.
+
+    Returns:
+        list[dict[str, Optional[str]]]: Normalised progress note entries.
+    """
+    notes: list[dict[str, Optional[str]]] = []
+    section_nodes = cast(Sequence[Any], tree.xpath(".//hl7:section", namespaces=ns))
+    for section in _iter_elements(section_nodes):
         title_el = section.find("hl7:title", namespaces=ns)
-        title = (title_el.text or "").strip().lower() if title_el is not None else ""
+        title = (_normalize_text(title_el.text) or "").lower() if title_el is not None else ""
         if "progress note" not in title:
             continue
 
-        for item in section.xpath("hl7:text/hl7:list/hl7:item", namespaces=ns):
+        item_nodes = section.xpath("hl7:text/hl7:list/hl7:item", namespaces=ns)
+        for item in _iter_elements(item_nodes):
             caption_el = item.find("hl7:caption", namespaces=ns)
             caption_text = None
             if caption_el is not None:
-                caption_text = " ".join(caption_el.xpath("string()" ).split()) or None
+                caption_text = _normalize_text(caption_el.xpath("string()"))
 
             provider_name, note_iso_dt, encounter_hint = _parse_caption(caption_text)
 
@@ -70,7 +113,7 @@ def parse_progress_notes(tree: etree._ElementTree, ns: dict[str, str]) -> List[d
     return notes
 
 
-def _parse_caption(caption: Optional[str]) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+def _parse_caption(caption: Optional[str]) -> tuple[Optional[str], Optional[str], Optional[str]]:
     """Parse provider and timestamp information from a note caption."""
     if not caption:
         return None, None, None
@@ -129,10 +172,11 @@ def _parse_caption(caption: Optional[str]) -> Tuple[Optional[str], Optional[str]
 
 
 def _text_with_breaks(node: etree._Element) -> Optional[str]:
-    parts: List[str] = []
+    """Traverse an HTML-ish node, preserving explicit line breaks."""
+    parts: list[str] = []
 
     def walk(elem: etree._Element) -> None:
-        text_value = elem.text or ""
+        text_value = _normalize_text(elem.text)
         if text_value:
             parts.append(text_value)
         for child in elem:
@@ -140,7 +184,7 @@ def _text_with_breaks(node: etree._Element) -> Optional[str]:
                 parts.append("\n")
             else:
                 walk(child)
-            tail_value = child.tail or ""
+            tail_value = _normalize_text(child.tail)
             if tail_value:
                 parts.append(tail_value)
 
@@ -161,6 +205,7 @@ def _text_with_breaks(node: etree._Element) -> Optional[str]:
 
 
 def _local_name(elem: etree._Element) -> str:
+    """Return the local tag name sans namespace."""
     tag = elem.tag
     if isinstance(tag, str) and "}" in tag:
         return tag.split("}", 1)[1]

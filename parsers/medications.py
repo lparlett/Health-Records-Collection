@@ -1,3 +1,9 @@
+# Purpose: Parse CCD medication sections into structured administration records.
+# Author: Codex assistant
+# Date: 2025-10-11
+# Related tests: tests/test_parsers.py
+# AI-assisted: Portions of this file were generated with AI assistance.
+
 """Medication extraction utilities for CCD documents.
 
 This module provides functions to parse and extract medication administration details
@@ -7,35 +13,40 @@ statuses, notes, providers, and RxNorm codes.
 """
 
 from __future__ import annotations
-from typing import List, Optional, Set, Tuple, TypedDict
+
+from typing import TypedDict
+
 from lxml import etree
+
 from .common import XSI_NS, extract_provider_name, get_text_by_id
 
 
-MedicationKey = Tuple[str, str, str, str, str]
+MedicationKey = tuple[str, str, str, str, str]
 
 
 class MedicationEntry(TypedDict, total=False):
-    name: Optional[str]
-    rxnorm: Optional[str]
-    dose: Optional[str]
-    route: Optional[str]
-    frequency: Optional[str]
-    start: Optional[str]
-    end: Optional[str]
-    status: Optional[str]
-    notes: Optional[str]
-    provider: Optional[str]
-    author_time: Optional[str]
-    source_id: Optional[str]
-    encounter_source_id: Optional[str]
-    encounter_start: Optional[str]
-    encounter_end: Optional[str]
-    patient_id: Optional[str]
-    start_bucket: Optional[str]
-    end_bucket: Optional[str]
+    name: str | None
+    rxnorm: str | None
+    dose: str | None
+    route: str | None
+    frequency: str | None
+    start: str | None
+    end: str | None
+    status: str | None
+    notes: str | None
+    provider: str | None
+    author_time: str | None
+    source_id: str | None
+    encounter_source_id: str | None
+    encounter_start: str | None
+    encounter_end: str | None
+    patient_id: str | None
+    start_bucket: str | None
+    end_bucket: str | None
 
-def _bucket_date(value: Optional[str]) -> Optional[str]:
+
+def _bucket_date(value: str | None) -> str | None:
+    """Normalise a timestamp to its nearest day-resolution bucket."""
     if not value:
         return None
     digits = ''.join(ch for ch in value if ch.isdigit())
@@ -46,15 +57,14 @@ def _bucket_date(value: Optional[str]) -> Optional[str]:
 
 
 def _extract_encounter_details(
-    encounter_el: Optional[etree._Element],
+    encounter_el: etree._Element | None,
     ns: dict[str, str],
-    *,
-    synthetic_prefix: Optional[str] = None,
-) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+) -> tuple[str | None, str | None, str | None]:
+    """Extract encounter identifiers and times for a medication reference."""
     if encounter_el is None:
         return None, None, None
 
-    encounter_source_id: Optional[str] = None
+    encounter_source_id: str | None = None
     for id_el in encounter_el.findall("hl7:id", namespaces=ns):
         extension = (id_el.get("extension") or "").strip()
         root = (id_el.get("root") or "").strip()
@@ -65,8 +75,8 @@ def _extract_encounter_details(
             encounter_source_id = root
             break
 
-    encounter_start: Optional[str] = None
-    encounter_end: Optional[str] = None
+    encounter_start: str | None = None
+    encounter_end: str | None = None
     eff_el = encounter_el.find("hl7:effectiveTime", namespaces=ns)
     if eff_el is not None:
         value = (eff_el.get("value") or "").strip()
@@ -92,8 +102,9 @@ def _extract_encounter_details(
 
 def _find_medication_encounter(
     med_el: etree._Element, ns: dict[str, str]
-) -> Optional[etree._Element]:
-    candidates: List[Tuple[str, etree._Element]] = []
+) -> etree._Element | None:
+    """Locate a related encounter element for the current medication entry."""
+    candidates: list[tuple[str, etree._Element]] = []
     for entry_rel in med_el.findall("hl7:entryRelationship", namespaces=ns):
         type_code = (entry_rel.get("typeCode") or "").strip().upper()
         raw_encounters = entry_rel.xpath(
@@ -119,7 +130,8 @@ def _find_medication_encounter(
     return med_el.find(".//hl7:externalEncounter", namespaces=ns)
 
 
-def _extract_patient_id(tree: etree._ElementTree, ns: dict[str, str]) -> Optional[str]:
+def _extract_patient_id(tree: etree._ElementTree, ns: dict[str, str]) -> str | None:
+    """Return the patient identifier from the CCD, if provided."""
     patient_ids = tree.xpath(
         ".//hl7:recordTarget/hl7:patientRole/hl7:id",
         namespaces=ns,
@@ -139,8 +151,18 @@ def _extract_patient_id(tree: etree._ElementTree, ns: dict[str, str]) -> Optiona
 def parse_medications(
     tree: etree._ElementTree,
     ns: dict[str, str],
-    existing_keys: Optional[Set[MedicationKey]] = None,
-) -> List[MedicationEntry]:
+    existing_keys: set[MedicationKey] | None = None,
+) -> list[MedicationEntry]:
+    """Parse medication administrations documented in a CCD.
+
+    Args:
+        tree: Root XML tree for the CCD document.
+        ns: Namespace dictionary used for XPath lookups.
+        existing_keys: Optional registry of deduplication keys to skip.
+
+    Returns:
+        list[MedicationEntry]: Medication entries ready for persistence.
+    """
     root = tree.getroot() if isinstance(tree, etree._ElementTree) else None
     encompassing_encounter = None
     service_event = None
@@ -156,7 +178,7 @@ def parse_medications(
     if encompassing_encounter is None and service_event is None:
         return []
 
-    medications: List[MedicationEntry] = []
+    medications: list[MedicationEntry] = []
     raw_med_nodes = tree.xpath(
         ".//hl7:substanceAdministration[hl7:templateId[@root='2.16.840.1.113883.10.20.22.4.16']]",
         namespaces=ns,
@@ -168,7 +190,6 @@ def parse_medications(
         "hl7:componentOf/hl7:encompassingEncounter",
         namespaces=ns,
     )
-    doc_prefix = "doc_encounter" if doc_encounter_el is not None else None
     (
         doc_encounter_id,
         doc_encounter_start,
@@ -176,18 +197,17 @@ def parse_medications(
     ) = _extract_encounter_details(
         doc_encounter_el,
         ns,
-        synthetic_prefix=doc_prefix,
     )
 
     patient_id = _extract_patient_id(tree, ns) or "unknown_patient"
 
-    seen_entries: Set[MedicationKey] = set()
-    registry = existing_keys if existing_keys is not None else None
+    seen_entries: set[MedicationKey] = set()
+    registry = existing_keys
 
     for med in [node for node in raw_med_nodes if isinstance(node, etree._Element)]:
         code_el = med.find(".//hl7:manufacturedMaterial/hl7:code", namespaces=ns)
-        med_name: Optional[str] = None
-        rxnorm_code: Optional[str] = None
+        med_name: str | None = None
+        rxnorm_code: str | None = None
         if code_el is not None:
             med_name = (code_el.get("displayName") or "").strip() or None
             rxnorm_code = (code_el.get("code") or "").strip() or None
@@ -196,7 +216,7 @@ def parse_medications(
                 if ref is not None and ref.get("value"):
                     med_name = get_text_by_id(tree, ns, ref.get("value"))
 
-        sig_text: Optional[str] = None
+        sig_text: str | None = None
         sig_ref = med.find("hl7:text/hl7:reference", namespaces=ns)
         if sig_ref is not None and sig_ref.get("value"):
             sig_text = get_text_by_id(tree, ns, sig_ref.get("value"))
@@ -220,15 +240,9 @@ def parse_medications(
         )
 
         med_encounter_el = _find_medication_encounter(med, ns)
-        med_prefix = "encounter" if med_encounter_el is not None else None
-        (
-            encounter_source_id,
-            encounter_start,
-            encounter_end,
-        ) = _extract_encounter_details(
+        encounter_source_id, encounter_start, encounter_end = _extract_encounter_details(
             med_encounter_el,
             ns,
-            synthetic_prefix=med_prefix,
         )
 
         if not encounter_source_id and doc_encounter_id:
@@ -246,7 +260,7 @@ def parse_medications(
         end_bucket = _bucket_date(end)
 
         route_el = med.find("hl7:routeCode", namespaces=ns)
-        route: Optional[str] = None
+        route: str | None = None
         if route_el is not None:
             route = (
                 route_el.get("displayName")
@@ -258,7 +272,7 @@ def parse_medications(
                     route_el.findtext("hl7:originalText", namespaces=ns) or ""
                 ).strip() or None
 
-        dose: Optional[str] = None
+        dose: str | None = None
         dose_el = med.find("hl7:doseQuantity", namespaces=ns)
         if dose_el is not None:
             dose_value = (dose_el.get("value") or "").strip()
@@ -266,7 +280,7 @@ def parse_medications(
             if dose_value or dose_unit:
                 dose = " ".join(part for part in (dose_value, dose_unit) if part)
 
-        frequency: Optional[str] = None
+        frequency: str | None = None
         for eff in med.findall("hl7:effectiveTime", namespaces=ns):
             xsi_type = (eff.get(f"{{{XSI_NS}}}type") or "").upper()
             if xsi_type == "PIVL_TS":
@@ -286,7 +300,7 @@ def parse_medications(
                         frequency = freq_text.strip()
                 break
 
-        status: Optional[str] = None
+        status: str | None = None
         raw_status_nodes = med.xpath(
             "hl7:entryRelationship/hl7:observation[hl7:code[@code='33999-4']]/hl7:value",
             namespaces=ns,

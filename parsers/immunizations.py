@@ -1,20 +1,30 @@
 from __future__ import annotations
 
-from typing import Dict, Iterable, List, Optional
+# Purpose: Parse immunisation administrations from CCD documents.
+# Author: Codex assistant
+# Date: 2025-10-11
+# Related tests: tests/test_parsers.py
+# AI-assisted: Portions of this file were generated with AI assistance.
+
+"""Immunisation parsing helpers for CCD ingestion."""
+
+from collections.abc import Iterable
+from typing import Any
 
 from lxml import etree
 
 from .common import get_text_by_id
 
-ImmunizationEntry = Dict[str, Optional[str]]
+ImmunizationEntry = dict[str, Any]
 
 CVX_CODE_SYSTEMS: set[str] = {
     "2.16.840.1.113883.12.292",  # CVX vaccination codes
-    "2.16.840.1.113883.6.59",    # legacy SNOMED/CVX mapping (occasionally used)
+    "2.16.840.1.113883.6.59",  # Legacy SNOMED/CVX mapping (occasionally used)
 }
 
 
-def _clean_text(value: Optional[str]) -> Optional[str]:
+def _clean_text(value: str | None) -> str | None:
+    """Trim and normalise whitespace in a narrative string."""
     if value is None:
         return None
     cleaned = value.strip()
@@ -23,7 +33,8 @@ def _clean_text(value: Optional[str]) -> Optional[str]:
     return " ".join(cleaned.split())
 
 
-def _extract_time(node: Optional[etree._Element], ns: dict[str, str]) -> Optional[str]:
+def _extract_time(node: etree._Element | None, ns: dict[str, str]) -> str | None:
+    """Extract a timestamp value from an ``effectiveTime`` element."""
     if node is None:
         return None
     value = node.get("value")
@@ -38,8 +49,9 @@ def _extract_time(node: Optional[etree._Element], ns: dict[str, str]) -> Optiona
     return None
 
 
-def _collect_cvx_codes(code_element: Optional[etree._Element], ns: dict[str, str]) -> List[str]:
-    codes: List[str] = []
+def _collect_cvx_codes(code_element: etree._Element | None, ns: dict[str, str]) -> list[str]:
+    """Collect CVX identifiers from a code element and its translations."""
+    codes: list[str] = []
     if code_element is None:
         return codes
 
@@ -50,33 +62,32 @@ def _collect_cvx_codes(code_element: Optional[etree._Element], ns: dict[str, str
             codes.append(code_value)
         translations = element.findall("hl7:translation", namespaces=ns)
         for translation in translations:
-            if isinstance(translation, etree._Element):
-                handle_element(translation)
+            handle_element(translation)
 
     handle_element(code_element)
     return codes
 
 
-
-
 def _get_reference_text(
     tree: etree._ElementTree,
     ns: dict[str, str],
-    parent: Optional[etree._Element],
+    parent: etree._Element | None,
     xpath: str,
-) -> Optional[str]:
+) -> str | None:
+    """Resolve a referenced narrative string relative to the provided parent."""
     if parent is None:
         return None
     ref = parent.find(xpath, namespaces=ns)
     if ref is None:
         return None
-    ref_value = ref.get('value')
+    ref_value = ref.get("value")
     if not ref_value:
         return None
     return _clean_text(get_text_by_id(tree, ns, ref_value))
 
 
-def _ensure_element_list(value: object) -> List[etree._Element]:
+def _ensure_element_list(value: object) -> list[etree._Element]:
+    """Coerce XPath results into a list of XML elements."""
     if isinstance(value, list):
         return [node for node in value if isinstance(node, etree._Element)]
     if isinstance(value, etree._Element):
@@ -84,8 +95,9 @@ def _ensure_element_list(value: object) -> List[etree._Element]:
     return []
 
 
-def _unique_non_empty(values: Iterable[Optional[str]]) -> List[str]:
-    unique: List[str] = []
+def _unique_non_empty(values: Iterable[str | None]) -> list[str]:
+    """Return unique, cleaned string values while preserving order."""
+    unique: list[str] = []
     seen: set[str] = set()
     for value in values:
         cleaned = _clean_text(value)
@@ -95,8 +107,17 @@ def _unique_non_empty(values: Iterable[Optional[str]]) -> List[str]:
     return unique
 
 
-def parse_immunizations(tree: etree._ElementTree, ns: dict[str, str]) -> List[ImmunizationEntry]:
-    immunizations: List[ImmunizationEntry] = []
+def parse_immunizations(tree: etree._ElementTree, ns: dict[str, str]) -> list[ImmunizationEntry]:
+    """Parse administered immunisations from a CCD document.
+
+    Args:
+        tree: Root XML tree representing the CCD.
+        ns: Namespace dictionary used for XPath lookups.
+
+    Returns:
+        list[ImmunizationEntry]: Normalised vaccine administration entries.
+    """
+    immunizations: list[ImmunizationEntry] = []
     section_nodes_raw = tree.xpath(
         ".//hl7:section[hl7:code[@code='11369-6']]",
         namespaces=ns,
@@ -126,7 +147,7 @@ def parse_immunizations(tree: etree._ElementTree, ns: dict[str, str]) -> List[Im
             "hl7:consumable/hl7:manufacturedProduct/hl7:manufacturedMaterial/hl7:name",
             namespaces=ns,
         )
-        product_name: Optional[str] = None
+        product_name: str | None = None
         if material_name_el is not None:
             raw_product = material_name_el.xpath("string()")
             if not isinstance(raw_product, str):
@@ -144,7 +165,7 @@ def parse_immunizations(tree: etree._ElementTree, ns: dict[str, str]) -> List[Im
             _clean_text(material_code_el.get("code")) if material_code_el is not None else None,
         ]
 
-        vaccine_name: Optional[str] = None
+        vaccine_name: str | None = None
         for candidate in name_candidates:
             if candidate:
                 vaccine_name = candidate
@@ -160,7 +181,7 @@ def parse_immunizations(tree: etree._ElementTree, ns: dict[str, str]) -> List[Im
         if material_code_el is not None:
             cvx_codes.extend(_collect_cvx_codes(material_code_el, ns))
 
-        entry = {
+        entry: ImmunizationEntry = {
             "vaccine_name": vaccine_name,
             "date": effective_time,
             "status": status,

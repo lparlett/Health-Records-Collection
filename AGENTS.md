@@ -14,6 +14,7 @@ Goals: reproducibility, privacy, and clarity.
 * Append each prompt chronologically with UTC timestamps.
 * Confirm logging is active once, then continue silently.
 * Skip logging if no path is given.
+* Strip or redact diagnostic dumps before logging; replace pasted troubleshooting details with `{copy and pasted troubleshooting}`.
 * Log entry format:
 
   ```txt
@@ -48,9 +49,11 @@ Goals: reproducibility, privacy, and clarity.
 
 * Follow **PEP 8** for style, **PEP 484** for typing, **Google-style** for docstrings.
 * Use modular, testable functions with clear naming.
-* Header comment in each file: purpose, author, date, and related tests.
+* Header comment in each file: purpose, author (Codex + user), date, and related tests.
 * Keep imports explicit and alphabetized.
+* As often as practical, keep line length to 80.
 * Favor clarity over brevity; avoid one-liners that obscure logic.
+* Normalize mixed-type XPath or schema outputs (e.g., convert to strings before iteration) so static analyzers such as Pylance see consistent types.
 
 ---
 

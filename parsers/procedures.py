@@ -1,93 +1,73 @@
-"""Parses procedure entries from a CCDA document.
+from __future__ import annotations
 
-This script extracts procedure information such as codes, status, date,
-notes, provider, encounter source ID, and author time from a CCDA XML document.
-It defines data structures to represent procedure codes and entries, and
-provides a function to parse the procedures section of the document. 
+# Purpose: Parse procedure sections from CCD documents into structured records.
+# Author: Codex assistant
+# Date: 2025-10-11
+# Related tests: tests/test_parsers.py
+# AI-assisted: Portions of this file were generated with AI assistance.
 
-"""
-from pathlib import Path
-from typing import List, Optional, TypedDict
+"""Procedure parsing helpers for CCD ingestion."""
+
+from typing import TypedDict
 
 from lxml import etree
 
 from .common import extract_provider_name, get_text_by_id
 
+
 class ProcedureCode(TypedDict):
-    """A class to represent a procedure code.
-    
-    Attributes:
-        code (str): The procedure code.
-        system (Optional[str]): The coding system (e.g., SNOMED, ICD-10).
-        display (Optional[str]): The human-readable description of the code.
-    """
+    """Represents a coded procedure descriptor."""
+
     code: str
-    system: Optional[str]
-    display: Optional[str]
+    system: str | None
+    display: str | None
 
 
 class ProcedureEntry(TypedDict, total=False):
-    """A class to represent a procedure entry.
-    
-    Attributes:
-        name (str): The name or description of the procedure.
-        codes (List[ProcedureCode]): A list of associated procedure codes.
-        status (Optional[str]): The status of the procedure (e.g., completed, active).
-        date (Optional[str]): The date when the procedure was performed.
-        notes (Optional[str]): Additional notes or comments about the procedure.
-        provider (Optional[str]): The name of the provider who performed the procedure.
-        encounter_source_id (Optional[str]): The source ID of the encounter related to the procedure.
-        author_time (Optional[str]): The time when the procedure was documented.
-    """
-    name: str
-    codes: List[ProcedureCode]
-    status: Optional[str]
-    date: Optional[str]
-    notes: Optional[str]
-    provider: Optional[str]
-    encounter_source_id: Optional[str]
-    author_time: Optional[str]
+    """Represents a normalised procedure entry."""
 
-PROCEDURE_SECTION_CODES = {
+    name: str
+    codes: list[ProcedureCode]
+    status: str | None
+    date: str | None
+    notes: str | None
+    provider: str | None
+    encounter_source_id: str | None
+    author_time: str | None
+
+
+PROCEDURE_SECTION_CODES: set[str] = {
     "47519-4",
     "62387-6",
     "29554-3",
 }
 
-PROCEDURE_TEMPLATE_IDS = {
+PROCEDURE_TEMPLATE_IDS: set[str] = {
     "2.16.840.1.113883.10.20.22.4.14",
     "2.16.840.1.113883.10.20.22.4.13",
     "2.16.840.1.113883.10.20.22.4.12",
 }
 
 
-def _collect_codes(code_element: Optional[etree._Element], 
-                   ns: dict[str, str]) -> List[ProcedureCode]:
-    """Collects codes from a code element and its translations.
-    
-    Args:
-        code_element (Optional[etree._Element]): The XML element 
-                                                    containing the code.
-        ns (dict[str, str]): The namespace dictionary for XML parsing. 
-    Returns:
-        List[ProcedureCode]: A list of collected procedure codes.
-    """
-    codes: List[ProcedureCode] = []
-   
+def _collect_codes(code_element: etree._Element | None, ns: dict[str, str]) -> list[ProcedureCode]:
+    """Collect codes from a code element and its translations."""
+    codes: list[ProcedureCode] = []
     if code_element is None:
         return codes
 
-    def add(el: Optional[etree._Element]) -> None:
-        if el is None:
+    def add(element: etree._Element | None) -> None:
+        if element is None:
             return
-        code_val = (el.get("code") or "").strip()
+        code_val = (element.get("code") or "").strip()
         if not code_val:
             return
-        system = (el.get("codeSystem") or "").strip() or None
-        display = (el.get("displayName") or "").strip() or None
-        entry: ProcedureCode = {"code": code_val, 
-                                "system": system, 
-                                "display": display}
+        system = (element.get("codeSystem") or "").strip() or None
+        display = (element.get("displayName") or "").strip() or None
+        entry: ProcedureCode = {
+            "code": code_val,
+            "system": system,
+            "display": display,
+        }
         if entry not in codes:
             codes.append(entry)
 
@@ -97,53 +77,48 @@ def _collect_codes(code_element: Optional[etree._Element],
     return codes
 
 
-def parse_procedures(tree: etree._ElementTree, 
-                     ns: dict[str, str]) -> List[ProcedureEntry]:
-    """Parses procedure entries from a CCDA document.
-    
+def parse_procedures(tree: etree._ElementTree, ns: dict[str, str]) -> list[ProcedureEntry]:
+    """Parse procedure entries from a CCD document.
+
     Args:
-        tree (etree._ElementTree): The XML tree of the CCDA document.
-        ns (dict[str, str]): The namespace dictionary for XML parsing.
+        tree: Root XML tree representing the CCD document.
+        ns: Namespace dictionary used for XPath lookups.
+
     Returns:
-        List[ProcedureEntry]: A list of parsed procedure entries.
+        list[ProcedureEntry]: Parsed procedure entries.
     """
-    procedures: List[ProcedureEntry] = []
+    procedures: list[ProcedureEntry] = []
 
     raw_sections = tree.xpath(".//hl7:section", namespaces=ns)
     if not isinstance(raw_sections, list):
         return procedures
 
-    for section in [sec 
-                    for sec in raw_sections 
-                    if isinstance(sec, etree._Element)
-                    ]:
+    for section in [sec for sec in raw_sections if isinstance(sec, etree._Element)]:
         code_el = section.find("hl7:code", namespaces=ns)
         section_code = code_el.get("code") if code_el is not None else None
         title = section.findtext("hl7:title", namespaces=ns)
-        if not ((section_code and section_code in PROCEDURE_SECTION_CODES) or 
-                (title and "procedure" in title.lower())):
+        if not (
+            (section_code and section_code in PROCEDURE_SECTION_CODES)
+            or (title and "procedure" in title.lower())
+        ):
             continue
 
         for entry in section.findall("hl7:entry", namespaces=ns):
             raw_candidates = entry.xpath(
-                "hl7:procedure | hl7:act | hl7:observation", 
-                namespaces=ns
-                )
+                "hl7:procedure | hl7:act | hl7:observation",
+                namespaces=ns,
+            )
             if not isinstance(raw_candidates, list):
                 continue
-            proc_candidates: List[etree._Element] = [
-                el 
-                for el in raw_candidates 
-                if isinstance(el, etree._Element)
-                ]
+            proc_candidates = [el for el in raw_candidates if isinstance(el, etree._Element)]
             if not proc_candidates:
                 continue
             proc = proc_candidates[0]
 
-            template_ids = {tpl.get("root") for tpl in 
-                            proc.findall("hl7:templateId", namespaces=ns)}
-            if PROCEDURE_TEMPLATE_IDS and not (template_ids & 
-                                               PROCEDURE_TEMPLATE_IDS):
+            template_ids = {
+                tpl.get("root") for tpl in proc.findall("hl7:templateId", namespaces=ns)
+            }
+            if PROCEDURE_TEMPLATE_IDS and not (template_ids & PROCEDURE_TEMPLATE_IDS):
                 if section_code not in PROCEDURE_SECTION_CODES:
                     continue
 
@@ -153,8 +128,7 @@ def parse_procedures(tree: etree._ElementTree,
             if code_el is not None:
                 display = code_el.get("displayName") or None
                 if not display:
-                    ref = code_el.find("hl7:originalText/hl7:reference", 
-                                       namespaces=ns)
+                    ref = code_el.find("hl7:originalText/hl7:reference", namespaces=ns)
                     if ref is not None and ref.get("value"):
                         display = get_text_by_id(tree, ns, ref.get("value"))
 
@@ -189,16 +163,11 @@ def parse_procedures(tree: etree._ElementTree,
             if encounter_el is not None:
                 id_el = encounter_el.find("hl7:id", namespaces=ns)
                 if id_el is not None:
-                    encounter_source_id = (
-                        id_el.get("extension") or id_el.get("root")
-                    )
+                    encounter_source_id = id_el.get("extension") or id_el.get("root")
 
             author_time_el = proc.find("hl7:author/hl7:time", namespaces=ns)
-            author_time = (
-                author_time_el.get("value")
-                if author_time_el is not None
-                else None
-            )
+            author_time = author_time_el.get("value") if author_time_el is not None else None
+
             name = (
                 display
                 or (codes[0]["display"] if codes else None)

@@ -1,3 +1,9 @@
+# Purpose: Extract patient-level demographics from CCD documents.
+# Author: Codex assistant
+# Date: 2025-10-11
+# Related tests: tests/test_parsers.py
+# AI-assisted: Portions of this file were generated with AI assistance.
+
 """Utilities for extracting patient demographics from CCD documents.
 
 References
@@ -15,28 +21,27 @@ References
 - HL7 Version 3 Standard: Vocabulary Domains
   https://www.hl7.org/implement/standards/product_brief.cfm?product_id=186
 - HL7 Version 3 Standard: Code Systems
-  https://www.hl7.org/implement/standards/product_brief.cfm?product _id=187
+  https://www.hl7.org/implement/standards/product_brief.cfm?product_id=187
 - HL7 Version 3 Standard: Identifier Types
   https://www.hl7.org/implement/standards/product_brief.cfm?product_id=188
 """
 
 from __future__ import annotations
 
-from typing import Dict, Optional
-
 from lxml import etree
 
-PatientData = Dict[str, Optional[str]]
+PatientData = dict[str, str | None]
 
 
 def parse_patient(tree: etree._ElementTree, ns: dict[str, str]) -> PatientData:
     """Return core demographics for the patient described in a CCD.
 
     Args:
-        tree (etree._ElementTree): The XML tree of the CCD document.
-        ns (dict[str, str]): The namespace dictionary for XML parsing.      
+        tree: The XML tree of the CCD document.
+        ns: Namespace dictionary for XML parsing.
+
     Returns:
-        PatientData: A dictionary containing patient demographics.  
+        PatientData: A dictionary containing patient demographics.
     """
     given = tree.findtext(".//hl7:patient//hl7:given", namespaces=ns)
     family = tree.findtext(".//hl7:patient//hl7:family", namespaces=ns)

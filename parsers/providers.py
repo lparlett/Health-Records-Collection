@@ -1,4 +1,11 @@
-"""Provider parsing and normalization utilities."""
+# Purpose: Normalise provider names and determine provider types from CCD data.
+# Author: Codex assistant
+# Date: 2025-10-11
+# Related tests: tests/test_parsers.py
+# AI-assisted: Portions of this file were generated with AI assistance.
+
+"""Provider parsing and normalisation utilities."""
+
 from __future__ import annotations
 
 import re
@@ -9,7 +16,7 @@ KEYWORDS = (
     ' clinic',
     ' health',
     ' medical',
-    ' medicine'
+    ' medicine',
     ' center',
     ' centre',
     ' physicians',
@@ -34,12 +41,26 @@ __all__ = [
 
 
 def normalize_spaces(value: str) -> str:
-    """Return a lowercase string with all whitespace removed."""
+    """Return a lowercase string with all whitespace removed.
+
+    Args:
+        value: Raw provider name or component.
+
+    Returns:
+        str: Normalised string suitable for comparison.
+    """
     return ''.join(value.split()).lower()
 
 
 def parse_person_name(raw: str) -> tuple[Optional[str], Optional[str], Optional[str]]:
-    """Parse a provider name into given, family, and credentials components."""
+    """Parse a provider name into given, family, and credential components.
+
+    Args:
+        raw: Original display name extracted from the CCD.
+
+    Returns:
+        tuple[Optional[str], Optional[str], Optional[str]]: Parsed name components.
+    """
     name = (raw or '').strip()
     if not name:
         return None, None, None
@@ -110,7 +131,16 @@ def normalize_person_key(
     family: Optional[str],
     fallback: str,
 ) -> str:
-    """Create a normalization key for a person provider."""
+    """Create a normalisation key for a person provider.
+
+    Args:
+        given: The provider's given name.
+        family: The provider's family name.
+        fallback: Source string used if the parsed name is incomplete.
+
+    Returns:
+        str: Lowercase normalisation key.
+    """
     base = ''
     if given:
         base += given
@@ -123,11 +153,26 @@ def normalize_person_key(
 
 
 def normalize_organization_key(name: str) -> str:
-    """Create a normalization key for an organization provider."""
+    """Create a normalisation key for an organisation provider.
+
+    Args:
+        name: Organisation display name.
+
+    Returns:
+        str: Lowercase normalisation key.
+    """
     return normalize_spaces(name)
 
 
 def is_probable_organization(name: str) -> bool:
+    """Heuristically determine if the display name refers to an organisation.
+
+    Args:
+        name: Provider display name.
+
+    Returns:
+        bool: ``True`` when the name likely describes an organisation.
+    """
     lower = name.strip().lower()
     if not lower:
         return False
