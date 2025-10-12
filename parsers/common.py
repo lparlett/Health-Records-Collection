@@ -8,6 +8,7 @@ from __future__ import annotations
 
 """Common helper functions for CCD parsing routines."""
 
+import re
 from typing import Any, Sequence, cast
 
 from lxml import etree
@@ -63,6 +64,15 @@ def _first_text(value: object) -> str | None:
     return None
 
 
+def _flatten_text(node: etree._Element) -> str | None:
+    """Join all text descendants with single spaces for readability."""
+    texts = [t.strip() for t in node.xpath(".//text()") if isinstance(t, str) and t.strip()]
+    if not texts:
+        return None
+    combined = " ".join(texts)
+    return re.sub(r"\s+", " ", combined).strip() or None
+
+
 def get_text_by_id(tree: etree._ElementTree, ns: dict[str, str], ref_value: str | None) -> str | None:
     """Resolve a text node in the CCD by its ID reference.
 
@@ -80,7 +90,7 @@ def get_text_by_id(tree: etree._ElementTree, ns: dict[str, str], ref_value: str 
     ref_id = ref_value.lstrip("#")
     nodes = cast(Sequence[Any], tree.xpath(f"//*[@ID='{ref_id}']", namespaces=ns))
     for candidate in nodes:
-        text_value = _first_text(candidate)
+        text_value = _flatten_text(candidate) or _first_text(candidate)
         if text_value:
             return text_value
     return None

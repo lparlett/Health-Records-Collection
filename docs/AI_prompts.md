@@ -71,3 +71,4 @@ File "Z:\\Health\\Health-Records-Collection\\frontend\\views.py", line 118, in _
 [2025-10-12 20:10:00 UTC] In the file open in the IDE, DOC0006.XML, the provider is [redacted]. Why was this not picked up in the ingestion and parsing processes?
 [2025-10-12 20:17:13 UTC] I re-ingested and that provider was not picked up for that data source.
 [2025-10-12 20:23:45 UTC] Re-ingested and it is the same issue. It may be worthwhile to consider having a separate organization table and provider table where we can link providers to organizations and the encounters to providers, not their orgs.
+[2025-10-12 20:49:56 UTC] My encounter notes look like [redacted]. I don't like how some words run together. The bar separator from the joins is working, but not for each part. Can you fix that?

@@ -188,6 +188,44 @@ def test_parse_encounters_reason_for_visit():
     assert encounter["reason_for_visit"] == "Headache; Nausea"
 
 
+def test_parse_encounter_description_spacing():
+    sample_xml = """
+    <ClinicalDocument xmlns="urn:hl7-org:v3">
+      <component>
+        <structuredBody>
+          <component>
+            <section>
+              <text>
+                <paragraph ID="encounter4">
+                  05/05/2024 8:45 AM EDT
+                  <paragraph>Office Visit</paragraph>
+                  <paragraph>Aberdeen</paragraph>
+                  <paragraph>1800 N SANDHILLS BLVD</paragraph>
+                </paragraph>
+              </text>
+              <entry>
+                <encounter classCode="ENC" moodCode="EVN">
+                  <text>
+                    <reference value="#encounter4" />
+                  </text>
+                </encounter>
+              </entry>
+            </section>
+          </component>
+        </structuredBody>
+      </component>
+    </ClinicalDocument>
+    """
+    root = etree.fromstring(sample_xml.encode("utf-8"))
+    tree = etree.ElementTree(root)
+    ns = {"hl7": "urn:hl7-org:v3"}
+
+    result = encounters.parse_encounters(tree, ns)
+    assert len(result) == 1
+    notes = result[0]["notes"]
+    assert notes.startswith("05/05/2024 8:45 AM EDT Office Visit Aberdeen")
+
+
 def test_parse_encounter_prefers_encompassing_provider():
     sample_xml = """
     <ClinicalDocument xmlns="urn:hl7-org:v3">
