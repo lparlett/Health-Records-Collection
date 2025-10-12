@@ -11,7 +11,7 @@ from __future__ import annotations
 import sqlite3
 from typing import Iterable, Mapping, Optional, Sequence, Tuple
 
-from services.common import clean_str
+from services.common import clean_str, coerce_int
 
 __all__ = ["insert_immunizations"]
 
@@ -98,7 +98,25 @@ def insert_immunizations(
             continue
 
         key = (cvx_code_value or "", date_administered or "")
+        ds_id = coerce_int(entry.get("data_source_id"))
+
         if key in existing_keys:
+            if ds_id is not None:
+                cur.execute(
+                    """
+                    UPDATE immunization
+                       SET data_source_id = COALESCE(data_source_id, ?)
+                     WHERE patient_id = ?
+                       AND COALESCE(cvx_code, '') = COALESCE(?, '')
+                       AND COALESCE(date_administered, '') = COALESCE(?, '')
+                    """,
+                    (
+                        ds_id,
+                        patient_id,
+                        cvx_code_value,
+                        date_administered,
+                    ),
+                )
             continue
         existing_keys.add(key)
 
@@ -116,6 +134,7 @@ def insert_immunizations(
                 status,
                 lot_number,
                 notes_value,
+                ds_id,
             )
         )
 
@@ -131,8 +150,9 @@ def insert_immunizations(
             date_administered,
             status,
             lot_number,
-            notes
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            notes,
+            data_source_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
         rows_to_insert,
     )

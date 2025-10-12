@@ -8,6 +8,23 @@ from typing import Iterator
 __all__ = ["ensure_schema"]
 
 
+def _add_column_if_missing(
+    conn: sqlite3.Connection,
+    table: str,
+    column: str,
+    ddl: str,
+) -> None:
+    """Add a column to a table if it is absent."""
+    cur = conn.cursor()
+    cur.execute(f"PRAGMA table_info({table})")
+    rows = cur.fetchall()
+    if not rows:
+        return
+    columns = {row[1] for row in rows}
+    if column not in columns:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {ddl}")
+
+
 def _iter_provider_migrations() -> Iterator[str]:
     yield """
         UPDATE provider
@@ -113,11 +130,31 @@ def ensure_medication_constraints(conn: sqlite3.Connection) -> None:
     )
 
 
+def ensure_data_source_columns(conn: sqlite3.Connection) -> None:
+    """Ensure core tables reference the shared data_source metadata."""
+    column_ddl = "data_source_id INTEGER REFERENCES data_source(id)"
+    for table in (
+        "patient",
+        "encounter",
+        "medication",
+        "lab_result",
+        "allergy",
+        "condition",
+        "immunization",
+        "vital",
+        "procedure",
+        "attachment",
+        "progress_note",
+    ):
+        _add_column_if_missing(conn, table, "data_source_id", column_ddl)
+
+
 def ensure_schema(conn: sqlite3.Connection) -> None:
     ensure_provider_schema(conn)
     ensure_encounter_schema(conn)
     ensure_medication_constraints(conn)
     ensure_immunization_constraints(conn)
+    ensure_data_source_columns(conn)
 
 
 

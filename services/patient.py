@@ -8,9 +8,9 @@
 from __future__ import annotations
 
 import sqlite3
-from typing import Mapping, Optional
+from typing import Mapping
 
-from services.common import clean_str
+from services.common import clean_str, coerce_int
 
 __all__ = ["insert_patient"]
 
@@ -18,14 +18,12 @@ __all__ = ["insert_patient"]
 def insert_patient(
     conn: sqlite3.Connection,
     patient: Mapping[str, object],
-    source_file: str,
 ) -> int:
     """Insert or update a patient record.
 
     Args:
         conn: Open SQLite connection with active transaction control.
         patient: Mapping of patient attributes parsed from CCD input.
-        source_file: Artifact name that produced the patient information.
 
     Returns:
         int: Primary key for the patient row.
@@ -36,10 +34,11 @@ def insert_patient(
     family = clean_str(patient.get("family")) or ""
     dob = clean_str(patient.get("dob")) or ""
     gender = clean_str(patient.get("gender")) or ""
+    ds_id = coerce_int(patient.get("data_source_id"))
 
     cur.execute(
         """
-        SELECT id, gender, source_file
+        SELECT id, gender, data_source_id
           FROM patient
          WHERE COALESCE(given_name, '') = ?
            AND COALESCE(family_name, '') = ?
@@ -49,15 +48,15 @@ def insert_patient(
     )
     row = cur.fetchone()
     if row:
-        patient_id, existing_gender, existing_source = row
+        patient_id, existing_gender, existing_data_source = row
         updates: list[str] = []
-        params: list[Optional[str]] = []
+        params: list[object] = []
         if gender and (existing_gender or "") != gender:
             updates.append("gender = ?")
             params.append(gender)
-        if source_file and (existing_source or "") != source_file:
-            updates.append("source_file = ?")
-            params.append(source_file)
+        if ds_id is not None and existing_data_source != ds_id:
+            updates.append("data_source_id = ?")
+            params.append(ds_id)
         if updates:
             params.append(patient_id)
             cur.execute(
@@ -74,7 +73,7 @@ def insert_patient(
             family_name,
             birth_date,
             gender,
-            source_file
+            data_source_id
         ) VALUES (?, ?, ?, ?, ?)
         """,
         (
@@ -82,7 +81,7 @@ def insert_patient(
             family or None,
             dob or None,
             gender or None,
-            source_file,
+            ds_id,
         ),
     )
     conn.commit()

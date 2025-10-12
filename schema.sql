@@ -1,6 +1,21 @@
 PRAGMA foreign_keys = ON;
 
 -- =====================
+-- Data Sources
+-- =====================
+-- AI-assisted addition by Codex + Lauren, 2025-10-12.
+CREATE TABLE IF NOT EXISTS data_source (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    original_filename TEXT NOT NULL,
+    ingested_at TEXT NOT NULL,
+    file_sha256 TEXT NOT NULL,
+    source_archive TEXT,
+    UNIQUE(file_sha256)
+);
+
+CREATE INDEX IF NOT EXISTS idx_data_source_ingested_at ON data_source(ingested_at);
+
+-- =====================
 -- Core Patient Table
 -- =====================
 CREATE TABLE IF NOT EXISTS patient (
@@ -9,7 +24,8 @@ CREATE TABLE IF NOT EXISTS patient (
     family_name TEXT,
     birth_date TEXT,
     gender TEXT,
-    source_file TEXT
+    data_source_id INTEGER,
+    FOREIGN KEY(data_source_id) REFERENCES data_source(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_patient_name ON patient(family_name, given_name);
@@ -45,8 +61,10 @@ CREATE TABLE IF NOT EXISTS encounter (
     encounter_type TEXT,
     notes TEXT,
     reason_for_visit TEXT,
+    data_source_id INTEGER,
     FOREIGN KEY(patient_id) REFERENCES patient(id) ON DELETE CASCADE,
-    FOREIGN KEY(provider_id) REFERENCES provider(id) ON DELETE SET NULL
+    FOREIGN KEY(provider_id) REFERENCES provider(id) ON DELETE SET NULL,
+    FOREIGN KEY(data_source_id) REFERENCES data_source(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_encounter_patient ON encounter(patient_id);
@@ -69,8 +87,10 @@ CREATE TABLE IF NOT EXISTS medication (
     end_date TEXT,
     status TEXT,
     notes TEXT,
+    data_source_id INTEGER,
     FOREIGN KEY(patient_id) REFERENCES patient(id) ON DELETE CASCADE,
-    FOREIGN KEY(encounter_id) REFERENCES encounter(id) ON DELETE SET NULL
+    FOREIGN KEY(encounter_id) REFERENCES encounter(id) ON DELETE SET NULL,
+    FOREIGN KEY(data_source_id) REFERENCES data_source(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_med_patient ON medication(patient_id);
@@ -92,10 +112,12 @@ CREATE TABLE IF NOT EXISTS lab_result (
     date TEXT,
     ordering_provider_id INTEGER,
     performing_org_id INTEGER,
+    data_source_id INTEGER,
     FOREIGN KEY(patient_id) REFERENCES patient(id) ON DELETE CASCADE,
     FOREIGN KEY(encounter_id) REFERENCES encounter(id) ON DELETE SET NULL,
     FOREIGN KEY(ordering_provider_id) REFERENCES provider(id) ON DELETE SET NULL,
-    FOREIGN KEY(performing_org_id) REFERENCES provider(id) ON DELETE SET NULL
+    FOREIGN KEY(performing_org_id) REFERENCES provider(id) ON DELETE SET NULL,
+    FOREIGN KEY(data_source_id) REFERENCES data_source(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_lab_patient ON lab_result(patient_id);
@@ -113,7 +135,9 @@ CREATE TABLE IF NOT EXISTS allergy (
     reaction TEXT,
     severity TEXT,
     status TEXT,
-    FOREIGN KEY(patient_id) REFERENCES patient(id) ON DELETE CASCADE
+    data_source_id INTEGER,
+    FOREIGN KEY(patient_id) REFERENCES patient(id) ON DELETE CASCADE,
+    FOREIGN KEY(data_source_id) REFERENCES data_source(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_allergy_patient ON allergy(patient_id);
@@ -133,9 +157,11 @@ CREATE TABLE IF NOT EXISTS condition (
     code TEXT,
     code_system TEXT,
     code_display TEXT,
+    data_source_id INTEGER,
     FOREIGN KEY(patient_id) REFERENCES patient(id) ON DELETE CASCADE,
     FOREIGN KEY(provider_id) REFERENCES provider(id) ON DELETE SET NULL,
-    FOREIGN KEY(encounter_id) REFERENCES encounter(id) ON DELETE SET NULL
+    FOREIGN KEY(encounter_id) REFERENCES encounter(id) ON DELETE SET NULL,
+    FOREIGN KEY(data_source_id) REFERENCES data_source(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_condition_patient ON condition(patient_id);
@@ -164,7 +190,9 @@ CREATE TABLE IF NOT EXISTS immunization (
     status TEXT,
     lot_number TEXT,
     notes TEXT,
-    FOREIGN KEY(patient_id) REFERENCES patient(id) ON DELETE CASCADE
+    data_source_id INTEGER,
+    FOREIGN KEY(patient_id) REFERENCES patient(id) ON DELETE CASCADE,
+    FOREIGN KEY(data_source_id) REFERENCES data_source(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_immunization_patient ON immunization(patient_id);
@@ -187,8 +215,10 @@ CREATE TABLE IF NOT EXISTS vital (
     value TEXT,
     unit TEXT,
     date TEXT,
+    data_source_id INTEGER,
     FOREIGN KEY(patient_id) REFERENCES patient(id) ON DELETE CASCADE,
-    FOREIGN KEY(encounter_id) REFERENCES encounter(id) ON DELETE SET NULL
+    FOREIGN KEY(encounter_id) REFERENCES encounter(id) ON DELETE SET NULL,
+    FOREIGN KEY(data_source_id) REFERENCES data_source(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_vital_patient ON vital(patient_id);
@@ -209,9 +239,11 @@ CREATE TABLE IF NOT EXISTS procedure (
     status TEXT,
     date TEXT,
     notes TEXT,
+    data_source_id INTEGER,
     FOREIGN KEY(patient_id) REFERENCES patient(id) ON DELETE CASCADE,
     FOREIGN KEY(encounter_id) REFERENCES encounter(id) ON DELETE SET NULL,
-    FOREIGN KEY(provider_id) REFERENCES provider(id) ON DELETE SET NULL
+    FOREIGN KEY(provider_id) REFERENCES provider(id) ON DELETE SET NULL,
+    FOREIGN KEY(data_source_id) REFERENCES data_source(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_proc_patient ON procedure(patient_id);
@@ -238,25 +270,13 @@ CREATE TABLE IF NOT EXISTS attachment (
     file_path TEXT,
     mime_type TEXT,
     description TEXT,
+    data_source_id INTEGER,
     FOREIGN KEY(patient_id) REFERENCES patient(id) ON DELETE CASCADE,
-    FOREIGN KEY(encounter_id) REFERENCES encounter(id) ON DELETE SET NULL
+    FOREIGN KEY(encounter_id) REFERENCES encounter(id) ON DELETE SET NULL,
+    FOREIGN KEY(data_source_id) REFERENCES data_source(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_attach_patient ON attachment(patient_id);
-
--- =====================
--- Provenance (where data came from)
--- =====================
-CREATE TABLE IF NOT EXISTS provenance (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    patient_id INTEGER NOT NULL,
-    source_system TEXT,
-    source_file TEXT,
-    imported_on TEXT,
-    FOREIGN KEY(patient_id) REFERENCES patient(id) ON DELETE CASCADE
-);
-
-CREATE INDEX IF NOT EXISTS idx_prov_patient ON provenance(patient_id);
 
 -- =====================
 -- Progress Notes
@@ -271,9 +291,11 @@ CREATE TABLE IF NOT EXISTS progress_note (
     note_text TEXT NOT NULL,
     note_hash TEXT NOT NULL,
     source_note_id TEXT,
+    data_source_id INTEGER,
     FOREIGN KEY(patient_id) REFERENCES patient(id) ON DELETE CASCADE,
     FOREIGN KEY(encounter_id) REFERENCES encounter(id) ON DELETE SET NULL,
-    FOREIGN KEY(provider_id) REFERENCES provider(id) ON DELETE SET NULL
+    FOREIGN KEY(provider_id) REFERENCES provider(id) ON DELETE SET NULL,
+    FOREIGN KEY(data_source_id) REFERENCES data_source(id)
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_progress_note_unique

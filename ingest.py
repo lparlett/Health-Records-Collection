@@ -29,6 +29,7 @@ from parsers import (
     parse_vitals,
 )
 from services.conditions import insert_conditions
+from services.data_sources import upsert_data_source
 from services.encounters import insert_encounters
 from services.immunizations import insert_immunizations
 from services.labs import insert_labs
@@ -162,15 +163,68 @@ def ingest_archive(conn: sqlite3.Connection, archive_path: Path) -> None:
             logger.warning("Skipping %s due to incomplete patient identity.", xml_file.name)
             continue
 
-        pid = insert_patient(conn, patient_data, archive_path.name)
-        insert_encounters(conn, pid, _as_record_list(parsed.get("encounters")))
-        insert_conditions(conn, pid, _as_record_list(parsed.get("conditions")))
-        insert_procedures(conn, pid, _as_record_list(parsed.get("procedures")))
-        insert_medications(conn, pid, _as_record_list(parsed.get("medications")))
-        insert_labs(conn, pid, _as_record_list(parsed.get("labs")))
-        insert_vitals(conn, pid, _as_record_list(parsed.get("vitals")))
-        insert_immunizations(conn, pid, _as_record_list(parsed.get("immunizations")))
-        insert_progress_notes(conn, pid, _as_record_list(parsed.get("progress_notes")))
+        try:
+            data_source_id = upsert_data_source(
+                conn,
+                xml_file,
+                source_archive=archive_path.name,
+            )
+        except (OSError, sqlite3.DatabaseError) as exc:
+            logger.warning(
+                "Skipping %s due to provenance capture error: %s",
+                xml_file.name,
+                exc,
+            )
+            continue
+
+        metadata = {
+            "data_source_id": data_source_id,
+            "source_archive": archive_path.name,
+            "source_document": xml_file.name,
+        }
+        patient_record = {**patient_data, **metadata}
+
+        pid = insert_patient(conn, patient_record)
+        insert_encounters(
+            conn,
+            pid,
+            _annotate_records(_as_record_list(parsed.get("encounters")), metadata),
+        )
+        insert_conditions(
+            conn,
+            pid,
+            _annotate_records(_as_record_list(parsed.get("conditions")), metadata),
+        )
+        insert_procedures(
+            conn,
+            pid,
+            _annotate_records(_as_record_list(parsed.get("procedures")), metadata),
+        )
+        insert_medications(
+            conn,
+            pid,
+            _annotate_records(_as_record_list(parsed.get("medications")), metadata),
+        )
+        insert_labs(
+            conn,
+            pid,
+            _annotate_records(_as_record_list(parsed.get("labs")), metadata),
+        )
+        insert_vitals(
+            conn,
+            pid,
+            _annotate_records(_as_record_list(parsed.get("vitals")), metadata),
+        )
+        insert_immunizations(
+            conn,
+            pid,
+            _annotate_records(_as_record_list(parsed.get("immunizations")), metadata),
+        )
+        insert_progress_notes(
+            conn,
+            pid,
+            _annotate_records(_as_record_list(parsed.get("progress_notes")), metadata),
+        )
         conn.commit()
         logger.info("Ingested %s for patient %s %s.", xml_file.name, given, family)
 
@@ -191,6 +245,16 @@ def _as_record_list(candidate: Any) -> list[dict[str, Any]]:
         return [item for item in candidate if isinstance(item, dict)]
 
     return []
+
+
+def _annotate_records(
+    records: list[dict[str, Any]],
+    metadata: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Attach ingestion metadata to each record."""
+    if not records:
+        return []
+    return [{**record, **metadata} for record in records]
 
 
 def main() -> None:

@@ -12,7 +12,7 @@ import hashlib
 import sqlite3
 from typing import Mapping, Sequence, Tuple
 
-from services.common import clean_str
+from services.common import clean_str, coerce_int
 from services.encounters import find_encounter_id
 from services.providers import get_or_create_provider
 
@@ -72,6 +72,8 @@ def insert_progress_notes(
         note_datetime = clean_str(note.get("note_datetime"))
         source_note_id = clean_str(note.get("source_id"))
 
+        ds_id = coerce_int(note.get("data_source_id"))
+
         cur.execute(
             """
             INSERT OR IGNORE INTO progress_note (
@@ -82,8 +84,9 @@ def insert_progress_notes(
                 note_datetime,
                 note_text,
                 note_hash,
-                source_note_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                source_note_id,
+                data_source_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 patient_id,
@@ -94,12 +97,31 @@ def insert_progress_notes(
                 raw_text,
                 note_hash,
                 source_note_id,
+                ds_id,
             ),
         )
         if cur.rowcount == 1:
             inserted += 1
         else:
             duplicates += 1
+            if ds_id is not None:
+                cur.execute(
+                    """
+                    UPDATE progress_note
+                       SET data_source_id = COALESCE(data_source_id, ?)
+                     WHERE patient_id = ?
+                       AND COALESCE(encounter_id, -1) = COALESCE(?, -1)
+                       AND COALESCE(provider_id, -1) = COALESCE(?, -1)
+                       AND note_hash = ?
+                    """,
+                    (
+                        ds_id,
+                        patient_id,
+                        encounter_id,
+                        provider_id,
+                        note_hash,
+                    ),
+                )
 
     conn.commit()
     return inserted, duplicates

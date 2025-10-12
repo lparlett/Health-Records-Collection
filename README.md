@@ -69,6 +69,9 @@ pip install -r requirements.txt
   - Parses XML with lxml using modular parsers in `parsers/` for patients,
     encounters, conditions, medications, labs, procedures, vitals,
     immunizations, and progress notes.
+  - Records file-level provenance in the `data_source` table (original filename,
+    archive, hash, ingest timestamp) and threads the resulting identifier
+    through every downstream insert.
   - Normalizes providers, deduplicates medications and immunizations, and
     invokes service modules in `services/` to load data into SQLite.
   - Applies schema migrations on the fly via `db/schema.py` to keep older
@@ -87,9 +90,11 @@ pip install -r requirements.txt
 - **Schema & services (`schema.sql`, `services/`)**
   - `schema.sql` defines core tables for patients, providers, encounters,
     medications, lab results, allergies, conditions (with codes), procedures,
-    vitals, immunizations, attachments, provenance, and progress notes.
+    vitals, immunizations, attachments, and progress notes, each
+    linking back to `data_source` for provenance.
   - Service modules encapsulate insert logic, deduplication, and foreign key
-    wiring for each domain.
+    wiring for each domain. `services/data_sources.py` manages provenance rows
+    so other modules can reference a shared `data_source_id`.
   - `db/schema.py` backfills missing columns, normalizes provider records, and
     adds protective indexes.
 

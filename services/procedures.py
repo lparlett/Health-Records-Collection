@@ -11,7 +11,7 @@ from __future__ import annotations
 import sqlite3
 from typing import Any, Mapping, Sequence
 
-from services.common import clean_str, ensure_mapping_sequence
+from services.common import clean_str, coerce_int, ensure_mapping_sequence
 from services.encounters import find_encounter_id
 from services.providers import get_or_create_provider
 
@@ -63,9 +63,11 @@ def insert_procedures(
         date = clean_str(proc.get("date")) or clean_str(proc.get("author_time"))
         notes = clean_str(proc.get("notes"))
 
+        ds_id = coerce_int(proc.get("data_source_id"))
+
         existing = cur.execute(
             """
-            SELECT id, status, notes, provider_id, encounter_id
+            SELECT id, status, notes, provider_id, encounter_id, data_source_id
               FROM procedure
              WHERE patient_id = ?
                AND COALESCE(name, '') = COALESCE(?, '')
@@ -82,6 +84,7 @@ def insert_procedures(
                 existing_notes,
                 existing_provider_id,
                 existing_encounter_id,
+                existing_data_source,
             ) = existing
             updates: list[str] = []
             params: list[Any] = []
@@ -97,6 +100,9 @@ def insert_procedures(
             if encounter_id and (existing_encounter_id or 0) != encounter_id:
                 updates.append("encounter_id = ?")
                 params.append(encounter_id)
+            if ds_id is not None and (existing_data_source or 0) != ds_id:
+                updates.append("data_source_id = ?")
+                params.append(ds_id)
             if updates:
                 params.append(procedure_id)
                 cur.execute(
@@ -116,8 +122,9 @@ def insert_procedures(
                     code_display,
                     status,
                     date,
-                    notes
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    notes,
+                    data_source_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     patient_id,
@@ -130,6 +137,7 @@ def insert_procedures(
                     status,
                     date,
                     notes,
+                    ds_id,
                 ),
             )
             procedure_id = cur.lastrowid

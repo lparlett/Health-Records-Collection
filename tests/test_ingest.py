@@ -1,16 +1,52 @@
-import sqlite3
-import subprocess
-import pathlib
+from __future__ import annotations
 
-def test_ingest_creates_database(tmp_path):
-    # Copy test data zip into data/raw if you want full E2E
-    db_file = pathlib.Path("db/health_records.db")
-    if db_file.exists():
-        db_file.unlink()
+from pathlib import Path
+import zipfile
 
-    subprocess.run(["python", "ingest.py"], check=True)
+import ingest
 
-    assert db_file.exists()
-    conn = sqlite3.connect(db_file)
-    tables = [row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table';")]
-    assert "patient" in tables
+
+def test_ingest_archive_records_data_source(
+    tmp_path, schema_conn, monkeypatch
+) -> None:
+    xml_content = """
+    <ClinicalDocument xmlns="urn:hl7-org:v3">
+      <recordTarget>
+        <patientRole>
+          <patient>
+            <name>
+              <given>Jane</given>
+              <family>Doe</family>
+            </name>
+          </patient>
+        </patientRole>
+      </recordTarget>
+    </ClinicalDocument>
+    """
+
+    archive_path = tmp_path / "sample.zip"
+    with zipfile.ZipFile(archive_path, "w") as zf:
+        zf.writestr("document.xml", xml_content)
+
+    parsed_dir = tmp_path / "parsed"
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+
+    monkeypatch.setattr(ingest, "PARSED_DIR", parsed_dir)
+    monkeypatch.setattr(ingest, "RAW_DIR", raw_dir)
+    monkeypatch.setattr(ingest, "DB_PATH", Path(tmp_path / "db" / "health_records.db"))
+
+    ingest.ingest_archive(schema_conn, archive_path)
+
+    ds_row = schema_conn.execute(
+        "SELECT id, original_filename, source_archive FROM data_source"
+    ).fetchone()
+    assert ds_row is not None
+    data_source_id, original_filename, source_archive = ds_row
+    assert original_filename == "document.xml"
+    assert source_archive == "sample.zip"
+
+    patient_row = schema_conn.execute(
+        "SELECT data_source_id FROM patient"
+    ).fetchone()
+    assert patient_row == (data_source_id,)
