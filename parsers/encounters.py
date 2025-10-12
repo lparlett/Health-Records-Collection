@@ -172,6 +172,24 @@ def parse_encounters(tree: etree._ElementTree, ns: dict[str, str]) -> list[Encou
     reason_for_visit = _extract_reason_for_visit(tree, ns)
     encounters: list[EncounterEntry] = []
 
+    global_provider_person: str | None = None
+    global_provider_org: str | None = None
+    encompassing = tree.find("hl7:componentOf/hl7:encompassingEncounter", namespaces=ns)
+    if encompassing is not None:
+        global_provider_person = extract_provider_name(
+            encompassing,
+            "hl7:encounterParticipant/hl7:assignedEntity/hl7:assignedPerson/hl7:name",
+            "hl7:encounterParticipant/hl7:assignedEntity/hl7:representedOrganization/hl7:name",
+            ns,
+            allow_org_fallback=False,
+        )
+        global_provider_org = extract_provider_name(
+            encompassing,
+            "hl7:encounterParticipant/hl7:assignedEntity/hl7:assignedPerson/hl7:name",
+            "hl7:encounterParticipant/hl7:assignedEntity/hl7:representedOrganization/hl7:name",
+            ns,
+        )
+
     encounter_nodes = cast(Sequence[Any], tree.xpath(".//hl7:encounter", namespaces=ns))
     for enc in _ensure_element_list(encounter_nodes):
         code_el = enc.find("hl7:code", namespaces=ns)
@@ -203,10 +221,37 @@ def parse_encounters(tree: etree._ElementTree, ns: dict[str, str]) -> list[Encou
 
         provider_name = extract_provider_name(
             enc,
-            "hl7:performer/hl7:assignedEntity/hl7:assignedPerson/hl7:name",
-            "hl7:performer/hl7:assignedEntity/hl7:representedOrganization/hl7:name",
+            "hl7:participant[@typeCode='ATND']/hl7:assignedEntity/hl7:assignedPerson/hl7:name",
+            "hl7:participant[@typeCode='ATND']/hl7:assignedEntity/hl7:representedOrganization/hl7:name",
             ns,
+            allow_org_fallback=False,
         )
+        if not provider_name:
+            provider_name = extract_provider_name(
+                enc,
+                "hl7:performer/hl7:assignedEntity/hl7:assignedPerson/hl7:name",
+                "hl7:performer/hl7:assignedEntity/hl7:representedOrganization/hl7:name",
+                ns,
+                allow_org_fallback=False,
+            )
+        if not provider_name:
+            provider_name = global_provider_person
+        if not provider_name:
+            provider_name = extract_provider_name(
+                enc,
+                "hl7:participant[@typeCode='ATND']/hl7:assignedEntity/hl7:assignedPerson/hl7:name",
+                "hl7:participant[@typeCode='ATND']/hl7:assignedEntity/hl7:representedOrganization/hl7:name",
+                ns,
+            )
+        if not provider_name:
+            provider_name = extract_provider_name(
+                enc,
+                "hl7:performer/hl7:assignedEntity/hl7:assignedPerson/hl7:name",
+                "hl7:performer/hl7:assignedEntity/hl7:representedOrganization/hl7:name",
+                ns,
+            )
+        if not provider_name:
+            provider_name = global_provider_org
 
         location_name = None
         location_el = enc.find(

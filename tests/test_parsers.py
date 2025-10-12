@@ -186,3 +186,43 @@ def test_parse_encounters_reason_for_visit():
     assert len(result) == 1
     encounter = result[0]
     assert encounter["reason_for_visit"] == "Headache; Nausea"
+
+
+def test_parse_encounter_prefers_encompassing_provider():
+    sample_xml = """
+    <ClinicalDocument xmlns="urn:hl7-org:v3">
+      <componentOf>
+        <encompassingEncounter>
+          <encounterParticipant typeCode="ATND">
+            <assignedEntity>
+              <assignedPerson>
+                <name>Preferred Provider</name>
+              </assignedPerson>
+            </assignedEntity>
+          </encounterParticipant>
+        </encompassingEncounter>
+      </componentOf>
+      <component>
+        <structuredBody>
+          <component>
+            <section>
+              <entry>
+                <encounter classCode="ENC" moodCode="EVN">
+                  <code code="AMB" displayName="Ambulatory" />
+                  <effectiveTime value="20240101" />
+                </encounter>
+              </entry>
+            </section>
+          </component>
+        </structuredBody>
+      </component>
+    </ClinicalDocument>
+    """
+    root = etree.fromstring(sample_xml.encode("utf-8"))
+    tree = etree.ElementTree(root)
+    ns = {"hl7": "urn:hl7-org:v3"}
+
+    result = encounters.parse_encounters(tree, ns)
+    assert len(result) == 1
+    encounter = result[0]
+    assert encounter["provider"] == "Preferred Provider"

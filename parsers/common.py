@@ -91,6 +91,8 @@ def extract_provider_name(
     person_xpath: str,
     org_xpath: str,
     ns: dict[str, str],
+    *,
+    allow_org_fallback: bool = True,
 ) -> str | None:
     """Return a human-readable provider name from a CCD section node.
 
@@ -99,6 +101,7 @@ def extract_provider_name(
         person_xpath: XPath for the individual practitioner's name.
         org_xpath: XPath for the organisation name.
         ns: Namespace dictionary used for the lookup.
+        allow_org_fallback: When ``False``, skip organisation fallback.
 
     Returns:
         A cleaned provider display name, or ``None`` if unavailable.
@@ -108,9 +111,10 @@ def extract_provider_name(
     if text:
         return " ".join(text.split())
 
-    organization = parent.find(org_xpath, namespaces=ns)
-    text = _first_text(organization)
-    if text:
-        return " ".join(text.split())
+    if allow_org_fallback:
+        organization = parent.find(org_xpath, namespaces=ns)
+        text = _first_text(organization)
+        if text:
+            return " ".join(text.split())
 
     return None

@@ -21,6 +21,8 @@ KEYWORDS = (
     ' centre',
     ' physicians',
     ' associates',
+    ' associate',
+    ' the',
     ' services',
     ' department',
     ' university',

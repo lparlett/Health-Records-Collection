@@ -194,7 +194,7 @@ def insert_encounters(
 
         existing = cur.execute(
             """
-            SELECT id, encounter_type, notes, reason_for_visit, data_source_id
+            SELECT id, encounter_type, notes, reason_for_visit, data_source_id, provider_id
               FROM encounter
              WHERE patient_id = ?
                AND COALESCE(encounter_date, '') = COALESCE(?, '')
@@ -203,6 +203,17 @@ def insert_encounters(
             """,
             (patient_id, encounter_date, provider_id, source_encounter_id),
         ).fetchone()
+        if not existing and provider_id is not None:
+            existing = cur.execute(
+                """
+                SELECT id, encounter_type, notes, reason_for_visit, data_source_id, provider_id
+                  FROM encounter
+                 WHERE patient_id = ?
+                   AND COALESCE(encounter_date, '') = COALESCE(?, '')
+                   AND COALESCE(source_encounter_id, '') = COALESCE(?, '')
+                """,
+                (patient_id, encounter_date, source_encounter_id),
+            ).fetchone()
 
         if existing:
             (
@@ -211,6 +222,7 @@ def insert_encounters(
                 existing_notes,
                 existing_reason,
                 existing_data_source,
+                existing_provider,
             ) = existing
             updates: list[str] = []
             params: list[Any] = []
@@ -226,6 +238,9 @@ def insert_encounters(
             if ds_id is not None and (existing_data_source or 0) != ds_id:
                 updates.append("data_source_id = ?")
                 params.append(ds_id)
+            if provider_id is not None and (existing_provider or 0) != provider_id:
+                updates.append("provider_id = ?")
+                params.append(provider_id)
             if updates:
                 params.append(encounter_db_id)
                 cur.execute(

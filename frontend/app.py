@@ -20,17 +20,13 @@ def _divider():
 st.set_page_config(page_title=CONFIG["page_title"], layout=CONFIG["layout"])
 st.title(CONFIG["page_title"])
 
-# DB connection
 conn = db_utils.get_connection()
-
-# Encounter overview first
-views.show_encounters(conn)
-_divider()
-
-# Show UI components
-views.show_tables(conn)
-_divider()
-views.show_query(conn)
-
-# Close DB
-conn.close()
+try:
+    show_overview = views.render_patient_encounter_experience(conn)
+    if show_overview:
+        _divider()
+        views.show_tables(conn)
+        _divider()
+        views.show_query(conn)
+finally:
+    conn.close()

@@ -15,7 +15,9 @@ Goals: reproducibility, privacy, and clarity.
 * Do not duplicate prompts with the same UTC timestamp.
 * For each response, include a confirmation that the prompt was logged. Do not stop logging unless requested by the user.
 * Skip logging if no path is given.
-* Strip or redact diagnostic dumps before logging; replace pasted troubleshooting details with `{copy and pasted troubleshooting}`.
+* When the user wraps part of a prompt in `[redact this from logging] ... [stop redaction]`, replace that inner text with `[redacted]` in the log entry while keeping the rest of the prompt verbatim.
+  * Example: `Please note [redact this from logging]secret[/stop redaction] info` is logged as `Please note [redacted] info`.
+* Strip or redact diagnostic dumps before logging; replace pasted troubleshooting details with `[troubleshooting redacted]`.
 * Log entry format:
 
   ```txt

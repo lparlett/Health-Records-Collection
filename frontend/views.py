@@ -1,19 +1,55 @@
-import streamlit as st
+from __future__ import annotations
+
 from datetime import datetime
+from pathlib import Path
+from typing import Any, Iterable, Optional
+
+import pandas as pd
+import streamlit as st
+
 import db_utils
 import ui_components
 
 
-def _format_encounter_date(raw_value):
-    """Normalize encounter date strings into a readable label."""
+def _ensure_state() -> None:
+    state = st.session_state
+    state.setdefault("app_view", "overview")
+    state.setdefault("selected_patient_id", None)
+    state.setdefault("selected_patient_label", None)
+    state.setdefault("selected_encounter_id", None)
+    if "_rerun_fn" not in state:
+        rerun_fn = getattr(st, "experimental_rerun", None) or getattr(st, "rerun", None)
+        state["_rerun_fn"] = rerun_fn
+
+
+def _rerun() -> None:
+    rerun_callable = st.session_state.get("_rerun_fn")
+    if rerun_callable is not None:
+        rerun_callable()
+
+
+def render_patient_encounter_experience(conn) -> bool:
+    """Render the encounter experience. Returns True when overview is active."""
+    _ensure_state()
+    state = st.session_state
+    if state["app_view"] == "detail":
+        _show_encounter_detail(conn)
+        return False
+    _show_encounter_overview(conn)
+    return True
+
+
+def _format_datetime(raw_value: Any, *, show_time: bool = False) -> str:
     if not raw_value:
-        return "Date unknown"
+        return "Unknown"
     value = str(raw_value).strip()
     if not value:
-        return "Date unknown"
+        return "Unknown"
     for fmt in ("%Y%m%d%H%M%S%z", "%Y%m%d%H%M%S", "%Y%m%d"):
         try:
             dt = datetime.strptime(value, fmt)
+            if show_time and fmt != "%Y%m%d":
+                return dt.strftime("%b %d, %Y %H:%M")
             return dt.strftime("%b %d, %Y")
         except ValueError:
             continue
@@ -26,55 +62,200 @@ def _format_encounter_date(raw_value):
     return value
 
 
-def _format_diagnosis_line(entry):
-    name = (entry.get("name") or "Unnamed diagnosis").strip()
-    code_display = (entry.get("code_display") or "").strip()
-    code = (entry.get("code") or "").strip()
-    status = (entry.get("status") or "").strip()
-    code_part = code_display or code
-    pieces = [name]
-    if code_part:
-        pieces.append(f"({code_part})")
-    line = " ".join(pieces)
-    if status:
-        line += f" - {status}"
-    return f"- {line}"
-
-
-def _format_medication_line(entry):
-    name = (entry.get("name") or "Unnamed medication").strip()
-    dose = (entry.get("dose") or "").strip()
-    route = (entry.get("route") or "").strip()
-    frequency = (entry.get("frequency") or "").strip()
-    status = (entry.get("status") or "").strip()
-    start_date = (entry.get("start_date") or "").strip()
-    end_date = (entry.get("end_date") or "").strip()
-    notes = (entry.get("notes") or "").strip()
-
-    schedule_parts = [part for part in [dose, route, frequency] if part]
-    schedule = ", ".join(schedule_parts)
-
-    duration_parts = []
-    if start_date:
-        duration_parts.append(start_date)
-    if end_date:
-        duration_parts.append(f"-> {end_date}")
-    duration = " ".join(duration_parts)
-
-    detail_parts = [part for part in [schedule, duration, status] if part]
-    detail_text = "; ".join(detail_parts)
-
-    if notes:
-        detail_text = detail_text + f" - {notes}" if detail_text else notes
-
-    return f"- {name}" + (f" - {detail_text}" if detail_text else "")
-
-
-def _sidebar_divider():
+def _sidebar_divider() -> None:
     if hasattr(st.sidebar, "divider"):
         st.sidebar.divider()
     else:
         st.sidebar.markdown("---")
+
+
+def _show_encounter_overview(conn) -> None:
+    st.header("Encounter Overview")
+
+    patients = db_utils.get_patients(conn)
+    if patients.empty:
+        st.info("No patients found in the database.")
+        return
+
+    patient_options = {row["display_name"]: int(row["id"]) for _, row in patients.iterrows()}
+    state = st.session_state
+
+    labels = list(patient_options.keys())
+    default_index = 0
+    if state["selected_patient_label"] in patient_options:
+        default_index = labels.index(state["selected_patient_label"])
+
+    _sidebar_divider()
+    st.sidebar.header("Encounter Filters")
+    selected_label = st.sidebar.selectbox("Patient", options=labels, index=default_index)
+    patient_id = patient_options[selected_label]
+
+    if state["selected_patient_id"] != patient_id:
+        state["selected_patient_id"] = patient_id
+        state["selected_patient_label"] = selected_label
+        state["selected_encounter_id"] = None
+
+    patient_row = patients[patients["id"] == patient_id].iloc[0]
+    subtitle_parts = [f"Patient: {selected_label}"]
+    birth_date = patient_row.get("birth_date")
+    if birth_date:
+        subtitle_parts.append(f"DOB: {birth_date}")
+    st.caption(" | ".join(subtitle_parts))
+
+    encounters = db_utils.get_patient_encounters(conn, patient_id)
+    if encounters.empty:
+        st.info("No encounters recorded for this patient.")
+        return
+
+    st.write(f"{len(encounters)} encounter{'s' if len(encounters) != 1 else ''} found.")
+
+    for _, row in encounters.iterrows():
+        encounter_id = int(row["encounter_id"])
+        encounter_date = _format_datetime(row.get("encounter_date"))
+        encounter_type = (row.get("encounter_type") or "Encounter").strip() or "Encounter"
+        provider = row.get("provider_display_name") or "Unknown provider"
+        notes = (row.get("notes") or "").strip()
+
+        with st.container():
+            st.markdown(f"### {encounter_date}")
+            st.caption(f"{encounter_type} • {provider}")
+            if notes:
+                st.markdown(notes)
+            if st.button("View details", key=f"encounter-detail-{encounter_id}"):
+                state["selected_encounter_id"] = encounter_id
+                state["app_view"] = "detail"
+                _rerun()
+
+
+def _format_records_for_list(records: Iterable[dict[str, Any]], fields: list[str]) -> list[str]:
+    lines: list[str] = []
+    for record in records:
+        parts = [record.get(field) for field in fields if record.get(field)]
+        text = " - ".join(str(part).strip() for part in parts if str(part).strip())
+        if text:
+            lines.append(f"- {text}")
+    return lines
+
+
+def _show_section(
+    title: str,
+    records: list[dict[str, Any]],
+    *,
+    dataframe: bool = False,
+    fields: Optional[list[str]] = None,
+) -> None:
+    st.subheader(title)
+    if not records:
+        st.info("None recorded.")
+        return
+    if dataframe:
+        st.dataframe(pd.DataFrame(records), use_container_width=True)
+    else:
+        display_fields = fields or ["name"]
+        for line in _format_records_for_list(records, display_fields):
+            st.markdown(line)
+
+
+def _show_progress_notes(notes: list[dict[str, Any]]) -> None:
+    st.subheader("Progress Notes")
+    if not notes:
+        st.info("No progress notes recorded.")
+        return
+
+    for idx, note in enumerate(notes):
+        title = note.get("note_title") or f"Progress Note #{idx + 1}"
+        timestamp = _format_datetime(note.get("note_datetime"), show_time=True)
+        with st.expander(f"{title} • {timestamp}"):
+            st.markdown(note.get("note_text") or "No text provided.")
+            source_id = note.get("source_note_id")
+            if source_id:
+                st.caption(f"Source ID: {source_id}")
+
+
+def _show_encounter_detail(conn) -> None:
+    state = st.session_state
+    encounter_id = state.get("selected_encounter_id")
+    if encounter_id is None:
+        st.warning("No encounter selected.")
+        if st.button("Back to encounters"):
+            state["app_view"] = "overview"
+            _rerun()
+        return
+
+    detail = db_utils.get_encounter_detail(conn, encounter_id)
+    metadata = detail["metadata"]
+
+    st.header("Encounter Detail")
+    if st.button("Back to encounters"):
+        state["app_view"] = "overview"
+        state["selected_encounter_id"] = None
+        _rerun()
+
+    patient_label = state.get("selected_patient_label") or f"#{detail['patient_id']}"
+    st.markdown(f"**Patient:** {patient_label}")
+
+    with st.container():
+        st.subheader("Encounter Metadata")
+        cols = st.columns(2)
+        with cols[0]:
+            st.markdown(f"**Date:** {_format_datetime(metadata.get('encounter_date'), show_time=True)}")
+            st.markdown(f"**Type:** {metadata.get('encounter_type') or 'Unknown'}")
+            st.markdown(f"**Provider:** {metadata.get('provider_display_name')}")
+        with cols[1]:
+            ds = metadata.get("data_source") or {}
+            st.markdown(f"**Source Archive:** {ds.get('source_archive') or '-'}")
+            st.markdown(f"**Document:** {ds.get('original_filename') or '-'}")
+            if ds.get("document_created"):
+                st.markdown(
+                    f"**Document Created:** {_format_datetime(ds.get('document_created'), show_time=True)}"
+                )
+            if ds.get("repository_unique_id"):
+                st.markdown(f"**Repository ID:** {ds.get('repository_unique_id')}")
+            if ds.get("document_hash"):
+                st.markdown(f"**Document Hash:** `{ds.get('document_hash')}`")
+            if ds.get("document_size"):
+                st.markdown(f"**Document Size:** {ds.get('document_size')} bytes")
+            if ds.get("author_institution"):
+                st.markdown(f"**Author Institution:** {ds.get('author_institution')}")
+
+        notes = metadata.get("notes")
+        if notes:
+            st.markdown("**Encounter Notes**")
+            st.markdown(notes)
+
+        attachment = metadata.get("attachment") or {}
+        if attachment.get("file_path"):
+            attachment_path = attachment["file_path"]
+            attachment_label = Path(attachment_path).name
+            mime = attachment.get("mime_type")
+            attachment_text = f"`{attachment_label}`"
+            if mime:
+                attachment_text += f" ({mime})"
+            st.markdown(f"**Attachment:** {attachment_text}")
+
+    _show_section(
+        "Conditions",
+        detail["conditions"],
+        fields=["name", "code_display", "status"],
+    )
+    _show_section(
+        "Medications",
+        detail["medications"],
+        fields=["name", "dose", "route", "frequency", "status"],
+    )
+    _show_section(
+        "Procedures",
+        detail["procedures"],
+        fields=["name", "code_display", "status", "date"],
+    )
+    _show_section("Lab Results", detail["lab_results"], dataframe=True)
+    _show_section("Vitals", detail["vitals"], dataframe=True)
+    _show_section(
+        "Immunizations (up to encounter date)",
+        detail["immunizations"],
+        dataframe=True,
+    )
+    _show_progress_notes(detail["progress_notes"])
 
 
 def show_tables(conn):
@@ -99,67 +280,3 @@ def show_query(conn):
             st.dataframe(df, use_container_width=True)
         except Exception as e:
             st.error(f"Error: {e}")
-
-
-def show_encounters(conn):
-    st.header("Encounter Overview")
-
-    patients = db_utils.get_patients(conn)
-    if patients.empty:
-        st.info("No patients found in the database.")
-        return
-
-    patient_options = {row["display_name"]: int(row["id"]) for _, row in patients.iterrows()}
-
-    _sidebar_divider()
-    st.sidebar.header("Encounter Filters")
-    selected_label = st.sidebar.selectbox("Patient", options=list(patient_options.keys()))
-    patient_id = patient_options[selected_label]
-
-    patient_row = patients[patients["id"] == patient_id].iloc[0]
-    st.caption(
-        " | ".join(
-            part
-            for part in [
-                f"Patient: {selected_label}",
-                f"DOB: {patient_row['birth_date']}" if patient_row.get("birth_date") else None,
-            ]
-            if part
-        )
-    )
-
-    encounters = db_utils.get_encounter_details(conn, patient_id)
-    if encounters.empty:
-        st.info("No encounters recorded for this patient.")
-        return
-
-    st.write(f"{len(encounters)} encounter{'s' if len(encounters) != 1 else ''} found.")
-
-    for _, row in encounters.iterrows():
-        encounter_date = _format_encounter_date(row.get("encounter_date"))
-        encounter_type = (row.get("encounter_type") or "Encounter").strip() or "Encounter"
-        provider = row.get("provider_display_name") or "Unknown provider"
-
-        header = f"{encounter_date} | {encounter_type}"
-        with st.expander(header):
-            st.markdown(f"**Provider:** {provider}")
-            notes = (row.get("notes") or "").strip()
-            if notes:
-                st.markdown(f"**Notes:** {notes}")
-
-            diagnoses = row.get("diagnoses") or []
-            st.markdown("**Diagnoses**")
-            if diagnoses:
-                diag_lines = [_format_diagnosis_line(item) for item in diagnoses]
-                st.markdown("\n".join(diag_lines))
-            else:
-                st.markdown("- None recorded")
-
-            medications = row.get("medications") or []
-            st.markdown("**Medications**")
-            if medications:
-                med_lines = [_format_medication_line(item) for item in medications]
-                st.markdown("\n".join(med_lines))
-            else:
-                st.markdown("- None recorded")
-
