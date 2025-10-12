@@ -11,7 +11,7 @@ from __future__ import annotations
 import sqlite3
 from typing import Any, Mapping, Optional, Sequence
 
-from services.common import clean_str
+from services.common import clean_str, coerce_int
 from services.providers import get_or_create_provider
 
 __all__ = ["find_encounter_id", "insert_encounters"]
@@ -190,9 +190,11 @@ def insert_encounters(
         if not (encounter_date or source_encounter_id):
             continue
 
+        ds_id = coerce_int(enc.get("data_source_id"))
+
         existing = cur.execute(
             """
-            SELECT id, encounter_type, notes, reason_for_visit
+            SELECT id, encounter_type, notes, reason_for_visit, data_source_id
               FROM encounter
              WHERE patient_id = ?
                AND COALESCE(encounter_date, '') = COALESCE(?, '')
@@ -203,7 +205,13 @@ def insert_encounters(
         ).fetchone()
 
         if existing:
-            encounter_db_id, existing_type, existing_notes, existing_reason = existing
+            (
+                encounter_db_id,
+                existing_type,
+                existing_notes,
+                existing_reason,
+                existing_data_source,
+            ) = existing
             updates: list[str] = []
             params: list[Any] = []
             if encounter_type and (existing_type or "") != encounter_type:
@@ -215,6 +223,9 @@ def insert_encounters(
             if reason_for_visit and (existing_reason or "") != reason_for_visit:
                 updates.append("reason_for_visit = ?")
                 params.append(reason_for_visit)
+            if ds_id is not None and (existing_data_source or 0) != ds_id:
+                updates.append("data_source_id = ?")
+                params.append(ds_id)
             if updates:
                 params.append(encounter_db_id)
                 cur.execute(
@@ -232,8 +243,9 @@ def insert_encounters(
                 source_encounter_id,
                 encounter_type,
                 notes,
-                reason_for_visit
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                reason_for_visit,
+                data_source_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 patient_id,
@@ -243,6 +255,7 @@ def insert_encounters(
                 encounter_type,
                 notes,
                 reason_for_visit,
+                ds_id,
             ),
         )
     conn.commit()

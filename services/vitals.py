@@ -12,7 +12,7 @@ import sqlite3
 from typing import Iterable, Mapping, Sequence
 
 from db.utils import insert_records
-from services.common import clean_str
+from services.common import clean_str, coerce_int
 from services.encounters import find_encounter_id
 
 __all__ = ["insert_vitals"]
@@ -59,6 +59,7 @@ def insert_vitals(
         "value",
         "unit",
         "date",
+        "data_source_id",
     ]
 
     def build_row(vital: Mapping[str, object]) -> tuple[object, ...]:
@@ -87,6 +88,8 @@ def insert_vitals(
                     source_encounter_id=encounter_source_id,
                 )
 
+        ds_id = coerce_int(vital.get("data_source_id"))
+
         return (
             patient_id,
             encounter_id,
@@ -94,6 +97,7 @@ def insert_vitals(
             clean_str(vital.get("value")),
             clean_str(vital.get("unit")),
             measurement_date,
+            ds_id,
         )
 
     insert_records(conn, "vital", columns, [dict(v) for v in filtered], build_row)

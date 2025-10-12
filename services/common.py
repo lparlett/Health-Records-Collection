@@ -22,6 +22,22 @@ def clean_str(value: Any) -> str | None:
     return cleaned or None
 
 
+def coerce_int(value: Any) -> int | None:
+    """Return an int for numeric inputs, otherwise None."""
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped.isdigit():
+            return int(stripped)
+        return None
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    return None
+
+
 def ensure_mapping_sequence(items: Iterable[Any]) -> Iterator[Mapping[str, Any]]:
     """Yield mapping entries from a potentially heterogeneous iterable."""
     for item in items:

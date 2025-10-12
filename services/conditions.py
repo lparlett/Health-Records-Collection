@@ -11,7 +11,7 @@ from __future__ import annotations
 import sqlite3
 from typing import Any, Mapping, Sequence
 
-from services.common import clean_str, ensure_mapping_sequence
+from services.common import clean_str, coerce_int, ensure_mapping_sequence
 from services.encounters import find_encounter_id
 from services.providers import get_or_create_provider
 
@@ -76,9 +76,11 @@ def insert_conditions(
         status = clean_str(cond.get("status"))
         notes = clean_str(cond.get("notes"))
 
+        ds_id = coerce_int(cond.get("data_source_id"))
+
         existing = cur.execute(
             """
-            SELECT id, status, notes, provider_id, encounter_id
+            SELECT id, status, notes, provider_id, encounter_id, data_source_id
               FROM condition
              WHERE patient_id = ?
                AND COALESCE(name, '') = COALESCE(?, '')
@@ -95,6 +97,7 @@ def insert_conditions(
                 existing_notes,
                 existing_provider_id,
                 existing_encounter_id,
+                existing_data_source,
             ) = existing
             updates: list[str] = []
             params: list[Any] = []
@@ -110,6 +113,9 @@ def insert_conditions(
             if encounter_id and (existing_encounter_id or 0) != encounter_id:
                 updates.append("encounter_id = ?")
                 params.append(encounter_id)
+            if ds_id is not None and (existing_data_source or 0) != ds_id:
+                updates.append("data_source_id = ?")
+                params.append(ds_id)
             if updates:
                 params.append(condition_id)
                 cur.execute(
@@ -129,8 +135,9 @@ def insert_conditions(
                     encounter_id,
                     code,
                     code_system,
-                    code_display
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    code_display,
+                    data_source_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     patient_id,
@@ -143,6 +150,7 @@ def insert_conditions(
                     code_value,
                     code_system,
                     code_display,
+                    ds_id,
                 ),
             )
             condition_id = cur.lastrowid

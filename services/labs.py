@@ -12,7 +12,7 @@ import sqlite3
 from typing import Any, Mapping, Sequence, Tuple
 
 from db.utils import insert_records
-from services.common import clean_str
+from services.common import clean_str, coerce_int
 from services.encounters import find_encounter_id
 from services.providers import get_or_create_provider
 
@@ -43,6 +43,7 @@ def insert_labs(
         "date",
         "ordering_provider_id",
         "performing_org_id",
+        "data_source_id",
     ]
 
     def build_row(result: Mapping[str, object]) -> Tuple[Any, ...]:
@@ -75,6 +76,7 @@ def insert_labs(
                 provider_id=performing_org_id,
                 source_encounter_id=clean_str(result.get("encounter_source_id")),
             )
+        ds_id = coerce_int(result.get("data_source_id"))
         return (
             patient_id,
             encounter_id,
@@ -87,6 +89,7 @@ def insert_labs(
             clean_str(result.get("date")),
             ordering_provider_id,
             performing_org_id,
+            ds_id,
         )
 
     normalized_labs = [dict(lab) for lab in labs]
