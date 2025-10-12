@@ -1,18 +1,27 @@
+# Purpose: Provide encounter lookup and persistence helpers for the SQLite datastore.
+# Author: Codex assistant
+# Date: 2025-10-12
+# Related tests: tests/test_ingest.py
+# AI-assisted: Portions of this file were generated with AI assistance.
+
 """Encounter services: lookup and ingestion helpers."""
+
 from __future__ import annotations
 
 import sqlite3
-from typing import Any, Optional
+from typing import Any, Mapping, Optional, Sequence
 
+from services.common import clean_str
 from services.providers import get_or_create_provider
 
 __all__ = ["find_encounter_id", "insert_encounters"]
 
 
 def _date_only(value: Optional[str]) -> Optional[str]:
+    """Return the YYYYMMDD component of a date string if present."""
     if not value:
         return None
-    digits = ''.join(ch for ch in value if ch.isdigit())
+    digits = "".join(ch for ch in value if ch.isdigit())
     if len(digits) >= 8:
         return digits[:8]
     return None
@@ -27,16 +36,27 @@ def find_encounter_id(
     provider_id: Optional[int] = None,
     source_encounter_id: Optional[str] = None,
 ) -> Optional[int]:
-    """Resolve an encounter row for downstream usage based on identifiers."""
-    if provider_id is None and provider_name:
-        provider_id = get_or_create_provider(conn, provider_name)
+    """Resolve an encounter row based on temporal and provider hints.
+
+    Args:
+        conn: Active SQLite connection.
+        patient_id: Patient identifier.
+        encounter_date: Date or timestamp from the source document.
+        provider_name: Provider display name.
+        provider_id: Optional existing provider identifier.
+        source_encounter_id: Source-system encounter identifier.
+
+    Returns:
+        Optional[int]: Matching encounter primary key if one is found.
+    """
+    normalized_provider_name = clean_str(provider_name)
+    if provider_id is None and normalized_provider_name:
+        provider_id = get_or_create_provider(conn, normalized_provider_name)
     cur = conn.cursor()
 
     def fetch(sql: str, params: tuple[Any, ...]) -> Optional[int]:
         row = cur.execute(sql, params).fetchone()
-        if row:
-            return row[0]
-        return None
+        return row[0] if row else None
 
     def run_query(base_sql: str, base_params: list[Any], order_clause: str) -> Optional[int]:
         if provider_id is not None:
@@ -51,7 +71,7 @@ def find_encounter_id(
                 return match
         return fetch(base_sql + order_clause, tuple(base_params))
 
-    encounter_day = _date_only(encounter_date)
+    encounter_day = _date_only(encounter_date or "")
 
     if source_encounter_id:
         params: list[Any] = [patient_id, source_encounter_id]
@@ -133,28 +153,37 @@ def find_encounter_id(
     return None
 
 
-def insert_encounters(conn: sqlite3.Connection, patient_id: int, encounters: list[dict]) -> None:
-    """Upsert encounter metadata, merging new details when duplicates appear."""
+def insert_encounters(
+    conn: sqlite3.Connection,
+    patient_id: int,
+    encounters: Sequence[Mapping[str, object]],
+) -> None:
+    """Upsert encounter metadata, merging new information when duplicates appear.
+
+    Args:
+        conn: Active SQLite connection.
+        patient_id: Identifier for the patient owning the encounter.
+        encounters: Collection of parsed encounter dictionaries.
+    """
     if not encounters:
         return
+
     cur = conn.cursor()
     for enc in encounters:
-        provider_name = enc.get("provider")
-        provider_id = None
-        if provider_name:
-            provider_id = get_or_create_provider(conn, provider_name)
+        provider_name = clean_str(enc.get("provider"))
+        provider_id = get_or_create_provider(conn, provider_name) if provider_name else None
 
-        encounter_date = enc.get("start") or enc.get("end")
-        source_encounter_id = enc.get("source_id")
-        encounter_type = enc.get("type")
-        reason_for_visit = enc.get("reason_for_visit")
-        notes = enc.get("notes")
+        encounter_date = clean_str(enc.get("start")) or clean_str(enc.get("end"))
+        source_encounter_id = clean_str(enc.get("source_id"))
+        encounter_type = clean_str(enc.get("type"))
+        reason_for_visit = clean_str(enc.get("reason_for_visit"))
+        notes = clean_str(enc.get("notes"))
         if not notes:
             fallback_parts = [
-                enc.get("location"),
-                enc.get("status"),
-                enc.get("mood"),
-                enc.get("code"),
+                clean_str(enc.get("location")),
+                clean_str(enc.get("status")),
+                clean_str(enc.get("mood")),
+                clean_str(enc.get("code")),
             ]
             fallback = " | ".join(part for part in fallback_parts if part)
             notes = fallback or None

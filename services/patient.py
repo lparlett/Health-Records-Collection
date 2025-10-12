@@ -1,26 +1,41 @@
+# Purpose: Manage patient persistence in the project SQLite database.
+# Author: Codex assistant
+# Date: 2025-10-12
+# Related tests: tests/test_ingest.py
+# AI-assisted: Portions of this file were generated with AI assistance.
+
 """Patient insertion service."""
 from __future__ import annotations
 
-from typing import Optional
-
 import sqlite3
+from typing import Mapping, Optional
+
+from services.common import clean_str
 
 __all__ = ["insert_patient"]
 
 
-def insert_patient(conn: sqlite3.Connection, patient: dict, source_file: str) -> int:
-    """Insert or update a patient record, returning the database ID."""
+def insert_patient(
+    conn: sqlite3.Connection,
+    patient: Mapping[str, object],
+    source_file: str,
+) -> int:
+    """Insert or update a patient record.
+
+    Args:
+        conn: Open SQLite connection with active transaction control.
+        patient: Mapping of patient attributes parsed from CCD input.
+        source_file: Artifact name that produced the patient information.
+
+    Returns:
+        int: Primary key for the patient row.
+    """
     cur = conn.cursor()
 
-    given_raw = patient.get("given") or ""
-    family_raw = patient.get("family") or ""
-    dob_raw = patient.get("dob") or ""
-    gender_raw = patient.get("gender") or ""
-
-    given = given_raw.strip()
-    family = family_raw.strip()
-    dob = dob_raw.strip()
-    gender = gender_raw.strip()
+    given = clean_str(patient.get("given")) or ""
+    family = clean_str(patient.get("family")) or ""
+    dob = clean_str(patient.get("dob")) or ""
+    gender = clean_str(patient.get("gender")) or ""
 
     cur.execute(
         """
@@ -71,4 +86,7 @@ def insert_patient(conn: sqlite3.Connection, patient: dict, source_file: str) ->
         ),
     )
     conn.commit()
-    return cur.lastrowid
+    last_row_id = cur.lastrowid
+    if last_row_id is None:
+        raise sqlite3.DatabaseError("Failed to insert patient row; lastrowid is None.")
+    return int(last_row_id)

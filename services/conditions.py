@@ -1,62 +1,80 @@
+# Purpose: Persist condition/problem list records in the SQLite datastore.
+# Author: Codex assistant
+# Date: 2025-10-12
+# Related tests: tests/test_ingest.py
+# AI-assisted: Portions of this file were generated with AI assistance.
+
 """Condition ingestion services."""
+
 from __future__ import annotations
 
 import sqlite3
-from typing import List, Optional
+from typing import Any, Mapping, Sequence
 
+from services.common import clean_str, ensure_mapping_sequence
 from services.encounters import find_encounter_id
 from services.providers import get_or_create_provider
-
 
 __all__ = ["insert_conditions"]
 
 
-def insert_conditions(conn: sqlite3.Connection, patient_id: int, conditions: List[dict]) -> None:
-    """Upsert condition/problem list entries and codes linked to providers and encounters."""
+def insert_conditions(
+    conn: sqlite3.Connection,
+    patient_id: int,
+    conditions: Sequence[Mapping[str, object]],
+) -> None:
+    """Upsert condition entries and associated codes.
+
+    Args:
+        conn: Active SQLite connection.
+        patient_id: Identifier for the patient owning the conditions.
+        conditions: Sequence of parsed condition dictionaries.
+    """
     if not conditions:
         return
+
     cur = conn.cursor()
     for cond in conditions:
-        provider_name = cond.get("provider")
-        provider_id: Optional[int] = None
-        if provider_name:
-            provider_id = get_or_create_provider(conn, provider_name)
+        provider_name = clean_str(cond.get("provider"))
+        provider_id = get_or_create_provider(conn, provider_name) if provider_name else None
+
         encounter_id = find_encounter_id(
             conn,
             patient_id,
-            encounter_date=(
-                cond.get("encounter_start")
-                or cond.get("start")
-                or cond.get("author_time")
-            ),
+            encounter_date=clean_str(cond.get("encounter_start"))
+            or clean_str(cond.get("start"))
+            or clean_str(cond.get("author_time")),
             provider_name=provider_name,
             provider_id=provider_id,
-            source_encounter_id=cond.get("encounter_source_id"),
+            source_encounter_id=clean_str(cond.get("encounter_source_id")),
         )
 
         if encounter_id is None and cond.get("encounter_end"):
             encounter_id = find_encounter_id(
                 conn,
                 patient_id,
-                encounter_date=cond.get("encounter_end"),
+                encounter_date=clean_str(cond.get("encounter_end")),
                 provider_name=provider_name,
                 provider_id=provider_id,
-                source_encounter_id=cond.get("encounter_source_id"),
+                source_encounter_id=clean_str(cond.get("encounter_source_id")),
             )
 
-        codes = cond.get("codes") or []
+        raw_codes = cond.get("codes")
+        codes: list[Mapping[str, object]] = []
+        if isinstance(raw_codes, Sequence) and not isinstance(raw_codes, (str, bytes)):
+            codes = list(ensure_mapping_sequence(raw_codes))
         primary_code = codes[0] if codes else {}
-        code_value = (primary_code.get("code") or "").strip() or None
-        code_system = (primary_code.get("system") or "").strip() or None
-        code_display = (primary_code.get("display") or "").strip() or None
+        code_value = clean_str(primary_code.get("code"))
+        code_system = clean_str(primary_code.get("system"))
+        code_display = clean_str(primary_code.get("display"))
 
-        name = (cond.get("name") or code_display or code_value or "").strip()
+        name = clean_str(cond.get("name")) or code_display or code_value
         if not name:
             continue
 
-        onset_date = cond.get("start") or None
-        status = cond.get("status") or None
-        notes = cond.get("notes") or None
+        onset_date = clean_str(cond.get("start"))
+        status = clean_str(cond.get("status"))
+        notes = clean_str(cond.get("notes"))
 
         existing = cur.execute(
             """
@@ -67,7 +85,7 @@ def insert_conditions(conn: sqlite3.Connection, patient_id: int, conditions: Lis
                AND COALESCE(code, '') = COALESCE(?, '')
                AND COALESCE(onset_date, '') = COALESCE(?, '')
             """,
-            (patient_id, name, code_value or '', onset_date or ''),
+            (patient_id, name or "", code_value or "", onset_date or ""),
         ).fetchone()
 
         if existing:
@@ -78,8 +96,8 @@ def insert_conditions(conn: sqlite3.Connection, patient_id: int, conditions: Lis
                 existing_provider_id,
                 existing_encounter_id,
             ) = existing
-            updates: List[str] = []
-            params: List[Optional[str]] = []
+            updates: list[str] = []
+            params: list[Any] = []
             if status and (existing_status or "") != status:
                 updates.append("status = ?")
                 params.append(status)
@@ -130,11 +148,11 @@ def insert_conditions(conn: sqlite3.Connection, patient_id: int, conditions: Lis
             condition_id = cur.lastrowid
 
         for code in codes:
-            code_val = (code.get("code") or "").strip()
+            code_val = clean_str(code.get("code"))
             if not code_val:
                 continue
-            code_system_val = (code.get("system") or "").strip()
-            display_val = (code.get("display") or "").strip() or None
+            code_system_val = clean_str(code.get("system"))
+            display_val = clean_str(code.get("display"))
             cur.execute(
                 """
                 INSERT OR IGNORE INTO condition_code (condition_id, code, code_system, display_name)
