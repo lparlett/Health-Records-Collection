@@ -315,3 +315,116 @@ def get_encounter_detail(conn, encounter_id):
         "procedures": procedures,
         "immunizations": immunizations,
     }
+
+
+# AI-assisted change: Implemented with help from gpt-5-codex.
+def get_patient_vitals_timeseries(
+    conn,
+    patient_id,
+    vital_type=None,
+):
+    """Return a patient-level vital sign time series as a DataFrame."""
+
+    query = (
+        """
+        SELECT vital_type,
+               value,
+               unit,
+               date,
+               encounter_id
+          FROM vital
+         WHERE patient_id = ?
+        """
+    )
+    params: list = [patient_id]
+    if vital_type:
+        query += " AND vital_type = ?"
+        params.append(vital_type)
+    query += " ORDER BY date, id"
+
+    df = pd.read_sql(query, conn, params=params)
+    if df.empty:
+        return pd.DataFrame(
+            columns=[
+                "vital_type",
+                "value",
+                "unit",
+                "date",
+                "encounter_id",
+                "value_text",
+                "value_numeric",
+                "measurement_time",
+            ]
+        )
+
+    df["value_text"] = df["value"]
+    df["value_numeric"] = pd.to_numeric(df["value"], errors="coerce")
+    df["measurement_time"] = pd.to_datetime(df["date"], errors="coerce")
+    df = df.sort_values(["measurement_time", "date", "vital_type"]).reset_index(
+        drop=True
+    )
+    return df
+
+
+# AI-assisted change: Implemented with help from gpt-5-codex.
+def get_patient_lab_timeseries(
+    conn,
+    patient_id,
+    *,
+    loinc_code=None,
+    test_name=None,
+):
+    """Return lab result time series for a patient as a DataFrame."""
+
+    query = (
+        """
+        SELECT loinc_code,
+               test_name,
+               result_value,
+               unit,
+               reference_range,
+               abnormal_flag,
+               date,
+               encounter_id
+          FROM lab_result
+         WHERE patient_id = ?
+        """
+    )
+    params: list = [patient_id]
+    if loinc_code:
+        query += " AND loinc_code = ?"
+        params.append(loinc_code)
+    if test_name:
+        query += " AND test_name = ?"
+        params.append(test_name)
+    query += " ORDER BY date, id"
+
+    df = pd.read_sql(query, conn, params=params)
+    if df.empty:
+        return pd.DataFrame(
+            columns=[
+                "loinc_code",
+                "test_name",
+                "result_value",
+                "unit",
+                "reference_range",
+                "abnormal_flag",
+                "date",
+                "encounter_id",
+                "value_text",
+                "value_numeric",
+                "result_text",
+                "result_numeric",
+                "measurement_time",
+            ]
+        )
+
+    df["value_text"] = df["result_value"]
+    df["value_numeric"] = pd.to_numeric(df["result_value"], errors="coerce")
+    df["result_text"] = df["value_text"]
+    df["result_numeric"] = df["value_numeric"]
+    df["measurement_time"] = pd.to_datetime(df["date"], errors="coerce")
+    df = df.sort_values(
+        ["measurement_time", "date", "loinc_code", "test_name"]
+    ).reset_index(drop=True)
+    return df

@@ -11,7 +11,6 @@ from __future__ import annotations
 import sqlite3
 from typing import Any, Mapping, Sequence, Tuple
 
-from db.utils import insert_records
 from services.common import clean_str, coerce_int
 from services.encounters import find_encounter_id
 from services.providers import get_or_create_provider
@@ -93,4 +92,40 @@ def insert_labs(
         )
 
     normalized_labs = [dict(lab) for lab in labs]
-    insert_records(conn, "lab_result", columns, normalized_labs, build_row)
+
+    def _key(date_value: Any, encounter_value: Any, loinc_value: Any) -> tuple[Any, Any, Any]:
+        return (
+            clean_str(date_value),
+            coerce_int(encounter_value),
+            clean_str(loinc_value),
+        )
+
+    existing_keys_query = """
+        SELECT date, encounter_id, loinc_code
+          FROM lab_result
+         WHERE patient_id = ?
+    """
+    existing_keys = {
+        _key(row[0], row[1], row[2])
+        for row in conn.execute(existing_keys_query, (patient_id,))
+    }
+
+    rows_to_insert: list[Tuple[Any, ...]] = []
+    pending_keys: set[tuple[Any, Any, Any]] = set()
+
+    for lab_entry in normalized_labs:
+        row = build_row(lab_entry)
+        unique_key = _key(row[8], row[1], row[2])
+        if unique_key in existing_keys or unique_key in pending_keys:
+            continue
+        pending_keys.add(unique_key)
+        rows_to_insert.append(row)
+
+    if not rows_to_insert:
+        return
+
+    placeholders = ", ".join(["?"] * len(columns))
+    sql = f"INSERT INTO lab_result ({', '.join(columns)}) VALUES ({placeholders})"
+    cur = conn.cursor()
+    cur.executemany(sql, rows_to_insert)
+    conn.commit()

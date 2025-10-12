@@ -1,9 +1,16 @@
 from __future__ import annotations
 
+# Purpose: Streamlit views for patient encounter overview, detail, and trends.
+# Author: Codex + Lauren
+# Date: 2025-10-12
+# Tests: Manual Streamlit verification; frontend pytest coverage pending.
+# AI-assisted: Portions of this module were updated with AI assistance.
+
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
+import altair as alt
 import pandas as pd
 import streamlit as st
 
@@ -14,6 +21,8 @@ import ui_components
 def _ensure_state() -> None:
     state = st.session_state
     state.setdefault("app_view", "overview")
+    state.setdefault("nav_view", "overview")
+    state.setdefault("detail_return_view", "overview")
     state.setdefault("selected_patient_id", None)
     state.setdefault("selected_patient_label", None)
     state.setdefault("selected_encounter_id", None)
@@ -32,8 +41,18 @@ def render_patient_encounter_experience(conn) -> bool:
     """Render the encounter experience. Returns True when overview is active."""
     _ensure_state()
     state = st.session_state
+    nav_view = _navigation_controls()
+    if state["app_view"] == "detail" and nav_view != state.get("detail_return_view"):
+        state["selected_encounter_id"] = None
+        state["app_view"] = nav_view
+    elif state["app_view"] != "detail":
+        state["app_view"] = nav_view
+
     if state["app_view"] == "detail":
         _show_encounter_detail(conn)
+        return False
+    if state["app_view"] == "trends":
+        _show_patient_trends_page(conn)
         return False
     _show_encounter_overview(conn)
     return True
@@ -69,6 +88,68 @@ def _sidebar_divider() -> None:
         st.sidebar.markdown("---")
 
 
+def _navigation_controls() -> str:
+    state = st.session_state
+    _sidebar_divider()
+    st.sidebar.header("Navigation")
+    options = [
+        ("Encounter overview", "overview"),
+        ("Patient trends", "trends"),
+    ]
+    labels = [label for label, _ in options]
+    nav_view = state.get("nav_view", "overview")
+    default_index = next(
+        (idx for idx, (_, value) in enumerate(options) if value == nav_view),
+        0,
+    )
+    selected_label = st.sidebar.radio(
+        "View",
+        labels,
+        index=default_index,
+        key="navigation-view",
+    )
+    selected_view = dict(options)[selected_label]
+    if selected_view != state.get("nav_view"):
+        state["nav_view"] = selected_view
+    return state["nav_view"]
+
+
+def _select_patient(
+    patients: pd.DataFrame,
+    *,
+    sidebar_header: str,
+) -> tuple[Optional[int], Optional[pd.Series]]:
+    if patients.empty:
+        return None, None
+
+    patient_options = {
+        str(row["display_name"]): int(row["id"]) for _, row in patients.iterrows()
+    }
+    labels = list(patient_options.keys())
+
+    state = st.session_state
+    default_index = 0
+    if state.get("selected_patient_label") in patient_options:
+        default_index = labels.index(state["selected_patient_label"])
+
+    _sidebar_divider()
+    st.sidebar.header(sidebar_header)
+    selected_label = st.sidebar.selectbox(
+        "Patient",
+        options=labels,
+        index=default_index,
+        key="patient-selector",
+    )
+    patient_id = patient_options[selected_label]
+    if state.get("selected_patient_id") != patient_id:
+        state["selected_encounter_id"] = None
+    state["selected_patient_id"] = patient_id
+    state["selected_patient_label"] = selected_label
+
+    patient_row = patients[patients["id"] == patient_id].iloc[0]
+    return patient_id, patient_row
+
+
 def _show_encounter_overview(conn) -> None:
     st.header("Encounter Overview")
 
@@ -77,26 +158,14 @@ def _show_encounter_overview(conn) -> None:
         st.info("No patients found in the database.")
         return
 
-    patient_options = {row["display_name"]: int(row["id"]) for _, row in patients.iterrows()}
+    patient_id, patient_row = _select_patient(patients, sidebar_header="Encounter Filters")
+    if patient_id is None or patient_row is None:
+        st.info("No patients found in the database.")
+        return
+
     state = st.session_state
-
-    labels = list(patient_options.keys())
-    default_index = 0
-    if state["selected_patient_label"] in patient_options:
-        default_index = labels.index(state["selected_patient_label"])
-
-    _sidebar_divider()
-    st.sidebar.header("Encounter Filters")
-    selected_label = st.sidebar.selectbox("Patient", options=labels, index=default_index)
-    patient_id = patient_options[selected_label]
-
-    if state["selected_patient_id"] != patient_id:
-        state["selected_patient_id"] = patient_id
-        state["selected_patient_label"] = selected_label
-        state["selected_encounter_id"] = None
-
-    patient_row = patients[patients["id"] == patient_id].iloc[0]
-    subtitle_parts = [f"Patient: {selected_label}"]
+    patient_label = state.get("selected_patient_label") or patient_row.get("display_name")
+    subtitle_parts = [f"Patient: {patient_label}"]
     birth_date = patient_row.get("birth_date")
     if birth_date:
         subtitle_parts.append(f"DOB: {birth_date}")
@@ -123,8 +192,33 @@ def _show_encounter_overview(conn) -> None:
                 st.markdown(notes)
             if st.button("View details", key=f"encounter-detail-{encounter_id}"):
                 state["selected_encounter_id"] = encounter_id
+                state["detail_return_view"] = state.get("nav_view", "overview")
                 state["app_view"] = "detail"
                 _rerun()
+
+
+def _show_patient_trends_page(conn) -> None:
+    st.header("Patient Trends")
+
+    patients = db_utils.get_patients(conn)
+    if patients.empty:
+        st.info("No patients found in the database.")
+        return
+
+    patient_id, patient_row = _select_patient(patients, sidebar_header="Trend Filters")
+    if patient_id is None or patient_row is None:
+        st.info("No patients found in the database.")
+        return
+
+    state = st.session_state
+    patient_label = state.get("selected_patient_label") or patient_row.get("display_name")
+    subtitle_parts = [f"Patient: {patient_label}"]
+    birth_date = patient_row.get("birth_date")
+    if birth_date:
+        subtitle_parts.append(f"DOB: {birth_date}")
+    st.caption(" | ".join(subtitle_parts))
+
+    _render_patient_trends(conn, patient_id, show_section_header=False)
 
 
 def _format_records_for_list(records: Iterable[dict[str, Any]], fields: list[str]) -> list[str]:
@@ -172,13 +266,200 @@ def _show_progress_notes(notes: list[dict[str, Any]]) -> None:
                 st.caption(f"Source ID: {source_id}")
 
 
+def _render_patient_trends(
+    conn,
+    patient_id: int,
+    *,
+    show_section_header: bool = True,
+) -> None:
+    """Render patient-level lab and vital trends."""
+
+    if show_section_header:
+        st.subheader("Patient Trends")
+    vitals_df = db_utils.get_patient_vitals_timeseries(conn, patient_id)
+    labs_df = db_utils.get_patient_lab_timeseries(conn, patient_id)
+
+    if vitals_df.empty and labs_df.empty:
+        st.info("No vitals or lab results recorded for this patient.")
+        return
+
+    def _clean_label(value: Any) -> Optional[str]:
+        if value is None or (isinstance(value, float) and pd.isna(value)):
+            return None
+        if pd.isna(value):
+            return None
+        text = str(value).strip()
+        return text or None
+
+    options: list[tuple[str, dict[str, Any]]] = []
+
+    if not vitals_df.empty:
+        vitals_df = vitals_df.copy()
+        vitals_df["_type_clean"] = vitals_df["vital_type"].apply(_clean_label)
+        for vital_name in sorted(
+            {name for name in vitals_df["_type_clean"].dropna().unique()}
+        ):
+            label = f"Vital • {vital_name}"
+            options.append((label, {"dataset": "vital", "name": vital_name}))
+        if vitals_df["_type_clean"].isna().any():
+            options.append(
+                (
+                    "Vital • Unspecified type",
+                    {"dataset": "vital", "name": None},
+                )
+            )
+
+    if not labs_df.empty:
+        labs_df = labs_df.copy()
+        labs_df["_name_clean"] = labs_df["test_name"].apply(_clean_label)
+        labs_df["_loinc_clean"] = labs_df["loinc_code"].apply(_clean_label)
+        lab_keys = (
+            labs_df[["_name_clean", "_loinc_clean"]]
+            .drop_duplicates()
+            .sort_values(["_name_clean", "_loinc_clean"])
+        )
+        for _, row in lab_keys.iterrows():
+            test_clean = row["_name_clean"]
+            loinc_clean = row["_loinc_clean"]
+            primary = test_clean or loinc_clean or "Unspecified lab"
+            label = f"Lab • {primary}"
+            if test_clean and loinc_clean:
+                label += f" ({loinc_clean})"
+            options.append(
+                (
+                    label,
+                    {
+                        "dataset": "lab",
+                        "test_name": test_clean,
+                        "loinc_code": loinc_clean,
+                    },
+                )
+            )
+
+    if not options:
+        st.info("No trendable data found for this patient.")
+        return
+
+    options.sort(key=lambda item: item[0])
+    labels = [label for label, _ in options]
+    selected_label = st.selectbox(
+        "Measurement",
+        labels,
+        key="trend-measurement",
+    )
+    selected_meta = next(meta for label, meta in options if label == selected_label)
+
+    if selected_meta["dataset"] == "vital":
+        series_df = vitals_df.copy()
+        if selected_meta["name"] is None:
+            mask = series_df["_type_clean"].isna()
+            display_name = "Unspecified vital"
+        else:
+            mask = series_df["_type_clean"] == selected_meta["name"]
+            display_name = selected_meta["name"]
+        series_df = series_df.loc[mask].copy()
+        tooltip_fields = [
+            alt.Tooltip("measurement_time:T", title="Timestamp"),
+            alt.Tooltip("value_numeric:Q", title="Value"),
+            alt.Tooltip("unit:N", title="Unit"),
+            alt.Tooltip("value_text:N", title="Original Value"),
+            alt.Tooltip("encounter_id:N", title="Encounter"),
+        ]
+        table_columns = ["date", "value_text", "unit", "encounter_id"]
+    else:
+        series_df = labs_df.copy()
+        mask = pd.Series(True, index=series_df.index)
+        if selected_meta["test_name"] is None:
+            mask &= series_df["_name_clean"].isna()
+            display_name = selected_meta["loinc_code"] or "Unspecified lab"
+        else:
+            mask &= series_df["_name_clean"] == selected_meta["test_name"]
+            display_name = selected_meta["test_name"]
+        if selected_meta["loinc_code"] is None:
+            mask &= series_df["_loinc_clean"].isna()
+        else:
+            mask &= series_df["_loinc_clean"] == selected_meta["loinc_code"]
+            if selected_meta["test_name"]:
+                display_name += f" ({selected_meta['loinc_code']})"
+        series_df = series_df.loc[mask].copy()
+        tooltip_fields = [
+            alt.Tooltip("measurement_time:T", title="Timestamp"),
+            alt.Tooltip("value_numeric:Q", title="Value"),
+            alt.Tooltip("unit:N", title="Unit"),
+            alt.Tooltip("value_text:N", title="Original Value"),
+            alt.Tooltip("abnormal_flag:N", title="Abnormal"),
+            alt.Tooltip("reference_range:N", title="Reference Range"),
+            alt.Tooltip("encounter_id:N", title="Encounter"),
+        ]
+        table_columns = [
+            "date",
+            "value_text",
+            "unit",
+            "abnormal_flag",
+            "reference_range",
+            "encounter_id",
+        ]
+
+    st.caption(f"Selected series: {display_name}")
+
+    units = sorted(
+        {
+            str(unit).strip()
+            for unit in series_df["unit"].dropna()
+            if str(unit).strip()
+        }
+    )
+    if len(units) > 1:
+        st.warning(
+            "Multiple units detected for this series; values may not be "
+            "comparable."
+        )
+    elif not units:
+        st.info("No unit information recorded for this series.")
+
+    non_numeric = series_df[
+        series_df["value_numeric"].isna() & series_df["value_text"].notna()
+    ]
+    if not non_numeric.empty:
+        st.warning(
+            "Some results are non-numeric and are excluded from the chart."
+        )
+
+    chart_df = series_df.dropna(subset=["measurement_time", "value_numeric"])
+    if len(chart_df) >= 2:
+        y_title = "Value"
+        if len(units) == 1:
+            y_title = f"Value ({units[0]})"
+        chart = (
+            alt.Chart(chart_df)
+            .mark_line(point=True)
+            .encode(
+                x=alt.X("measurement_time:T", title="Date"),
+                y=alt.Y("value_numeric:Q", title=y_title),
+                tooltip=tooltip_fields,
+            )
+            .interactive()
+        )
+        st.altair_chart(chart, use_container_width=True)
+    else:
+        st.info(
+            "Not enough numeric data points with valid dates to render a "
+            "chart."
+        )
+
+    st.dataframe(series_df[table_columns], use_container_width=True)
+
+
 def _show_encounter_detail(conn) -> None:
     state = st.session_state
     encounter_id = state.get("selected_encounter_id")
     if encounter_id is None:
         st.warning("No encounter selected.")
         if st.button("Back to encounters"):
-            state["app_view"] = "overview"
+            target_view = state.get("detail_return_view", "overview")
+            state["selected_encounter_id"] = None
+            state["app_view"] = target_view
+            state["nav_view"] = target_view
             _rerun()
         return
 
@@ -187,75 +468,89 @@ def _show_encounter_detail(conn) -> None:
 
     st.header("Encounter Detail")
     if st.button("Back to encounters"):
-        state["app_view"] = "overview"
+        target_view = state.get("detail_return_view", "overview")
         state["selected_encounter_id"] = None
+        state["app_view"] = target_view
+        state["nav_view"] = target_view
         _rerun()
 
     patient_label = state.get("selected_patient_label") or f"#{detail['patient_id']}"
     st.markdown(f"**Patient:** {patient_label}")
 
-    with st.container():
-        st.subheader("Encounter Metadata")
-        cols = st.columns(2)
-        with cols[0]:
-            st.markdown(f"**Date:** {_format_datetime(metadata.get('encounter_date'), show_time=True)}")
-            st.markdown(f"**Type:** {metadata.get('encounter_type') or 'Unknown'}")
-            st.markdown(f"**Provider:** {metadata.get('provider_display_name')}")
-        with cols[1]:
-            ds = metadata.get("data_source") or {}
-            st.markdown(f"**Source Archive:** {ds.get('source_archive') or '-'}")
-            st.markdown(f"**Document:** {ds.get('original_filename') or '-'}")
-            if ds.get("document_created"):
+    summary_tab, trends_tab = st.tabs(["Encounter summary", "Patient trends"])
+
+    with summary_tab:
+        with st.container():
+            st.subheader("Encounter Metadata")
+            cols = st.columns(2)
+            with cols[0]:
                 st.markdown(
-                    f"**Document Created:** {_format_datetime(ds.get('document_created'), show_time=True)}"
+                    f"**Date:** {_format_datetime(metadata.get('encounter_date'), show_time=True)}"
                 )
-            if ds.get("repository_unique_id"):
-                st.markdown(f"**Repository ID:** {ds.get('repository_unique_id')}")
-            if ds.get("document_hash"):
-                st.markdown(f"**Document Hash:** `{ds.get('document_hash')}`")
-            if ds.get("document_size"):
-                st.markdown(f"**Document Size:** {ds.get('document_size')} bytes")
-            if ds.get("author_institution"):
-                st.markdown(f"**Author Institution:** {ds.get('author_institution')}")
+                st.markdown(f"**Type:** {metadata.get('encounter_type') or 'Unknown'}")
+                st.markdown(f"**Provider:** {metadata.get('provider_display_name')}")
+            with cols[1]:
+                ds = metadata.get("data_source") or {}
+                st.markdown(f"**Source Archive:** {ds.get('source_archive') or '-'}")
+                st.markdown(f"**Document:** {ds.get('original_filename') or '-'}")
+                if ds.get("document_created"):
+                    st.markdown(
+                        f"**Document Created:** {_format_datetime(ds.get('document_created'), show_time=True)}"
+                    )
+                if ds.get("repository_unique_id"):
+                    st.markdown(f"**Repository ID:** {ds.get('repository_unique_id')}")
+                if ds.get("document_hash"):
+                    st.markdown(f"**Document Hash:** `{ds.get('document_hash')}`")
+                if ds.get("document_size"):
+                    st.markdown(
+                        f"**Document Size:** {ds.get('document_size')} bytes"
+                    )
+                if ds.get("author_institution"):
+                    st.markdown(
+                        f"**Author Institution:** {ds.get('author_institution')}"
+                    )
 
-        notes = metadata.get("notes")
-        if notes:
-            st.markdown("**Encounter Notes**")
-            st.markdown(notes)
+            notes = metadata.get("notes")
+            if notes:
+                st.markdown("**Encounter Notes**")
+                st.markdown(notes)
 
-        attachment = metadata.get("attachment") or {}
-        if attachment.get("file_path"):
-            attachment_path = attachment["file_path"]
-            attachment_label = Path(attachment_path).name
-            mime = attachment.get("mime_type")
-            attachment_text = f"`{attachment_label}`"
-            if mime:
-                attachment_text += f" ({mime})"
-            st.markdown(f"**Attachment:** {attachment_text}")
+            attachment = metadata.get("attachment") or {}
+            if attachment.get("file_path"):
+                attachment_path = attachment["file_path"]
+                attachment_label = Path(attachment_path).name
+                mime = attachment.get("mime_type")
+                attachment_text = f"`{attachment_label}`"
+                if mime:
+                    attachment_text += f" ({mime})"
+                st.markdown(f"**Attachment:** {attachment_text}")
 
-    _show_section(
-        "Conditions",
-        detail["conditions"],
-        fields=["name", "code_display", "status"],
-    )
-    _show_section(
-        "Medications",
-        detail["medications"],
-        fields=["name", "dose", "route", "frequency", "status"],
-    )
-    _show_section(
-        "Procedures",
-        detail["procedures"],
-        fields=["name", "code_display", "status", "date"],
-    )
-    _show_section("Lab Results", detail["lab_results"], dataframe=True)
-    _show_section("Vitals", detail["vitals"], dataframe=True)
-    _show_section(
-        "Immunizations (up to encounter date)",
-        detail["immunizations"],
-        dataframe=True,
-    )
-    _show_progress_notes(detail["progress_notes"])
+        _show_section(
+            "Conditions",
+            detail["conditions"],
+            fields=["name", "code_display", "status"],
+        )
+        _show_section(
+            "Medications",
+            detail["medications"],
+            fields=["name", "dose", "route", "frequency", "status"],
+        )
+        _show_section(
+            "Procedures",
+            detail["procedures"],
+            fields=["name", "code_display", "status", "date"],
+        )
+        _show_section("Lab Results", detail["lab_results"], dataframe=True)
+        _show_section("Vitals", detail["vitals"], dataframe=True)
+        _show_section(
+            "Immunizations (up to encounter date)",
+            detail["immunizations"],
+            dataframe=True,
+        )
+        _show_progress_notes(detail["progress_notes"])
+
+    with trends_tab:
+        _render_patient_trends(conn, detail["patient_id"])
 
 
 def show_tables(conn):

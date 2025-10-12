@@ -72,3 +72,11 @@ File "Z:\\Health\\Health-Records-Collection\\frontend\\views.py", line 118, in _
 [2025-10-12 20:17:13 UTC] I re-ingested and that provider was not picked up for that data source.
 [2025-10-12 20:23:45 UTC] Re-ingested and it is the same issue. It may be worthwhile to consider having a separate organization table and provider table where we can link providers to organizations and the encounters to providers, not their orgs.
 [2025-10-12 20:49:56 UTC] My encounter notes look like [redacted]. I don't like how some words run together. The bar separator from the joins is working, but not for each part. Can you fix that?
+
+[2025-10-12 21:06:55 UTC] Store in docs/AI_prompts.md. Use Attempt 1 / Version 1 suggestions.
+[2025-10-12 21:40:31 UTC]
+One change - I don't want these trends embedded within encounter details - I want a separate selectable page separate from encounters where all trends can be viewed.
+[2025-10-12 22:06:00 UTC]
+Where in the lab service script does it specify that uniqueness has to exist for date, encounter id, and loinc composite?
+[2025-10-12 22:07:29 UTC]
+I want labs to only be inserted if they don't violate unique by date, encounter id, and loinc code.
