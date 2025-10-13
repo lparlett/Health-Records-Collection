@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime
 import re
+import sqlite3
 from pathlib import Path
 from typing import Any, Iterable, Optional, Tuple
 
@@ -521,7 +522,12 @@ def _render_patient_trends(
     st.dataframe(series_df[table_columns], use_container_width=True)
 
 
-def _show_encounter_detail(conn) -> None:
+def _show_encounter_detail(conn: sqlite3.Connection) -> None:
+    """Show detailed encounter information.
+    
+    Args:
+        conn: Database connection
+    """
     state = st.session_state
     encounter_id = state.get("selected_encounter_id")
     if encounter_id is None:
@@ -534,7 +540,7 @@ def _show_encounter_detail(conn) -> None:
             _rerun()
         return
 
-    detail = db_utils.get_encounter_detail(conn, encounter_id)
+    detail: dict[str, Any] = db_utils.get_encounter_detail(conn, encounter_id)
     metadata = detail["metadata"]
 
     st.header("Encounter Detail")
@@ -548,10 +554,8 @@ def _show_encounter_detail(conn) -> None:
     patient_label = state.get("selected_patient_label") or f"#{detail['patient_id']}"
     st.markdown(f"**Patient:** {patient_label}")
 
-    summary_tab, trends_tab = st.tabs(["Encounter summary", "Patient trends"])
-
-    with summary_tab:
-        with st.container():
+    # Show encounter summary in main container
+    with st.container():
             st.subheader("Encounter Metadata")
             cols = st.columns(2)
             with cols[0]:
@@ -596,32 +600,29 @@ def _show_encounter_detail(conn) -> None:
                     attachment_text += f" ({mime})"
                 st.markdown(f"**Attachment:** {attachment_text}")
 
-        _show_section(
-            "Conditions",
-            detail["conditions"],
-            fields=["name", "code_display", "status"],
-        )
-        _show_section(
-            "Medications",
-            detail["medications"],
-            fields=["name", "dose", "route", "frequency", "status"],
-        )
-        _show_section(
-            "Procedures",
-            detail["procedures"],
-            fields=["name", "code_display", "status", "date"],
-        )
-        _show_section("Lab Results", detail["lab_results"], dataframe=True)
-        _show_section("Vitals", detail["vitals"], dataframe=True)
-        _show_section(
-            "Immunizations (up to encounter date)",
-            detail["immunizations"],
-            dataframe=True,
-        )
-        _show_progress_notes(detail["progress_notes"])
-
-    with trends_tab:
-        _render_patient_trends(conn, detail["patient_id"])
+    _show_section(
+        "Conditions",
+        detail["conditions"],
+        fields=["name", "code_display", "status"],
+    )
+    _show_section(
+        "Medications",
+        detail["medications"],
+        fields=["name", "dose", "route", "frequency", "status"],
+    )
+    _show_section(
+        "Procedures",
+        detail["procedures"],
+        fields=["name", "code_display", "status", "date"],
+    )
+    _show_section("Lab Results", detail["lab_results"], dataframe=True)
+    _show_section("Vitals", detail["vitals"], dataframe=True)
+    _show_section(
+        "Immunizations (up to encounter date)",
+        detail["immunizations"],
+        dataframe=True,
+    )
+    _show_progress_notes(detail["progress_notes"])
 
 
 def show_tables(conn):
