@@ -13,7 +13,7 @@ from typing import Any, Sequence, cast
 
 from lxml import etree
 
-from .common import extract_provider_name, get_text_by_id
+from .common import extract_provider_info, extract_provider_name, get_text_by_id
 
 EncounterEntry = dict[str, Any]
 
@@ -42,25 +42,111 @@ def _extract_time_range(
     node: etree._Element | None,
     ns: dict[str, str],
 ) -> tuple[str | None, str | None]:
-    """Extract start/end timestamps from an HL7 effectiveTime element."""
+    """Extract and normalize start/end timestamps from an HL7 effectiveTime element.
+    
+    Processes HL7 timestamps according to these rules:
+    1. For a single 'value' attribute, use it for both start and end
+    2. For low/high elements, extract separate start/end times
+    3. When only start is present, use it for end time too
+    4. Preserves timezone information when available
+    
+    Args:
+        node: The HL7 effectiveTime element to process, or None
+        ns: XML namespace dictionary for XPath queries
+    
+    Returns:
+        tuple: (start_time, end_time) where each is either:
+            - Full datetime with timezone (YYYYMMDDHHmmss[+-]ZZZZ)
+            - Full datetime without timezone (YYYYMMDDHHmmss)
+            - None if no valid time found
+    
+    Example formats handled:
+        - 20250927165800-0400 (Full datetime with timezone)
+        - 20250927165800 (Full datetime)
+        - 20250927 (Date only, normalized to 20250927000000)
+    """
     start: str | None = None
     end: str | None = None
     if node is None:
         return start, end
 
-    value = node.get("value")
+    def normalize_time(val: str | None) -> str | None:
+        """Normalize an HL7 time value to a consistent format.
+        
+        Args:
+            val: Raw time string from XML
+            
+        Returns:
+            Normalized time string or None if invalid
+            
+        Time components:
+            - YYYY: 4-digit year
+            - MM: 2-digit month
+            - DD: 2-digit day
+            - HH: 2-digit hour (24-hour)
+            - mm: 2-digit minute
+            - ss: 2-digit second
+            - [+-]ZZZZ: Optional timezone offset
+        """
+        if not val:
+            return None
+        # Keep full precision including timezone if present
+        val = val.strip()
+        if len(val) >= 14:  # Has time component
+            # Format: YYYYMMDDHHmmss[+-]ZZZZ
+            return val
+        elif len(val) >= 8:  # Date only
+            # Add time component defaulting to midnight
+            return f"{val[:8]}000000"
+        return None
+
+    # First check for a single value attribute that represents both start and end
+    value = normalize_time(node.get("value"))
     if value:
         return value, value
 
+    # If no single value, look for separate low/high elements
     low = node.find("hl7:low", namespaces=ns)
     high = node.find("hl7:high", namespaces=ns)
-    if low is not None and low.get("value"):
-        start = low.get("value")
-    if high is not None and high.get("value"):
-        end = high.get("value")
+    
+    # Extract and normalize times from low/high elements if present
+    start = normalize_time(low.get("value") if low is not None else None)
+    end = normalize_time(high.get("value") if high is not None else None)
+    
+    # For single-point-in-time events, use start time for end
     if end is None and start is not None:
         end = start
+    
     return start, end
+
+
+def _is_valid_time_value(value: str | None, invalid_values: set[str]) -> bool:
+    if not value:
+        return False
+    if not invalid_values:
+        return True
+    for invalid in invalid_values:
+        if invalid and value.startswith(invalid):
+            return False
+    return True
+
+
+def _merge_time_candidates(
+    *candidates: tuple[str | None, str | None],
+    invalid_values: set[str] | None = None,
+) -> tuple[str | None, str | None]:
+    """Return the first available start/end values from ordered candidates."""
+    chosen_start: str | None = None
+    chosen_end: str | None = None
+    invalid_values = invalid_values or set()
+    for start, end in candidates:
+        if not chosen_start and _is_valid_time_value(start, invalid_values):
+            chosen_start = start
+        if not chosen_end and _is_valid_time_value(end, invalid_values):
+            chosen_end = end
+        if chosen_start and chosen_end:
+            break
+    return chosen_start, chosen_end
 
 
 def _normalize_reason_text(value: str | None) -> str | None:
@@ -174,21 +260,32 @@ def parse_encounters(tree: etree._ElementTree, ns: dict[str, str]) -> list[Encou
 
     global_provider_person: str | None = None
     global_provider_org: str | None = None
+    birth_el = tree.find("hl7:recordTarget/hl7:patientRole/hl7:patient/hl7:birthTime", namespaces=ns)
+    invalid_time_values: set[str] = set()
+    if birth_el is not None:
+        birth_value = birth_el.get("value")
+        if birth_value:
+            invalid_time_values.add(birth_value)
+            if len(birth_value) >= 8:
+                invalid_time_values.add(birth_value[:8])
     encompassing = tree.find("hl7:componentOf/hl7:encompassingEncounter", namespaces=ns)
     if encompassing is not None:
-        global_provider_person = extract_provider_name(
+        global_provider_person, global_provider_org = extract_provider_info(
             encompassing,
             "hl7:encounterParticipant/hl7:assignedEntity/hl7:assignedPerson/hl7:name",
             "hl7:encounterParticipant/hl7:assignedEntity/hl7:representedOrganization/hl7:name",
-            ns,
-            allow_org_fallback=False,
+            ns
         )
-        global_provider_org = extract_provider_name(
-            encompassing,
-            "hl7:encounterParticipant/hl7:assignedEntity/hl7:assignedPerson/hl7:name",
-            "hl7:encounterParticipant/hl7:assignedEntity/hl7:representedOrganization/hl7:name",
-            ns,
-        )
+    global_start, global_end = _extract_time_range(
+        encompassing.find("hl7:effectiveTime", namespaces=ns) if encompassing is not None else None,
+        ns,
+    )
+
+    service_event = tree.find("hl7:documentationOf/hl7:serviceEvent", namespaces=ns)
+    service_start, service_end = _extract_time_range(
+        service_event.find("hl7:effectiveTime", namespaces=ns) if service_event is not None else None,
+        ns,
+    )
 
     encounter_nodes = cast(Sequence[Any], tree.xpath(".//hl7:encounter", namespaces=ns))
     for enc in _ensure_element_list(encounter_nodes):
@@ -216,42 +313,48 @@ def parse_encounters(tree: etree._ElementTree, ns: dict[str, str]) -> list[Encou
         status_el = enc.find("hl7:statusCode", namespaces=ns)
         status = status_el.get("code") if status_el is not None else None
         mood = enc.get("moodCode")
+        
+        # Skip appointments (moodCode="APT") - we only want actual encounters
+        if mood == "APT":
+            continue
 
-        start, end = _extract_time_range(enc.find("hl7:effectiveTime", namespaces=ns), ns)
+        encounter_start, encounter_end = _extract_time_range(
+            enc.find("hl7:effectiveTime", namespaces=ns),
+            ns,
+        )
+        start, end = _merge_time_candidates(
+            (global_start, global_end),
+            (service_start, service_end),
+            (encounter_start, encounter_end),
+            invalid_values=invalid_time_values,
+        )
 
-        provider_name = extract_provider_name(
+        # Extract both provider and organization info
+        # First try attending provider
+        provider_name, attending_org = extract_provider_info(
             enc,
             "hl7:participant[@typeCode='ATND']/hl7:assignedEntity/hl7:assignedPerson/hl7:name",
             "hl7:participant[@typeCode='ATND']/hl7:assignedEntity/hl7:representedOrganization/hl7:name",
-            ns,
-            allow_org_fallback=False,
+            ns
         )
+        
+        # If no attending provider, try performing provider
         if not provider_name:
-            provider_name = extract_provider_name(
+            provider_name, performing_org = extract_provider_info(
                 enc,
                 "hl7:performer/hl7:assignedEntity/hl7:assignedPerson/hl7:name",
                 "hl7:performer/hl7:assignedEntity/hl7:representedOrganization/hl7:name",
-                ns,
-                allow_org_fallback=False,
+                ns
             )
+        else:
+            performing_org = None
+            
+        # If still no provider, use global provider
         if not provider_name:
             provider_name = global_provider_person
-        if not provider_name:
-            provider_name = extract_provider_name(
-                enc,
-                "hl7:participant[@typeCode='ATND']/hl7:assignedEntity/hl7:assignedPerson/hl7:name",
-                "hl7:participant[@typeCode='ATND']/hl7:assignedEntity/hl7:representedOrganization/hl7:name",
-                ns,
-            )
-        if not provider_name:
-            provider_name = extract_provider_name(
-                enc,
-                "hl7:performer/hl7:assignedEntity/hl7:assignedPerson/hl7:name",
-                "hl7:performer/hl7:assignedEntity/hl7:representedOrganization/hl7:name",
-                ns,
-            )
-        if not provider_name:
-            provider_name = global_provider_org
+            
+        # For organization, prefer in order: attending org, performing org, global org
+        org_name = attending_org or performing_org or global_provider_org
 
         location_name = None
         location_el = enc.find(

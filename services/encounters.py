@@ -1,5 +1,5 @@
 # Purpose: Provide encounter lookup and persistence helpers for the SQLite datastore.
-# Author: Codex assistant
+# Author: Codex + Lauren
 # Date: 2025-10-12
 # Related tests: tests/test_ingest.py
 # AI-assisted: Portions of this file were generated with AI assistance.
@@ -73,41 +73,7 @@ def find_encounter_id(
 
     encounter_day = _date_only(encounter_date or "")
 
-    if source_encounter_id:
-        params: list[Any] = [patient_id, source_encounter_id]
-        base_sql = (
-            """
-            SELECT id
-              FROM encounter
-             WHERE patient_id = ?
-               AND COALESCE(source_encounter_id, '') = COALESCE(?, '')
-            """
-        )
-        if encounter_date:
-            base_sql += " AND COALESCE(encounter_date, '') = COALESCE(?, '')"
-            params.append(encounter_date)
-        match = run_query(base_sql, params, " ORDER BY encounter_date DESC, id DESC LIMIT 1")
-        if match is not None:
-            return match
-        if encounter_day:
-            params = [patient_id, source_encounter_id, encounter_day]
-            base_sql = (
-                """
-                SELECT id
-                  FROM encounter
-                 WHERE patient_id = ?
-                   AND COALESCE(source_encounter_id, '') = COALESCE(?, '')
-                   AND substr(COALESCE(encounter_date, ''), 1, 8) = ?
-                """
-            )
-            match = run_query(
-                base_sql,
-                params,
-                " ORDER BY encounter_date DESC, id DESC LIMIT 1",
-            )
-            if match is not None:
-                return match
-
+    # Look for exact date match first
     if encounter_date:
         params = [patient_id, encounter_date]
         base_sql = (
@@ -122,6 +88,7 @@ def find_encounter_id(
         if match is not None:
             return match
 
+    # Then try matching just the day portion
     if encounter_day:
         params = [patient_id, encounter_day]
         base_sql = (
@@ -170,11 +137,12 @@ def insert_encounters(
 
     cur = conn.cursor()
     for enc in encounters:
-        provider_name = clean_str(enc.get("provider"))
-        provider_id = get_or_create_provider(conn, provider_name) if provider_name else None
-
         encounter_date = clean_str(enc.get("start")) or clean_str(enc.get("end"))
         source_encounter_id = clean_str(enc.get("source_id"))
+        provider_name = clean_str(enc.get("provider"))
+        provider_id = coerce_int(enc.get("provider_id"))
+        if provider_id is None and provider_name and encounter_date and source_encounter_id:
+            provider_id = get_or_create_provider(conn, provider_name)
         encounter_type = clean_str(enc.get("type"))
         reason_for_visit = clean_str(enc.get("reason_for_visit"))
         notes = clean_str(enc.get("notes"))
@@ -187,33 +155,27 @@ def insert_encounters(
             ]
             fallback = " | ".join(part for part in fallback_parts if part)
             notes = fallback or None
-        if not (encounter_date or source_encounter_id):
+        if not (encounter_date and source_encounter_id and provider_id):
             continue
 
         ds_id = coerce_int(enc.get("data_source_id"))
 
+        # Get organization ID
+        org_name = enc.get("organization")
+        organization_id = None
+        if isinstance(org_name, str):
+            organization_id = get_or_create_provider(conn, org_name, entity_type="organization")
+
         existing = cur.execute(
             """
-            SELECT id, encounter_type, notes, reason_for_visit, data_source_id, provider_id
+            SELECT id, encounter_type, notes, reason_for_visit, data_source_id, provider_id, organization_id
               FROM encounter
              WHERE patient_id = ?
-               AND COALESCE(encounter_date, '') = COALESCE(?, '')
+               AND encounter_date = ?
                AND COALESCE(provider_id, -1) = COALESCE(?, -1)
-               AND COALESCE(source_encounter_id, '') = COALESCE(?, '')
             """,
-            (patient_id, encounter_date, provider_id, source_encounter_id),
+            (patient_id, encounter_date, provider_id),
         ).fetchone()
-        if not existing and provider_id is not None:
-            existing = cur.execute(
-                """
-                SELECT id, encounter_type, notes, reason_for_visit, data_source_id, provider_id
-                  FROM encounter
-                 WHERE patient_id = ?
-                   AND COALESCE(encounter_date, '') = COALESCE(?, '')
-                   AND COALESCE(source_encounter_id, '') = COALESCE(?, '')
-                """,
-                (patient_id, encounter_date, source_encounter_id),
-            ).fetchone()
 
         if existing:
             (
@@ -223,6 +185,7 @@ def insert_encounters(
                 existing_reason,
                 existing_data_source,
                 existing_provider,
+                existing_org,
             ) = existing
             updates: list[str] = []
             params: list[Any] = []
@@ -241,6 +204,9 @@ def insert_encounters(
             if provider_id is not None and (existing_provider or 0) != provider_id:
                 updates.append("provider_id = ?")
                 params.append(provider_id)
+            if organization_id is not None and (existing_org or 0) != organization_id:
+                updates.append("organization_id = ?")
+                params.append(organization_id)
             if updates:
                 params.append(encounter_db_id)
                 cur.execute(
@@ -255,17 +221,19 @@ def insert_encounters(
                 patient_id,
                 encounter_date,
                 provider_id,
+                organization_id,
                 source_encounter_id,
                 encounter_type,
                 notes,
                 reason_for_visit,
                 data_source_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 patient_id,
                 encounter_date,
                 provider_id,
+                organization_id,
                 source_encounter_id,
                 encounter_type,
                 notes,

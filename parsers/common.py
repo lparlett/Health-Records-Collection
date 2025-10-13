@@ -65,10 +65,34 @@ def _first_text(value: object) -> str | None:
 
 
 def _flatten_text(node: etree._Element) -> str | None:
-    """Join all text descendants with single spaces for readability."""
-    texts = [t.strip() for t in node.xpath(".//text()") if isinstance(t, str) and t.strip()]
+    """Join all text descendants with single spaces for readability.
+    
+    Args:
+        node: An XML element whose text content should be flattened
+        
+    Returns:
+        Normalized string with all descendant text nodes joined by spaces,
+        or None if no text found
+    """
+    # Get all text nodes, ensuring we handle various return types from xpath
+    text_nodes = node.xpath(".//text()")
+    if not isinstance(text_nodes, list):
+        return None
+        
+    # Filter and clean the text nodes
+    texts = []
+    for t in text_nodes:
+        if isinstance(t, str) and t.strip():
+            texts.append(t.strip())
+        elif isinstance(t, bytes):
+            decoded = t.decode('utf-8', errors='ignore').strip()
+            if decoded:
+                texts.append(decoded)
+                
     if not texts:
         return None
+        
+    # Join and normalize whitespace
     combined = " ".join(texts)
     return re.sub(r"\s+", " ", combined).strip() or None
 
@@ -96,10 +120,47 @@ def get_text_by_id(tree: etree._ElementTree, ns: dict[str, str], ref_value: str 
     return None
 
 
+def extract_provider_info(
+    parent: etree._Element,
+    person_xpath: str | None,
+    org_xpath: str | None,
+    ns: dict[str, str],
+) -> tuple[str | None, str | None]:
+    """Extract both provider name and organization from a CCD section node.
+
+    Args:
+        parent: The XML element containing provider information.
+        person_xpath: XPath for the individual practitioner's name.
+        org_xpath: XPath for the organisation name.
+        ns: Namespace dictionary used for the lookup.
+
+    Returns:
+        tuple: (provider_name, organization_name) where either may be None
+    """
+    provider_name = None
+    org_name = None
+
+    if person_xpath:
+        person = parent.find(person_xpath, namespaces=ns)
+        if person is not None:
+            text = _first_text(person)
+            if text:
+                provider_name = " ".join(text.split())
+
+    if org_xpath:
+        organization = parent.find(org_xpath, namespaces=ns)
+        if organization is not None:
+            text = _first_text(organization)
+            if text:
+                org_name = " ".join(text.split())
+
+    return provider_name, org_name
+
+
 def extract_provider_name(
     parent: etree._Element,
-    person_xpath: str,
-    org_xpath: str,
+    person_xpath: str | None,
+    org_xpath: str | None,
     ns: dict[str, str],
     *,
     allow_org_fallback: bool = True,
@@ -116,15 +177,11 @@ def extract_provider_name(
     Returns:
         A cleaned provider display name, or ``None`` if unavailable.
     """
-    person = parent.find(person_xpath, namespaces=ns)
-    text = _first_text(person)
-    if text:
-        return " ".join(text.split())
-
-    if allow_org_fallback:
-        organization = parent.find(org_xpath, namespaces=ns)
-        text = _first_text(organization)
-        if text:
-            return " ".join(text.split())
-
+    provider_name, org_name = extract_provider_info(parent, person_xpath, org_xpath, ns)
+    
+    if provider_name:
+        return provider_name
+    elif allow_org_fallback and org_name:
+        return org_name
+    
     return None

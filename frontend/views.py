@@ -7,8 +7,9 @@ from __future__ import annotations
 # AI-assisted: Portions of this module were updated with AI assistance.
 
 from datetime import datetime
+import re
 from pathlib import Path
-from typing import Any, Iterable, Optional
+from typing import Any, Iterable, Optional, Tuple
 
 import altair as alt
 import pandas as pd
@@ -86,6 +87,30 @@ def _sidebar_divider() -> None:
         st.sidebar.divider()
     else:
         st.sidebar.markdown("---")
+
+
+def _parse_reference_range(raw_value: Any) -> Tuple[Optional[float], Optional[float]]:
+    """Return numeric bounds extracted from a reference range string."""
+    if raw_value is None:
+        return (None, None)
+    text = str(raw_value).strip()
+    if not text:
+        return (None, None)
+    matches = re.findall(r"-?\d+(?:\.\d+)?", text)
+    numbers: list[float] = []
+    for match in matches[:2]:
+        try:
+            numbers.append(float(match))
+        except ValueError:
+            continue
+    if not numbers:
+        return (None, None)
+    if len(numbers) == 1:
+        return (numbers[0], numbers[0])
+    low, high = numbers[0], numbers[1]
+    if low > high:
+        low, high = high, low
+    return (low, high)
 
 
 def _navigation_controls() -> str:
@@ -349,6 +374,9 @@ def _render_patient_trends(
     )
     selected_meta = next(meta for label, meta in options if label == selected_label)
 
+    show_reference_band = False
+    reference_band_df: Optional[pd.DataFrame] = None
+
     if selected_meta["dataset"] == "vital":
         series_df = vitals_df.copy()
         if selected_meta["name"] is None:
@@ -399,6 +427,30 @@ def _render_patient_trends(
             "reference_range",
             "encounter_id",
         ]
+        parsed_ranges = series_df["reference_range"].apply(_parse_reference_range)
+        series_df["reference_low"] = parsed_ranges.map(
+            lambda bounds: bounds[0]
+        )
+        series_df["reference_high"] = parsed_ranges.map(
+            lambda bounds: bounds[1]
+        )
+        reference_mask = (
+            series_df["reference_low"].notna()
+            & series_df["reference_high"].notna()
+        )
+        if reference_mask.any():
+            toggle_key = f"trend-reference-band-{abs(hash(selected_label))}"
+            show_reference_band = st.checkbox(
+                "Show reference range band",
+                value=True,
+                key=toggle_key,
+            )
+            if show_reference_band:
+                reference_band_df = series_df.loc[
+                    reference_mask,
+                    ["measurement_time", "reference_low", "reference_high"],
+                ].dropna()
+                reference_band_df = reference_band_df.copy()
 
     st.caption(f"Selected series: {display_name}")
 
@@ -430,16 +482,35 @@ def _render_patient_trends(
         y_title = "Value"
         if len(units) == 1:
             y_title = f"Value ({units[0]})"
-        chart = (
+        x_encoding = alt.X("measurement_time:T", title="Measurement Date")
+        y_encoding = alt.Y("value_numeric:Q", title=y_title)
+        line_chart = (
             alt.Chart(chart_df)
             .mark_line(point=True)
             .encode(
-                x=alt.X("measurement_time:T", title="Date"),
-                y=alt.Y("value_numeric:Q", title=y_title),
+                x=x_encoding,
+                y=y_encoding,
                 tooltip=tooltip_fields,
             )
-            .interactive()
         )
+        if (
+            show_reference_band
+            and reference_band_df is not None
+            and not reference_band_df.empty
+        ):
+            band_chart = (
+                alt.Chart(reference_band_df)
+                .mark_area(opacity=0.50, color="#D386FF")
+                .encode(
+                    x=x_encoding,
+                    y=alt.Y("reference_low:Q"),
+                    y2="reference_high:Q",
+                )
+            )
+            chart = alt.layer(band_chart, line_chart).resolve_scale(y="shared")
+        else:
+            chart = line_chart
+        chart = chart.interactive()
         st.altair_chart(chart, use_container_width=True)
     else:
         st.info(

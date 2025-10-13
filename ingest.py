@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 # Purpose: Orchestrate ingestion of CCD archives into the project SQLite datastore.
-# Author: Codex assistant
+# Author: Codex + Lauren
 # Date: 2025-10-11
 # Related tests: tests/test_ingest.py
 # AI-assisted: Portions of this file were generated with AI assistance.
@@ -15,7 +15,8 @@ import zipfile
 from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional
+from collections.abc import Iterable
+from typing import Any, Dict, Optional
 
 from lxml import etree
 from db.schema import ensure_schema
@@ -77,6 +78,27 @@ def init_db() -> sqlite3.Connection:
 
     ensure_schema(conn)
     return conn
+
+
+def _xpath_elements(
+    node: etree._Element | etree._ElementTree,
+    expression: str,
+    ns: dict[str, str],
+) -> list[etree._Element]:
+    """Return a list of element nodes extracted via XPath."""
+    if isinstance(node, etree._ElementTree):
+        node = node.getroot()
+    if node is None or not hasattr(node, "xpath"):
+        return []
+    raw = node.xpath(expression, namespaces=ns)
+    elements: list[etree._Element] = []
+    if isinstance(raw, etree._Element):
+        elements.append(raw)
+    elif isinstance(raw, Iterable) and not isinstance(raw, (str, bytes)):
+        for item in raw:
+            if isinstance(item, etree._Element):
+                elements.append(item)
+    return elements
 
 
 def unzip_raw_files(zip_file: Path, destination: Path) -> None:
@@ -267,7 +289,7 @@ def _load_metadata(root: Path) -> dict[str, dict[str, Any]]:
             logger.warning("Unable to parse metadata %s: %s", metadata_path, exc)
             continue
         base_dir = metadata_path.parent.resolve()
-        for extrinsic in tree.xpath("//rim:ExtrinsicObject", namespaces=ns):
+        for extrinsic in _xpath_elements(tree, "//rim:ExtrinsicObject", ns):
             slots = _extract_slot_values(extrinsic, ns)
             uris = slots.get("URI") or []
             if not uris:
@@ -292,13 +314,13 @@ def _load_metadata(root: Path) -> dict[str, dict[str, Any]]:
 
 def _extract_slot_values(node: etree._Element, ns: dict[str, str]) -> dict[str, list[str]]:
     values: dict[str, list[str]] = {}
-    for slot in node.xpath("rim:Slot", namespaces=ns):
+    for slot in _xpath_elements(node, "rim:Slot", ns):
         name = slot.get("name")
         if not name:
             continue
         entries = [
             (value.text or "").strip()
-            for value in slot.xpath("rim:ValueList/rim:Value", namespaces=ns)
+            for value in _xpath_elements(slot, "rim:ValueList/rim:Value", ns)
             if value.text and value.text.strip()
         ]
         if entries:
@@ -307,13 +329,13 @@ def _extract_slot_values(node: etree._Element, ns: dict[str, str]) -> dict[str, 
 
 
 def _extract_author_institution(node: etree._Element, ns: dict[str, str]) -> Optional[str]:
-    for classification in node.xpath("rim:Classification", namespaces=ns):
-        for slot in classification.xpath("rim:Slot", namespaces=ns):
+    for classification in _xpath_elements(node, "rim:Classification", ns):
+        for slot in _xpath_elements(classification, "rim:Slot", ns):
             if slot.get("name") != "authorInstitution":
                 continue
             entries = [
                 (value.text or "").strip()
-                for value in slot.xpath("rim:ValueList/rim:Value", namespaces=ns)
+                for value in _xpath_elements(slot, "rim:ValueList/rim:Value", ns)
                 if value.text and value.text.strip()
             ]
             if entries:

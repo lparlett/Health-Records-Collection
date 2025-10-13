@@ -64,6 +64,7 @@ CREATE TABLE IF NOT EXISTS encounter (
     patient_id INTEGER NOT NULL,
     encounter_date TEXT,
     provider_id INTEGER,
+    organization_id INTEGER,
     source_encounter_id TEXT,
     encounter_type TEXT,
     notes TEXT,
@@ -71,13 +72,20 @@ CREATE TABLE IF NOT EXISTS encounter (
     data_source_id INTEGER,
     FOREIGN KEY(patient_id) REFERENCES patient(id) ON DELETE CASCADE,
     FOREIGN KEY(provider_id) REFERENCES provider(id) ON DELETE SET NULL,
+    FOREIGN KEY(organization_id) REFERENCES provider(id) ON DELETE SET NULL,
     FOREIGN KEY(data_source_id) REFERENCES data_source(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_encounter_patient ON encounter(patient_id);
 CREATE INDEX IF NOT EXISTS idx_encounter_date ON encounter(encounter_date);
 CREATE INDEX IF NOT EXISTS idx_encounter_provider ON encounter(provider_id);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_encounter_unique ON encounter(patient_id, encounter_date, provider_id, source_encounter_id);
+CREATE INDEX IF NOT EXISTS idx_encounter_organization ON encounter(organization_id);
+DROP INDEX IF EXISTS idx_encounter_unique;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_encounter_unique ON encounter(
+    patient_id,
+    COALESCE(provider_id, -1),
+    encounter_date
+);
 
 -- =====================
 -- Medications

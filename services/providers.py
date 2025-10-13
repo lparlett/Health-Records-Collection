@@ -52,26 +52,39 @@ def get_or_create_provider(
     raw_name = clean_str(name) or ""
     raw_org = clean_str(organization) or ""
 
-    if entity_type == "person" and is_probable_organization(raw_name):
-        entity_type = "organization"
+    normalized_key = None
+    given_name = None
+    family_name = None
+    credentials_value = None
+    display_name = None
+    organization_value = None
 
-    if entity_type == "organization":
-        if not raw_name:
+    # First check if we have a valid person name
+    if raw_name and entity_type == "person" and not is_probable_organization(raw_name):
+        given_name, family_name, parsed_credentials = parse_person_name(raw_name)
+        if given_name or family_name:  # We have a valid person name
+            credentials_value = credentials or parsed_credentials
+            normalized_key = normalize_person_key(given_name, family_name, raw_name)
+            display_name = raw_name
+            organization_value = raw_org or None
+            entity_type = "person"
+
+    # If no valid person name, fall back to organization
+    if not normalized_key:
+        org_name = raw_name if is_probable_organization(raw_name) else raw_org
+        if not org_name:
             return None
-        normalized_key = normalize_organization_key(raw_name)
+            
+        normalized_key = normalize_organization_key(org_name)
         given_name = None
         family_name = None
         credentials_value = None
-        display_name = raw_name
-        organization_value = raw_name
-    else:
-        if not raw_name:
-            return None
-        given_name, family_name, parsed_credentials = parse_person_name(raw_name)
-        credentials_value = credentials or parsed_credentials
-        normalized_key = normalize_person_key(given_name, family_name, raw_name)
-        display_name = raw_name
-        organization_value = raw_org or None
+        display_name = org_name
+        organization_value = org_name
+        entity_type = "organization"
+
+    if not normalized_key:
+        return None
 
     if not normalized_key:
         return None
