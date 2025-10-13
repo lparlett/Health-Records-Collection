@@ -129,3 +129,12 @@ Fix this error: [troubleshooting redacted]
 
 [2025-10-13 00:01:23 UTC]
 Don't forget to log all prompts. Review our convo and add additional prompts to the md/AI_prompts.md file as appropriate.
+
+[2025-10-13 00:15:45 UTC]
+Next thing to fix is in the frontend - I don't want a patient trend sub-part of the encounter detail page.
+
+[2025-10-13 00:25:12 UTC]
+lines 597 and 602
+
+[2025-10-13 00:30:00 UTC]
+bring my prompt log up to date
