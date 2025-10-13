@@ -114,3 +114,18 @@ NameError: name '_xpath_elements' is not defined
 [2025-10-12 18:24:30 UTC] In the encounter notes, they often start with a date - where does that date come from?
 [2025-10-12 18:27:45 UTC] Where is 10/21 coming from? It's an upcoming appointment - I don't want to import anything related to encounter elements with moodCode="APT", which are appointments, I think.
 [2025-10-12 18:32:10 UTC] Let me re-ingest and I'll get back to you
+
+[2025-10-12 23:48:14 UTC]
+We're still getting unnecessary duplication of encounters. Let's make the uniqueness constraint just the patient id, provider id, and date.
+
+[2025-10-12 23:55:11 UTC]
+No! I want to prefer individuals!
+
+[2025-10-12 23:59:43 UTC]
+I didn't see much change at all. There are still a ton attached to an organization when I know the individual provider is named in the document.
+
+[2025-10-13 00:00:15 UTC]
+Fix this error: [troubleshooting redacted]
+
+[2025-10-13 00:01:23 UTC]
+Don't forget to log all prompts. Review our convo and add additional prompts to the md/AI_prompts.md file as appropriate.
