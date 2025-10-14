@@ -1,0 +1,25 @@
+name: Update CDA stylesheets
+on:
+  schedule:
+    - cron: '0 0 * * 0'
+  workflow_dispatch:
+jobs:
+  update-stylesheets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - run: python .github/scripts/update_stylesheets.py
+      - uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: 'chore: Update CDA stylesheets'
+          title: 'chore: Update CDA stylesheets'
+          body: |
+            Updates CDA stylesheets from the HL7 repository:
+            - Latest version from https://github.com/HL7/cda-core-xsl
+            - Adds proper attribution headers
+          branch: update-cda-stylesheets
+          delete-branch: true

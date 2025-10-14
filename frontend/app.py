@@ -1,8 +1,17 @@
 import streamlit as st
-import db_utils
-import views
 import yaml
+import logging
 from pathlib import Path
+from frontend import db_utils, views
+
+# Configure logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler()  # Log to console/streamlit
+    ]
+)
 
 # Load config
 CONFIG_PATH = Path(__file__).parent / "config.yaml"

@@ -15,9 +15,11 @@ from typing import Any, Iterable, Optional, Tuple
 import altair as alt
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 import db_utils
 import ui_components
+from . import xml_utils
 
 
 def _ensure_state() -> None:
@@ -522,6 +524,44 @@ def _render_patient_trends(
     st.dataframe(series_df[table_columns], use_container_width=True)
 
 
+def _render_attachment_section(attachment: dict[str, Any]) -> None:
+    """Render metadata, link, and preview controls for encounter attachments."""
+    file_path_raw = attachment.get("file_path")
+    if not file_path_raw:
+        return
+
+    file_path = Path(str(file_path_raw))
+    attachment_label = file_path.name
+    mime_label = attachment.get("mime_type") or "Unknown"
+
+    st.markdown(f"**Attachment:** `{attachment_label}`")
+    st.text(f"Type: {mime_label}")
+
+    if file_path.suffix.lower() != ".xml":
+        st.caption("Preview is currently available for XML attachments only.")
+        return
+
+    html_path = xml_utils.transform_cda_to_html(str(file_path))
+    if not html_path:
+        st.warning(
+            "Unable to build an XML preview. Use the link above to open the "
+            "attachment."
+        )
+        return
+
+    try:
+        html_content = Path(html_path).read_text(encoding="utf-8")
+    except OSError:
+        st.warning(
+            "The transformed XML preview could not be loaded. Use the link "
+            "above to open the attachment."
+        )
+        return
+
+    with st.expander("Preview XML attachment", expanded=False):
+        components.html(html_content, height=650, scrolling=True)
+
+
 def _show_encounter_detail(conn: sqlite3.Connection) -> None:
     """Show detailed encounter information.
     
@@ -592,14 +632,9 @@ def _show_encounter_detail(conn: sqlite3.Connection) -> None:
 
             attachment = metadata.get("attachment") or {}
             if attachment.get("file_path"):
-                attachment_path = attachment["file_path"]
-                attachment_label = Path(attachment_path).name
-                mime = attachment.get("mime_type")
-                attachment_text = f"`{attachment_label}`"
-                if mime:
-                    attachment_text += f" ({mime})"
-                st.markdown(f"**Attachment:** {attachment_text}")
-
+                _render_attachment_section(attachment)
+    _show_progress_notes(detail["progress_notes"])
+    
     _show_section(
         "Conditions",
         detail["conditions"],
@@ -622,7 +657,6 @@ def _show_encounter_detail(conn: sqlite3.Connection) -> None:
         detail["immunizations"],
         dataframe=True,
     )
-    _show_progress_notes(detail["progress_notes"])
 
 
 def show_tables(conn):

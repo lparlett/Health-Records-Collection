@@ -87,6 +87,8 @@ pip install -r requirements.txt
     Streamlit dataframes.
   - Connection utilities in `db_utils.py` keep the UI responsive with row
     limits and read-only access.
+  - XML files are rendered using the HL7 CDA Core Stylesheet, automatically
+    updated weekly from the official repository with proper attribution.
 
 - **Schema & services (`schema.sql`, `services/`)**
   - `schema.sql` defines core tables for patients, providers, encounters,
@@ -98,6 +100,21 @@ pip install -r requirements.txt
     so other modules can reference a shared `data_source_id`.
   - `db/schema.py` backfills missing columns, normalizes provider records, and
     adds protective indexes.
+
+---
+
+## External Resources
+
+- **CDA Rendering**
+  - This project uses the [HL7 CDA Core Stylesheet](https://github.com/HL7/cda-core-xsl)
+    for rendering CDA XML documents, which is maintained in a separate repository
+    and automatically updated via GitHub Actions. The stylesheet files are included
+    under the Apache 2.0 license with proper attribution.
+  - Custom dark mode support and accessibility improvements have been added while
+    maintaining compatibility with the core rendering engine.
+
+- **Color Palette**
+  -[Coolors.co](https://coolors.co/da8fa5-7a219b-193876-245dae-f6d6db)
 
 ---
 
