@@ -104,16 +104,8 @@ I understand this may require adding additional python packages to support multi
 
 [2025-10-12 19:32:37 UTC]
 It _mostly_ works. I am getting this error when interacting with it:
-AttributeError: module 'streamlit' has no attribute 'experimental_rerun'
+[troubleshooting redacted]
 
-File Z:\\Health\\Health-Records-Collection\\frontend\\app.py, line 25
-    show_overview = views.render_patient_encounter_experience(conn)
-                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-File "Z:\\Health\\Health-Records-Collection\\frontend\\views.py", line 29, in render_patient_encounter_experience
-    _show_encounter_overview(conn)
-File "Z:\\Health\\Health-Records-Collection\\frontend\\views.py", line 118, in _show_encounter_overview
-    st.experimental_rerun()
-    ^^^^^^^^^^^^^^^^^^^^^
 [2025-10-12 19:42:41 UTC]
 We're getting some lab result duplication. Let's ensure uniqueness by patient number, encounter number, and loinc code.
 [2025-10-12 19:45:07 UTC]
@@ -280,8 +272,22 @@ You say that now, but it's been an issue. How do I get you to maintain this beha
 Before moving on, tell me if there are any parts of AGENTS.md that are ambiguous to you so that I can clarify.
 
 [2025-10-18 22:44:33 UTC]
-You keep logging the AGENTS.md file as part of <user instructions> in every session. I have had to delete that out. WIll you refrain from logging that in the future?
+You keep logging the AGENTS.md file as part of user instructions in every session. I have had to delete that out. WIll you refrain from logging that in the future?
 
 [2025-10-18 22:48:09 UTC]
 To prepare for our first tagged release, I want to do some cleanning up of logging. I think one way of doing this is to add a run parameter than request detailed deugging logging info - otherwise, the logging to the console or saved to a file can be minimal. Just enough for the user to know data are being ingested into the SQL database. We also want to be sensitive to personal information being logged to console or file.
 
+[2025-10-18 23:11:52 UTC]
+What are some other things that I should be thinking about to prepare this tagged release?
+
+[2025-10-18 23:20:21 UTC]
+OK. Let's start at the top of your list. Let's confirm that there are tests that cover all ingestion, parsing, and upserting code. I just ran the current suite and we passed every test.
+
+[2025-10-18 23:25:37 UTC]
+Add the CLI logging test code
+
+[2025-10-18 23:28:49 UTC]
+Refresh the README file to include the logging argument and any other updates not properly noted.
+
+[2025-10-18 23:31:10 UTC]
+Let's freeze the packages used for this project in a requirements document

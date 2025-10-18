@@ -3,6 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 import zipfile
 
+import logging
+from unittest import mock
+
 import ingest
 
 
@@ -143,3 +146,35 @@ def test_ingest_archive_records_data_source(
         "SELECT COUNT(*) FROM attachment"
     ).fetchone()[0]
     assert attachment_count == 1
+
+
+def test_configure_logging_respects_cli_options(tmp_path, monkeypatch):
+    """Ensure CLI logging configuration respects verbosity settings."""
+    log_file = tmp_path / "ingest.log"
+
+    # Force existing handlers to make sure configure_logging replaces them.
+    root_logger = logging.getLogger()
+    root_logger.handlers.clear()
+    dummy_handler = logging.StreamHandler()
+    dummy_handler.setLevel(logging.CRITICAL)
+    root_logger.addHandler(dummy_handler)
+
+    args = ingest.parse_args(
+        ["--log-level", "debug", "--log-file", str(log_file)]
+    )
+    assert args.log_level == "debug"
+    assert args.log_file == log_file
+
+    ingest.configure_logging(args.log_level, args.log_file)
+
+    logger = logging.getLogger("ingest")
+    logger.debug("debug message")
+    logger.info("info message")
+    logger.warning("warning message")
+
+    # Stream handler (stderr) is harder to capture reliably; ensure file logging works.
+    assert log_file.exists()
+    contents = log_file.read_text(encoding="utf-8")
+    assert "debug message" in contents
+    assert "info message" in contents
+    assert "warning message" in contents

@@ -9,6 +9,9 @@ db/health_records.db-journal
 __pycache__/
 *.pyc
 
+# Ignore logs
+logs/
+
 # Ignore virtual environments
 .venv/
 .vscode/

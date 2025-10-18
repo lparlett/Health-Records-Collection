@@ -50,6 +50,20 @@ pip install -r requirements.txt
   
    This creates or refreshes `db/health_records.db`, extracts ZIP contents into
    `data/parsed/`, and populates all supported tables.
+
+   - Add `--log-level debug` to surface detailed troubleshooting messages while you iterate:
+
+     ```bash
+     python ingest.py --log-level debug
+     ```
+
+   - To capture logs without printing patient identifiers to the console, direct output to a file:
+
+     ```bash
+     python ingest.py --log-level info --log-file logs/ingest.log
+     ```
+
+     Debug logs include richer context, so avoid enabling them on shared systems.
 1. Launch the dashboard:
 
    ```bash
@@ -145,6 +159,8 @@ requirements.txt    Locked Python dependencies
   to enforce migrations.
 - Regenerate the database at any time by deleting `db/health_records.db` and
   rerunning `python ingest.py`.
+- Control ingestion verbosity per run with `--log-level {error,warning,info,debug}`
+  and optionally persist output via `--log-file path/to/logs.txt`.
 
 ---
 
