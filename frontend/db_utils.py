@@ -1,7 +1,11 @@
+from pathlib import Path
+
 import sqlite3
+
 import pandas as pd
 import yaml
-from pathlib import Path
+
+from db.schema import ensure_schema
 
 # Load config
 CONFIG_PATH = Path(__file__).parent / "config.yaml"
@@ -9,10 +13,40 @@ with open(CONFIG_PATH, "r") as f:
     CONFIG = yaml.safe_load(f)
 
 DB_PATH = CONFIG["db_path"]
+SCHEMA_SQL_PATH = Path(__file__).resolve().parents[1] / "schema.sql"
+
+
+def _database_has_patient_table(conn: sqlite3.Connection) -> bool:
+    query = (
+        "SELECT 1 FROM sqlite_master "
+        "WHERE type = 'table' AND name = 'patient' LIMIT 1"
+    )
+    return conn.execute(query).fetchone() is not None
+
+
+def _ensure_database_ready(conn: sqlite3.Connection) -> None:
+    """Create base schema when the database file is empty."""
+    # AI-assisted change: bootstrap schema for fresh database files.
+    if _database_has_patient_table(conn):
+        ensure_schema(conn)
+        conn.commit()
+        return
+
+    if not SCHEMA_SQL_PATH.exists():
+        raise FileNotFoundError(
+            f"schema.sql not found at expected path: {SCHEMA_SQL_PATH}"
+        )
+
+    schema_sql = SCHEMA_SQL_PATH.read_text(encoding="utf-8")
+    conn.executescript(schema_sql)
+    ensure_schema(conn)
+    conn.commit()
 
 
 def get_connection(db_path=DB_PATH):
-    return sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path)
+    _ensure_database_ready(conn)
+    return conn
 
 
 def list_tables(conn):

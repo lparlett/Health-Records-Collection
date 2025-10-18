@@ -8,6 +8,7 @@ from __future__ import annotations
 
 """Main ingestion workflow for CCD archives."""
 
+import argparse
 import logging
 import mimetypes
 import sqlite3
@@ -16,7 +17,7 @@ from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 from collections.abc import Iterable
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Sequence
 
 from lxml import etree
 from db.schema import ensure_schema
@@ -53,6 +54,46 @@ SCHEMA_FILE: Path = Path("schema.sql")
 CCD_NAMESPACE = {"hl7": "urn:hl7-org:v3"}
 
 ParsedCCD = dict[str, Any]
+
+
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    """Parse CLI arguments for the ingestion workflow."""
+    parser = argparse.ArgumentParser(
+        description="Ingest CCD archives into the SQLite datastore."
+    )
+    parser.add_argument(
+        "--log-level",
+        default="info",
+        choices=("error", "warning", "info", "debug"),
+        help=(
+            "Logging verbosity. Use 'debug' for detailed troubleshooting output. "
+            "Default is 'info', which avoids logging patient-identifying details."
+        ),
+    )
+    parser.add_argument(
+        "--log-file",
+        type=Path,
+        help=(
+            "Optional file path to write logs. When omitted, logs emit to the console."
+        ),
+    )
+    return parser.parse_args(argv)
+
+
+def configure_logging(level_name: str, log_file: Path | None) -> None:
+    """Configure logging outputs according to runtime preferences."""
+    level = getattr(logging, level_name.upper(), logging.INFO)
+    handlers: list[logging.Handler] = []
+    if log_file:
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        handlers.append(logging.FileHandler(log_file, encoding="utf-8"))
+    handlers.append(logging.StreamHandler())
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        handlers=handlers,
+        force=True,
+    )
 
 
 def init_db() -> sqlite3.Connection:
@@ -110,17 +151,18 @@ def unzip_raw_files(zip_file: Path, destination: Path) -> None:
     """
     if destination.exists() and any(destination.iterdir()):
         logger.info(
-            "Skipping extraction for %s; destination %s is already populated.",
+            "Skipping extraction for %s; destination already populated.",
             zip_file.name,
-            destination,
         )
+        logger.debug("Destination %s is already populated.", destination)
         return
 
     destination.mkdir(parents=True, exist_ok=True)
     try:
         with zipfile.ZipFile(zip_file, "r") as zip_ref:
             zip_ref.extractall(destination)
-        logger.info("Extracted %s into %s.", zip_file.name, destination)
+        logger.info("Extracted %s.", zip_file.name)
+        logger.debug("Extracted %s into %s.", zip_file.name, destination)
     except (zipfile.BadZipFile, OSError) as exc:
         logger.warning("Failed to extract %s: %s", zip_file, exc)
 
@@ -275,7 +317,13 @@ def ingest_archive(conn: sqlite3.Connection, archive_path: Path) -> None:
             _annotate_records(_as_record_list(parsed.get("progress_notes")), record_metadata),
         )
         conn.commit()
-        logger.info("Ingested %s for patient %s %s.", xml_file.name, given, family)
+        logger.info("Ingested %s.", xml_file.name)
+        logger.debug(
+            "Ingested %s for patient %s %s.",
+            xml_file.name,
+            given,
+            family,
+        )
 
 
 def _load_metadata(root: Path) -> dict[str, dict[str, Any]]:
@@ -435,10 +483,15 @@ def _annotate_records(
     return [{**record, **metadata} for record in records]
 
 
-def main() -> None:
+def main(argv: Sequence[str] | None = None) -> None:
     """CLI entry point for ingesting CCD archives."""
-    if not logging.getLogger().handlers:
-        logging.basicConfig(level=logging.INFO)
+    args = parse_args(argv)
+    configure_logging(args.log_level, args.log_file)
+    logger.debug(
+        "Logging configured: level=%s, destination=%s",
+        args.log_level,
+        args.log_file or "stdout",
+    )
 
     with closing(init_db()) as conn:
         for archive_path in RAW_DIR.glob("*.zip"):
