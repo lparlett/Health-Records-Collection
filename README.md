@@ -51,13 +51,15 @@ pip install -r requirements.txt
    This creates or refreshes `db/health_records.db`, extracts ZIP contents into
    `data/parsed/`, and populates all supported tables.
 
-   - Add `--log-level debug` to surface detailed troubleshooting messages while you iterate:
+   - Add `--log-level debug` to surface detailed troubleshooting messages
+   while you iterate:
 
      ```bash
      python ingest.py --log-level debug
      ```
 
-   - To capture logs without printing patient identifiers to the console, direct output to a file:
+   - To capture logs without printing patient identifiers to the console,
+   direct output to a file:
 
      ```bash
      python ingest.py --log-level info --log-file logs/ingest.log
@@ -124,11 +126,9 @@ pip install -r requirements.txt
     for rendering CDA XML documents, which is maintained in a separate repository
     and automatically updated via GitHub Actions. The stylesheet files are included
     under the Apache 2.0 license with proper attribution.
-  - Custom dark mode support and accessibility improvements have been added while
-    maintaining compatibility with the core rendering engine.
 
 - **Color Palette**
-  -[Coolors.co](https://coolors.co/da8fa5-7a219b-193876-245dae-f6d6db)
+  -[Coolors.co](https://coolors.co/2b4162-385f71-f5f0f6-d7b377-8f754f)
 
 ---
 
