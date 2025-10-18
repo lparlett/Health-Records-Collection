@@ -36,8 +36,9 @@ Goals: reproducibility, privacy, and clarity.
 
 ```txt
 /parsers/   → XML and CCDA ingestion logic
-/schemas/   → SQLite DDL and enumerations
+/services/  → functions to assist with parsing and cleaning
 /tests/     → pytest modules mirroring source structure
+/frontend/  → Streamlit-related coding
 /docs/      → schema and workflow documentation
 /data/      → synthetic or de-identified samples only
 ```
