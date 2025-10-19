@@ -293,4 +293,3 @@ Refresh the README file to include the logging argument and any other updates no
 Let's freeze the packages used for this project in a requirements document
 [2025-10-19 00:02:09 UTC]
 Let's discuss what the release tag should be for this work so far.
-

@@ -1,0 +1,24 @@
+cff-version: 1.2.0
+message: If you use this software, please cite it using these metadata.
+title: Health Records Collection
+abstract: The purpose of this software is to unify personal electronic health record (EHR) exports into a local SQLite database for easier querying and analysis. It supports various EHR export formats from different healthcare providers, extracting relevant data such as medications, allergies, immunizations, lab results, and clinical notes.
+authors:
+  - family-names: Parlett
+    given-names: Lauren
+    orcid: "https://orcid.org/0000-0003-1240-4566"
+version: 0.1.1
+date-released: "2025-10-18"
+keywords:
+  - electronic health records
+  - personal health records
+  - EHR
+  - health data management
+  - SQLite
+  - data ingestion
+  - healthcare interoperability
+identifiers:
+  - description: This is the collection of archived snapshots of all versions of Health Records Collection
+    type: doi
+    value: "10.5281/zenodo.17388275"
+license: MIT
+repository-code: "https://github.com/lparlett/Health-Records-Collection"
