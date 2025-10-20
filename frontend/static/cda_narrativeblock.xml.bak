@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+This cda_narrativeblock.xml is sourced from the HL7 CDA Core Stylesheet project:
+https://github.com/HL7/cda-core-xsl
+
+Version: v4.0.1
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+http://www.apache.org/licenses/LICENSE-2.0
+
+Please review the upstream repository for updates and attribution.
+-->
+<!-- This file governs which attributes are allowed on certain CDA NarrativeBlock elements. Other combinations should lead to a security warning. -->
+<tableElems>
+    <elem name="table">
+        <attr name="ID"/>
+        <attr name="language"/>
+        <attr name="styleCode"/>
+        <attr name="summary"/>
+        <attr name="width"/>
+        <attr name="border"/>
+        <attr name="frame"/>
+        <attr name="rules"/>
+        <attr name="cellspacing"/>
+        <attr name="cellpadding"/>
+    </elem>
+    <elem name="thead">
+        <attr name="ID"/>
+        <attr name="language"/>
+        <attr name="styleCode"/>
+        <attr name="align"/>
+        <attr name="char"/>
+        <attr name="charoff"/>
+        <attr name="valign"/>
+    </elem>
+    <elem name="tfoot">
+        <attr name="ID"/>
+        <attr name="language"/>
+        <attr name="styleCode"/>
+        <attr name="align"/>
+        <attr name="char"/>
+        <attr name="charoff"/>
+        <attr name="valign"/>
+    </elem>
+    <elem name="tbody">
+        <attr name="ID"/>
+        <attr name="language"/>
+        <attr name="styleCode"/>
+        <attr name="align"/>
+        <attr name="char"/>
+        <attr name="charoff"/>
+        <attr name="valign"/>
+    </elem>
+    <elem name="colgroup">
+        <attr name="ID"/>
+        <attr name="language"/>
+        <attr name="styleCode"/>
+        <attr name="span"/>
+        <attr name="width"/>
+        <attr name="align"/>
+        <attr name="char"/>
+        <attr name="charoff"/>
+        <attr name="valign"/>
+    </elem>
+    <elem name="col">
+        <attr name="ID"/>
+        <attr name="language"/>
+        <attr name="styleCode"/>
+        <attr name="span"/>
+        <attr name="width"/>
+        <attr name="align"/>
+        <attr name="char"/>
+        <attr name="charoff"/>
+        <attr name="valign"/>
+    </elem>
+    <elem name="tr">
+        <attr name="ID"/>
+        <attr name="language"/>
+        <attr name="styleCode"/>
+        <attr name="align"/>
+        <attr name="char"/>
+        <attr name="charoff"/>
+        <attr name="valign"/>
+    </elem>
+    <elem name="th">
+        <attr name="ID"/>
+        <attr name="language"/>
+        <attr name="styleCode"/>
+        <attr name="abbr"/>
+        <attr name="axis"/>
+        <attr name="headers"/>
+        <attr name="scope"/>
+        <attr name="rowspan"/>
+        <attr name="colspan"/>
+        <attr name="align"/>
+        <attr name="char"/>
+        <attr name="charoff"/>
+        <attr name="valign"/>
+    </elem>
+    <elem name="td">
+        <attr name="ID"/>
+        <attr name="language"/>
+        <attr name="styleCode"/>
+        <attr name="abbr"/>
+        <attr name="axis"/>
+        <attr name="headers"/>
+        <attr name="scope"/>
+        <attr name="rowspan"/>
+        <attr name="colspan"/>
+        <attr name="align"/>
+        <attr name="char"/>
+        <attr name="charoff"/>
+        <attr name="valign"/>
+    </elem>
+</tableElems>
