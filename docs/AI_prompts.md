@@ -348,3 +348,6 @@ Move the additional tables to the next version (that'll be easy to implement). M
 [2025-10-19 23:30:59 UTC] Failed run. Retry.
 [2025-10-19 23:59:58 UTC] We need to update the insurance ingestion to capture the right parts. Here is the relevant XML, you'll want to extract the info from here:\n\n[redacted]\n
 [2025-10-20 00:22:54 UTC] The GitHub action workflow had Status Startup failure \n\nError\nThe action peter-evans/create-pull-request@v6 is not allowed in lparlett/Health-Records-Collection because all actions must be from a repository owned by lparlett or created by GitHub.
+[2025-10-20 00:24:50 UTC] Walk me through how to do option 1. I've never forked a repo before
+[2025-10-20 00:59:58 UTC] For the GitHub action, I don't want to have to approve pull requests every day. Is there a way to only request a PR if the files differ or have been updated?
+[2025-10-20 01:01:12 UTC] BTW - I ended up opting to change the repo setting rather than forking.
