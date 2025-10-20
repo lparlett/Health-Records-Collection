@@ -83,9 +83,9 @@ pip install -r requirements.txt
 - **Ingestion pipeline (`ingest.py`)**
   - Unzips CCD packages from `data/raw/` into `data/parsed/` (skipping extracts
     that already exist).
-  - Parses XML with lxml using modular parsers in `parsers/` for patients,
-    encounters, conditions, medications, labs, procedures, vitals,
-    immunizations, and progress notes.
+- Parses XML with lxml using modular parsers in `parsers/` for patients,
+    encounters, allergies, conditions, medications, labs, procedures, vitals,
+    immunizations, progress notes, and insurance coverage.
   - Records file-level provenance in the `data_source` table (original filename,
     archive, SHA256 hash, creation time, repository ID, and author institution
     pulled from XDM `METADATA.XML`) and threads the resulting identifier
@@ -109,7 +109,7 @@ pip install -r requirements.txt
 
 - **Schema & services (`schema.sql`, `services/`)**
   - `schema.sql` defines core tables for patients, providers, encounters,
-    medications, lab results, allergies, conditions (with codes), procedures,
+    medications, lab results, allergies, insurance coverage, conditions (with codes), procedures,
     vitals, immunizations, attachments, and progress notes, each
     linking back to enriched `data_source` metadata.
   - Service modules encapsulate insert logic, deduplication, and foreign key

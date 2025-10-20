@@ -1,5 +1,10 @@
 # Schema Changes Log
 
+## 2025-10-19
+
+- Expanded the `allergy` table with provider and encounter foreign keys, coded substance and reaction metadata, onset/noted timestamps, source identifiers, and supporting indexes to minimise duplicates (AI-assisted by Codex + Lauren).
+- Added an `insurance` table capturing payer, plan, subscriber, coverage dates, payer identifiers, and provenance references, including indexes for fast lookup and de-duplication (AI-assisted by Codex + Lauren).
+
 ## 2025-10-12
 
 - Added `data_source` table to capture original filename, ingestion timestamp, SHA256 hash, and optional source archive metadata for provenance (AI-assisted by Codex + Lauren).

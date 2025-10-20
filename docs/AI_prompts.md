@@ -293,3 +293,58 @@ Refresh the README file to include the logging argument and any other updates no
 Let's freeze the packages used for this project in a requirements document
 [2025-10-19 00:02:09 UTC]
 Let's discuss what the release tag should be for this work so far.
+
+[2025-10-19T22:03Z]
+
+I've just released my first pre-release tag for my github repo. [https://github.com/lparlett/Health-Records-Collection](https://github.com/lparlett/Health-Records-Collection) I added it into Zenodo. Aside from continuing development, what do people generally do after their casual coding projects have a release?
+
+[2025-10-19T22:08Z]
+
+If I have ideas about where I want the development to go, how should I document that in the repo?
+
+[2025-10-19T22:15Z]
+
+I want to talk about a major update idea.... is it possible to use the streamlit front end to identify zip files to ingest and parse and then display? That is, I don't want to have to run ingest.py and then the front end. I want to run the frontend only, if possible. In that front end, I want an area where I can identify zip files to ingest.
+
+[2025-10-19T22:21Z]
+
+No. Let me figure out how I want to develop it - you remember and then provide a suggested roadmap that would work as a casual project. I want to start ingesting through streamlit. I also want to revamp the streamlit look. Right now it's pretty bare bones, but I definitely want to invest some time into the UX. Perhaps some calendar/date visuals or filtering. Also some provider/visit type filtering. I want to add an allergies table and insurance table. I don't want to expand the kind of data that are being ingested/parsed. No need for right now. Give me twenty other ideas on how to further develop this project.
+
+[2025-10-19T22:30Z]
+
+Oh! Another thing I want to add is the ability to edit and an audit trail of any edits so that values can be reverted to what came from the original data.
+
+---
+
+[2025-10-19T22:38Z]
+
+In terms of your additional development ideas, I like:
+Tagging system — allow manual tags for visits (“urgent care,” “follow-up,” “immunization”).
+ Record provenance viewer — show file name, import date, and hash for each record.
+ Compact analytics dashboard — mini KPIs like total meds, avg. encounters per year.
+ Search bar — global search across diagnoses, labs, and medications.
+ Toggle between dark and light mode using Streamlit theme config.
+ Highlight abnormal labs using color-coded ranges.
+ Configurable data directory — selectable local folder for SQLite DB and imported files.
+ Schema browser — automatically generate a visual ER diagram in-app from the DB.
+ Data export panel — let users download filtered data as CSV.
+ Notes viewer — parse and display narrative clinical notes separately from structured fields.
+ Basic auth or local PIN — lightweight password for sensitive sessions.
+ Help overlay — small inline tooltips explaining each section of the UI.
+ Error sandbox — log ingestion errors and let the user download them for inspection.
+ Theming presets — toggle between “clinical,” “minimalist,” and “research notebook” styles.
+ Data quality checks — add a tab summarizing missing values, inconsistent codes, or duplicate entries.
+
+In addition, I want to be a good resource user and do file housekeeping as needed.
+
+Turn all of this into a proposed roadmap.
+
+[2025-10-19T22:46]
+
+Move the additional tables to the next version (that'll be easy to implement). Move the editing and provenance earlier in the roadmap.
+[2025-10-19 23:15:17 UTC] This session's prompts are saved in docs/AI_prompts.md. We're going to start work on v0.2.0. Review the ROADMAP and AGENTS.md files. Then, before doing any work, return to me to talk through your plan.
+[2025-10-19 23:17:51 UTC] Wedo not currently capture allergies or insurance info. These will have to be separate parsers and upsert services. The notes are already captured in the progress_notes table. Now we have to figure out a good way of displaying them.\n\nThe ER diagram should live in Streamlit and our documentation.
+[2025-10-19 23:18:47 UTC] That is all correct. You can commence.
+[2025-10-19 23:30:59 UTC] Failed run. Retry.
+[2025-10-19 23:59:58 UTC] We need to update the insurance ingestion to capture the right parts. Here is the relevant XML, you'll want to extract the info from here:\n\n[redacted]\n
+[2025-10-20 00:22:54 UTC] The GitHub action workflow had Status Startup failure \n\nError\nThe action peter-evans/create-pull-request@v6 is not allowed in lparlett/Health-Records-Collection because all actions must be from a repository owned by lparlett or created by GitHub.

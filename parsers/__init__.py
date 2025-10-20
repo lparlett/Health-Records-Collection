@@ -8,9 +8,11 @@
 
 from __future__ import annotations
 
+from .allergies import parse_allergies
 from .conditions import parse_conditions
 from .encounters import parse_encounters
 from .immunizations import parse_immunizations
+from .insurance import parse_insurance
 from .labs import parse_labs
 from .medications import parse_medications
 from .patient import parse_patient
@@ -28,4 +30,6 @@ __all__ = [
     "parse_progress_notes",
     "parse_vitals",
     "parse_immunizations",
+    "parse_allergies",
+    "parse_insurance",
 ]

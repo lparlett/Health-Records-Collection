@@ -130,6 +130,142 @@ def ensure_medication_constraints(conn: sqlite3.Connection) -> None:
     )
 
 
+def ensure_allergy_schema(conn: sqlite3.Connection) -> None:
+    cur = conn.cursor()
+    cur.execute("PRAGMA table_info(allergy)")
+    rows = cur.fetchall()
+    if not rows:
+        return
+    columns = {row[1] for row in rows}
+
+    def add(column: str, ddl: str) -> None:
+        if column not in columns:
+            conn.execute(f"ALTER TABLE allergy ADD COLUMN {column} {ddl}")
+            columns.add(column)
+
+    add("encounter_id", "INTEGER REFERENCES encounter(id)")
+    add("provider_id", "INTEGER REFERENCES provider(id)")
+    add("substance_code", "TEXT")
+    add("substance_code_system", "TEXT")
+    add("substance_code_display", "TEXT")
+    add("reaction_code", "TEXT")
+    add("reaction_code_system", "TEXT")
+    add("criticality", "TEXT")
+    add("onset_date", "TEXT")
+    add("noted_date", "TEXT")
+    add("source_allergy_id", "TEXT")
+    add("notes", "TEXT")
+
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_allergy_patient
+            ON allergy(patient_id)
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_allergy_encounter
+            ON allergy(encounter_id)
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_allergy_provider
+            ON allergy(provider_id)
+        """
+    )
+    conn.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_allergy_unique
+            ON allergy (
+                patient_id,
+                COALESCE(substance_code, ''),
+                COALESCE(onset_date, ''),
+                COALESCE(status, '')
+            )
+        """
+    )
+
+
+def ensure_insurance_schema(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS insurance (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            patient_id INTEGER NOT NULL,
+            payer_name TEXT,
+            plan_name TEXT,
+            coverage_type TEXT,
+            policy_type TEXT,
+            member_id TEXT,
+            group_number TEXT,
+            subscriber_id TEXT,
+            subscriber_name TEXT,
+            relationship TEXT,
+            effective_date TEXT,
+            expiration_date TEXT,
+            status TEXT,
+            source_policy_id TEXT,
+            notes TEXT,
+            data_source_id INTEGER,
+            FOREIGN KEY(patient_id) REFERENCES patient(id) ON DELETE CASCADE,
+            FOREIGN KEY(data_source_id) REFERENCES data_source(id)
+        )
+        """
+    )
+    cur = conn.cursor()
+    cur.execute("PRAGMA table_info(insurance)")
+    rows = cur.fetchall()
+    columns = {row[1] for row in rows}
+
+    def add(column: str, ddl: str) -> None:
+        if column not in columns:
+            conn.execute(f"ALTER TABLE insurance ADD COLUMN {column} {ddl}")
+            columns.add(column)
+
+    add("policy_type", "TEXT")
+    add("subscriber_id", "TEXT")
+    add("subscriber_name", "TEXT")
+    add("relationship", "TEXT")
+    add("effective_date", "TEXT")
+    add("expiration_date", "TEXT")
+    add("status", "TEXT")
+    add("source_policy_id", "TEXT")
+    add("notes", "TEXT")
+    add("coverage_type", "TEXT")
+    add("plan_name", "TEXT")
+    add("payer_identifier", "TEXT")
+    add("payer_name", "TEXT")
+    add("member_id", "TEXT")
+    add("group_number", "TEXT")
+    add("data_source_id", "INTEGER REFERENCES data_source(id)")
+
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_insurance_patient
+            ON insurance(patient_id)
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_insurance_payer
+            ON insurance(payer_name)
+        """
+    )
+    conn.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_insurance_unique
+            ON insurance (
+                patient_id,
+                COALESCE(payer_name, ''),
+                COALESCE(plan_name, ''),
+                COALESCE(member_id, ''),
+                COALESCE(group_number, '')
+            )
+        """
+    )
+
+
 def ensure_data_source_columns(conn: sqlite3.Connection) -> None:
     """Ensure core tables reference the shared data_source metadata."""
     _add_column_if_missing(conn, "data_source", "document_created", "TEXT")
@@ -145,6 +281,7 @@ def ensure_data_source_columns(conn: sqlite3.Connection) -> None:
         "medication",
         "lab_result",
         "allergy",
+        "insurance",
         "condition",
         "immunization",
         "vital",
@@ -158,6 +295,8 @@ def ensure_data_source_columns(conn: sqlite3.Connection) -> None:
 def ensure_schema(conn: sqlite3.Connection) -> None:
     ensure_provider_schema(conn)
     ensure_encounter_schema(conn)
+    ensure_allergy_schema(conn)
+    ensure_insurance_schema(conn)
     ensure_medication_constraints(conn)
     ensure_immunization_constraints(conn)
     ensure_data_source_columns(conn)

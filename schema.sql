@@ -146,16 +146,76 @@ CREATE INDEX IF NOT EXISTS idx_lab_performing_org ON lab_result(performing_org_i
 CREATE TABLE IF NOT EXISTS allergy (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     patient_id INTEGER NOT NULL,
+    encounter_id INTEGER,
+    provider_id INTEGER,
     substance TEXT,
+    substance_code TEXT,
+    substance_code_system TEXT,
+    substance_code_display TEXT,
     reaction TEXT,
+    reaction_code TEXT,
+    reaction_code_system TEXT,
     severity TEXT,
+    criticality TEXT,
     status TEXT,
+    onset_date TEXT,
+    noted_date TEXT,
+    source_allergy_id TEXT,
+    notes TEXT,
+    data_source_id INTEGER,
+    FOREIGN KEY(patient_id) REFERENCES patient(id) ON DELETE CASCADE,
+    FOREIGN KEY(encounter_id) REFERENCES encounter(id) ON DELETE SET NULL,
+    FOREIGN KEY(provider_id) REFERENCES provider(id) ON DELETE SET NULL,
+    FOREIGN KEY(data_source_id) REFERENCES data_source(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_allergy_patient ON allergy(patient_id);
+CREATE INDEX IF NOT EXISTS idx_allergy_encounter ON allergy(encounter_id);
+CREATE INDEX IF NOT EXISTS idx_allergy_provider ON allergy(provider_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_allergy_unique
+    ON allergy (
+        patient_id,
+        COALESCE(substance_code, ''),
+        COALESCE(onset_date, ''),
+        COALESCE(status, '')
+    );
+
+-- =====================
+-- Insurance Coverage
+-- =====================
+CREATE TABLE IF NOT EXISTS insurance (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    patient_id INTEGER NOT NULL,
+    payer_name TEXT,
+    payer_identifier TEXT,
+    plan_name TEXT,
+    coverage_type TEXT,
+    policy_type TEXT,
+    member_id TEXT,
+    group_number TEXT,
+    subscriber_id TEXT,
+    subscriber_name TEXT,
+    relationship TEXT,
+    effective_date TEXT,
+    expiration_date TEXT,
+    status TEXT,
+    source_policy_id TEXT,
+    notes TEXT,
     data_source_id INTEGER,
     FOREIGN KEY(patient_id) REFERENCES patient(id) ON DELETE CASCADE,
     FOREIGN KEY(data_source_id) REFERENCES data_source(id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_allergy_patient ON allergy(patient_id);
+CREATE INDEX IF NOT EXISTS idx_insurance_patient ON insurance(patient_id);
+CREATE INDEX IF NOT EXISTS idx_insurance_payer ON insurance(payer_name);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_insurance_unique
+    ON insurance (
+        patient_id,
+        COALESCE(payer_name, ''),
+        COALESCE(plan_name, ''),
+        COALESCE(member_id, ''),
+        COALESCE(group_number, '')
+    );
 
 -- =====================
 -- Conditions / Problems

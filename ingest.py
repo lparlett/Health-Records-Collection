@@ -22,9 +22,11 @@ from typing import Any, Dict, Optional, Sequence
 from lxml import etree
 from db.schema import ensure_schema
 from parsers import (
+    parse_allergies,
     parse_conditions,
     parse_encounters,
     parse_immunizations,
+    parse_insurance,
     parse_labs,
     parse_medications,
     parse_patient,
@@ -32,11 +34,13 @@ from parsers import (
     parse_progress_notes,
     parse_vitals,
 )
+from services.allergies import insert_allergies
 from services.attachments import upsert_attachment
 from services.common import clean_str
 from services.conditions import insert_conditions
 from services.data_sources import link_attachment, upsert_data_source
 from services.encounters import insert_encounters
+from services.insurance import upsert_insurance
 from services.immunizations import insert_immunizations
 from services.labs import insert_labs
 from services.medications import insert_medications
@@ -184,6 +188,7 @@ def parse_ccd(xml_file: Path) -> ParsedCCD:
 
     patient = parse_patient(tree, CCD_NAMESPACE)
     encounters = parse_encounters(tree, CCD_NAMESPACE)
+    allergies = parse_allergies(tree, CCD_NAMESPACE)
     medications = parse_medications(tree, CCD_NAMESPACE)
     labs = parse_labs(tree, CCD_NAMESPACE)
     conditions = parse_conditions(tree, CCD_NAMESPACE)
@@ -191,10 +196,12 @@ def parse_ccd(xml_file: Path) -> ParsedCCD:
     progress_notes = parse_progress_notes(tree, CCD_NAMESPACE)
     vitals = parse_vitals(tree, CCD_NAMESPACE)
     immunizations = parse_immunizations(tree, CCD_NAMESPACE)
+    insurance = parse_insurance(tree, CCD_NAMESPACE)
 
     return {
         "patient": patient,
         "encounters": encounters,
+        "allergies": allergies,
         "medications": medications,
         "labs": labs,
         "conditions": conditions,
@@ -202,6 +209,7 @@ def parse_ccd(xml_file: Path) -> ParsedCCD:
         "progress_notes": progress_notes,
         "vitals": vitals,
         "immunizations": immunizations,
+        "insurance": insurance,
     }
 
 
@@ -286,6 +294,11 @@ def ingest_archive(conn: sqlite3.Connection, archive_path: Path) -> None:
             pid,
             _annotate_records(_as_record_list(parsed.get("conditions")), record_metadata),
         )
+        insert_allergies(
+            conn,
+            pid,
+            _annotate_records(_as_record_list(parsed.get("allergies")), record_metadata),
+        )
         insert_procedures(
             conn,
             pid,
@@ -315,6 +328,11 @@ def ingest_archive(conn: sqlite3.Connection, archive_path: Path) -> None:
             conn,
             pid,
             _annotate_records(_as_record_list(parsed.get("progress_notes")), record_metadata),
+        )
+        upsert_insurance(
+            conn,
+            pid,
+            _annotate_records(_as_record_list(parsed.get("insurance")), record_metadata),
         )
         conn.commit()
         logger.info("Ingested %s.", xml_file.name)

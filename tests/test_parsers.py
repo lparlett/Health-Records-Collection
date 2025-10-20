@@ -1,9 +1,11 @@
 from lxml import etree
 
+import parsers.allergies as allergies
+import parsers.encounters as encounters
+import parsers.immunizations as immunizations
+import parsers.insurance as insurance
 import parsers.patient as patient
 import parsers.vitals as vitals
-import parsers.immunizations as immunizations
-import parsers.encounters as encounters
 
 
 def test_parse_patient_minimal():
@@ -264,3 +266,177 @@ def test_parse_encounter_prefers_encompassing_provider():
     assert len(result) == 1
     encounter = result[0]
     assert encounter["provider"] == "Preferred Provider"
+
+
+def test_parse_allergies_basic():
+    sample_xml = """
+    <ClinicalDocument xmlns="urn:hl7-org:v3" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      <component>
+        <structuredBody>
+          <component>
+            <section>
+              <code code="48765-2" />
+              <text>
+                <paragraph ID="note1">Patient experienced hives following penicillin.</paragraph>
+              </text>
+              <entry>
+                <act classCode="ACT" moodCode="EVN">
+                  <entryRelationship typeCode="SUBJ">
+                    <observation classCode="OBS" moodCode="EVN">
+                      <templateId root="2.16.840.1.113883.10.20.22.4.8"/>
+                      <id root="urn:uuid:allergy-1"/>
+                      <code code="ASSERTION"/>
+                      <statusCode code="active"/>
+                      <effectiveTime value="20250301"/>
+                      <value xsi:type="CD" code="70618" codeSystem="2.16.840.1.113883.6.88" displayName="Penicillin"/>
+                      <text>
+                        <reference value="#note1"/>
+                      </text>
+                      <participant typeCode="CSM">
+                        <participantRole>
+                          <playingEntity>
+                            <code code="70618" codeSystem="2.16.840.1.113883.6.88" displayName="Penicillin V"/>
+                          </playingEntity>
+                        </participantRole>
+                      </participant>
+                      <entryRelationship typeCode="SUBJ">
+                        <observation classCode="OBS" moodCode="EVN">
+                          <templateId root="2.16.840.1.113883.10.20.22.4.9"/>
+                          <value xsi:type="CD" code="39579001" displayName="Anaphylaxis"/>
+                        </observation>
+                      </entryRelationship>
+                      <entryRelationship typeCode="SUBJ">
+                        <observation classCode="OBS" moodCode="EVN">
+                          <code code="SEV" displayName="Severity"/>
+                          <value xsi:type="CD" code="255604002" displayName="Mild"/>
+                        </observation>
+                      </entryRelationship>
+                      <author>
+                        <assignedAuthor>
+                          <assignedPerson>
+                            <name>Dr Allergy Tester</name>
+                          </assignedPerson>
+                        </assignedAuthor>
+                        <time value="20250302"/>
+                      </author>
+                    </observation>
+                  </entryRelationship>
+                </act>
+              </entry>
+            </section>
+          </component>
+        </structuredBody>
+      </component>
+    </ClinicalDocument>
+    """
+    root = etree.fromstring(sample_xml.encode("utf-8"))
+    tree = etree.ElementTree(root)
+    ns = {"hl7": "urn:hl7-org:v3"}
+
+    result = allergies.parse_allergies(tree, ns)
+    assert len(result) == 1
+    record = result[0]
+    assert record["substance_code"] == "70618"
+    assert record["substance"] == "Penicillin V"
+    assert record["reaction"] == "Anaphylaxis"
+    assert record["severity"] == "Mild"
+    assert record["status"] == "active"
+    assert record["noted_date"] == "20250302"
+    assert record["notes"].startswith("Patient experienced hives")
+    assert record["provider"] == "Dr Allergy Tester"
+
+
+def test_parse_insurance_basic():
+    sample_xml = """
+    <ClinicalDocument xmlns="urn:hl7-org:v3"
+                      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                      xmlns:sdtc="urn:hl7-org:sdtc">
+      <component>
+        <structuredBody>
+          <component>
+            <section>
+              <code code="48768-6" />
+              <text>
+                <list>
+                  <item ID="coverage100">Plan: BCBS PPO</item>
+                  <item ID="coverage100PlanName">BCBS PPO</item>
+                  <item ID="coverage100relToSub">Self</item>
+                </list>
+              </text>
+              <entry>
+                <act classCode="ACT" moodCode="EVN">
+                  <templateId root="2.16.840.1.113883.10.20.22.4.60"/>
+                  <templateId root="2.16.840.1.113883.10.20.22.4.60" extension="2023-05-01"/>
+                  <id root="1.2.840.114350.1.13.470.2.7.2.678671" extension="816442"/>
+                  <code code="48768-6" codeSystem="2.16.840.1.113883.6.1" displayName="Payment sources"/>
+                  <statusCode code="completed"/>
+                  <effectiveTime value="20240303"/>
+                  <entryRelationship typeCode="COMP">
+                    <act classCode="ACT" moodCode="EVN">
+                      <templateId root="2.16.840.1.113883.10.20.22.4.61"/>
+                      <id root="1.2.840.114350.1.13.470.2.7.3.678671.210" extension="1871VH"/>
+                      <code code="612" codeSystem="2.16.840.1.113883.3.221.5"/>
+                      <text>
+                        <reference value="#coverage100"/>
+                      </text>
+                      <statusCode code="completed"/>
+                      <performer typeCode="PRF">
+                        <assignedEntity>
+                          <id root="2.16.840.1.113883.6.300" extension="758"/>
+                          <representedOrganization>
+                            <name>BCBS PPO</name>
+                          </representedOrganization>
+                        </assignedEntity>
+                      </performer>
+                      <participant typeCode="COV">
+                        <participantRole>
+                          <id extension="WLU768M83547"/>
+                          <code codeSystem="2.16.840.1.113883.5.111">
+                            <originalText>Self<reference value="#coverage100relToSub"/></originalText>
+                          </code>
+                          <time>
+                            <low value="20200101000000"/>
+                            <high nullFlavor="NA"/>
+                          </time>
+                          <playingEntity>
+                            <name nullFlavor="NI"/>
+                            <sdtc:birthTime nullFlavor="UNK"/>
+                          </playingEntity>
+                        </participantRole>
+                      </participant>
+                      <entryRelationship typeCode="REFR">
+                        <act classCode="ACT" moodCode="DEF">
+                          <text>
+                            <reference value="#coverage100PlanName"/>
+                          </text>
+                        </act>
+                      </entryRelationship>
+                    </act>
+                  </entryRelationship>
+                </act>
+              </entry>
+            </section>
+          </component>
+        </structuredBody>
+      </component>
+    </ClinicalDocument>
+    """
+    root = etree.fromstring(sample_xml.encode("utf-8"))
+    tree = etree.ElementTree(root)
+    ns = {"hl7": "urn:hl7-org:v3"}
+
+    result = insurance.parse_insurance(tree, ns)
+    assert len(result) == 1
+    policy = result[0]
+    assert policy["payer_name"] == "BCBS PPO"
+    assert policy["payer_identifier"] == "758"
+    assert policy["plan_name"] == "Plan: BCBS PPO"
+    assert policy["coverage_type"] == "612"
+    assert policy["member_id"] == "WLU768M83547"
+    assert policy["group_number"] == "1871VH"
+    assert policy["subscriber_id"] == "WLU768M83547"
+    assert policy["relationship"] == "Self"
+    assert policy["effective_date"] == "20200101000000"
+    assert policy["expiration_date"] is None
+    assert policy["status"] == "completed"
+    assert policy["notes"].startswith("Plan: BCBS PPO")
