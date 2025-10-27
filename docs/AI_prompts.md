@@ -1,4 +1,4 @@
-# Prompt Log
+﻿# Prompt Log
 
 [2025-10-11 19:48:25 UTC]
 Bring the repo to be in compliance with the instructions outlined in AGENTS.md
@@ -319,21 +319,21 @@ Oh! Another thing I want to add is the ability to edit and an audit trail of any
 [2025-10-19T22:38Z]
 
 In terms of your additional development ideas, I like:
-Tagging system — allow manual tags for visits (“urgent care,” “follow-up,” “immunization”).
- Record provenance viewer — show file name, import date, and hash for each record.
- Compact analytics dashboard — mini KPIs like total meds, avg. encounters per year.
- Search bar — global search across diagnoses, labs, and medications.
+Tagging system â€” allow manual tags for visits (â€œurgent care,â€ â€œfollow-up,â€ â€œimmunizationâ€).
+ Record provenance viewer â€” show file name, import date, and hash for each record.
+ Compact analytics dashboard â€” mini KPIs like total meds, avg. encounters per year.
+ Search bar â€” global search across diagnoses, labs, and medications.
  Toggle between dark and light mode using Streamlit theme config.
  Highlight abnormal labs using color-coded ranges.
- Configurable data directory — selectable local folder for SQLite DB and imported files.
- Schema browser — automatically generate a visual ER diagram in-app from the DB.
- Data export panel — let users download filtered data as CSV.
- Notes viewer — parse and display narrative clinical notes separately from structured fields.
- Basic auth or local PIN — lightweight password for sensitive sessions.
- Help overlay — small inline tooltips explaining each section of the UI.
- Error sandbox — log ingestion errors and let the user download them for inspection.
- Theming presets — toggle between “clinical,” “minimalist,” and “research notebook” styles.
- Data quality checks — add a tab summarizing missing values, inconsistent codes, or duplicate entries.
+ Configurable data directory â€” selectable local folder for SQLite DB and imported files.
+ Schema browser â€” automatically generate a visual ER diagram in-app from the DB.
+ Data export panel â€” let users download filtered data as CSV.
+ Notes viewer â€” parse and display narrative clinical notes separately from structured fields.
+ Basic auth or local PIN â€” lightweight password for sensitive sessions.
+ Help overlay â€” small inline tooltips explaining each section of the UI.
+ Error sandbox â€” log ingestion errors and let the user download them for inspection.
+ Theming presets â€” toggle between â€œclinical,â€ â€œminimalist,â€ and â€œresearch notebookâ€ styles.
+ Data quality checks â€” add a tab summarizing missing values, inconsistent codes, or duplicate entries.
 
 In addition, I want to be a good resource user and do file housekeeping as needed.
 
@@ -351,3 +351,48 @@ Move the additional tables to the next version (that'll be easy to implement). M
 [2025-10-20 00:24:50 UTC] Walk me through how to do option 1. I've never forked a repo before
 [2025-10-20 00:59:58 UTC] For the GitHub action, I don't want to have to approve pull requests every day. Is there a way to only request a PR if the files differ or have been updated?
 [2025-10-20 01:01:12 UTC] BTW - I ended up opting to change the repo setting rather than forking.
+[2025-10-20 23:39:55 UTC]
+<user_instructions> [omitted per AGENTS.md policy]
+
+[2025-10-20 23:39:57 UTC]
+Save this session's logs to docs/AI_prompts.md.
+
+[2025-10-20 23:48:45 UTC]
+Do you recall our discussion on v0.2.0? We've added allergies and insurance tables. Let's move onto implementing a notes viewer. We currently have a progress_notes table that holds the encounter progress notes. Those are displayed on the front end, but they don't have any formatting or style. What are our options in enhancing this view? I think it's just the raw text as it has been ingested.
+
+[2025-10-20 23:50:26 UTC]
+Before we do any of that, re-read the AGENTS.md instructions and ensure the AI_prompts.md file adheres to the requirements.
+
+
+[2025-10-21 00:02:17 UTC]
+Let's work on the front end of things.... let's switch all of the <br> to wrapping <p>. Let's also detect sections, which are typically in all caps. Also, give me a way to target the new tags through use of an ID tag for the entirety of the progress note so that children can be CSS styled.
+[2025-10-21 00:08:43 UTC]
+I want views.py to function as a builder from different pieces.... can we isolate the progress notes functions in a separate script and call them when needed in views.py? The same for the lab graphs. I want views to specify the pages or views that are seen, not the building blocks to create those.
+[2025-10-21 00:19:45 UTC]
+Before moving on, there is an error associated with the updated stylesheet github action. The problem is for line 29 col 13:
+
+Context access might be invalid: no_changes
+[2025-10-21 00:37:42 UTC]
+Why is my CSS in cda_custom.css not targeting the section headers? I don't see it even being an option when I pull up the FIreFox web developer inspector for the section elements.
+
+.progress-note-section {
+    font-size: 1.2rem;
+    color: var(--primary-color);
+    font-weight: bold;
+    border-bottom: 6px solid var(--secondary-color);
+    margin-top: 10px;
+}
+[2025-10-21 00:40:20 UTC]
+OK take the style that I pasted into the prior prompt and inject that into the progress note. Make it its own static style and read that before the progress note is generated so that the styles are injected correctly.
+[2025-10-21 00:45:52 UTC]
+Two changes.... the br -> p change should only happen when there are two break tags in a row. Otherwise, a single break tag should remain. Next, the capitals rule doesn't work as well as I thought it would. There are two ways forward. One way is to figure out some common progress notes section strings and pre-specify them. The other way is to require only characters within a single line because we're picking up labs that have numeric values. If we require only upper case characters for section headers, that may work. Then, there are some sub-headers that I don't think will be as easy to figure out programmatically - they'll have to be pre-specified.
+[2025-10-21 00:55:14 UTC]
+I've attempted to separate out my colors from the other stylesheets; however, the @import statement doesn't seem to be working. Can you review the static CSS and see why?
+[2025-10-27 22:39:03 UTC]
+Log prompts in docs/AI_prompts.md
+
+The looks like section heading isn't being consistently applied for the progress notes
+[2025-10-27 22:40:26 UTC]
+Modify the note_components.py file to account for that.
+[2025-10-27 23:01:10 UTC]
+Yeah, we need to parse the titles regardless of where in the paragraph they appear

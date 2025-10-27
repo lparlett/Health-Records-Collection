@@ -20,10 +20,12 @@ SECTION_CODES: set[str] = {
     "11450-4",  # Problem List
     "11348-0",  # History of Past illness
     "29299-5",  # Problem list (report)
+    "51848-0",  # Visit diagnoses
 }
 
 _ALLOWED_OBS_TEMPLATE_IDS: set[str] = {
     "2.16.840.1.113883.10.20.22.4.4",  # Problem Observation
+    "2.16.840.1.113883.10.20.22.2.8",  # Visit Diagnoses
 }
 
 

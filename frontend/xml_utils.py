@@ -87,12 +87,17 @@ def transform_cda_to_html(xml_path: str) -> Optional[str]:
             
         # Get paths for other resources
         static_dir = Path(__file__).parent / "static"  
+        color_css_path = static_dir / "colors.css"
+        if not color_css_path.exists(): 
+            logger.error(f"Color CSS file not found: {color_css_path}")
+            return None 
         css_path = static_dir / "cda_custom.css"
             
         # Log transformation details
         logger.info(f"Transforming XML file: {xml_path}")
         logger.info(f"Using stylesheet: {xsl_path}")
         logger.info(f"Using CSS: {css_path}")
+        logger.info(f"Using color CSS: {color_css_path}")
             
         # Read and validate input XML
         xml_content = Path(xml_path).read_text(encoding='utf-8')
@@ -146,8 +151,11 @@ def transform_cda_to_html(xml_path: str) -> Optional[str]:
         # Log success
         logger.debug("XSLT transformation completed successfully")
         
-        # Get our custom CSS content
-        logger.debug("Reading custom CSS")
+        # Get our custom and color CSS content
+        logger.debug("Reading custom CSS and color CSS")
+        with open(color_css_path, 'r', encoding='utf-8') as f:
+            color_css_content = f.read()    
+    
         with open(css_path, 'r', encoding='utf-8') as f:
             css_content = f.read()
         
@@ -163,6 +171,7 @@ def transform_cda_to_html(xml_path: str) -> Optional[str]:
     <meta http-equiv="Content-Style-Type" content="text/css">
     <title>CDA Document</title>
     <style>
+        {color_css_content}
         {css_content}
     </style>
     <script>
