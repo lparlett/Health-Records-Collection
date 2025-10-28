@@ -2,7 +2,7 @@
 
 This roadmap describes the next development stages for Health-Records-Collection, focusing on a unified Streamlit interface, improved usability, transparent data provenance, and clean local resource management.
 
-## Future versions
+## Past plans 
 
 ### v0.2.0 — Schema Growth & Notes Handling
 
@@ -11,6 +11,8 @@ Goal: extend structured data without widening ingestion scope.
 * [X] Add Allergies and Insurance tables with clear relationships.
 * [X] Implement a Notes viewer for narrative clinical text.
 * [X] Auto-generate ER diagram and schema browser.
+
+## Future versions
 
 ### v0.3.0 — Integrated Ingestion
 
