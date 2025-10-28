@@ -1,4 +1,4 @@
-# Prompt Log
+﻿# Prompt Log
 
 [2025-10-11 19:48:25 UTC]
 Bring the repo to be in compliance with the instructions outlined in AGENTS.md
@@ -319,21 +319,21 @@ Oh! Another thing I want to add is the ability to edit and an audit trail of any
 [2025-10-19T22:38Z]
 
 In terms of your additional development ideas, I like:
-Tagging system — allow manual tags for visits (“urgent care,” “follow-up,” “immunization”).
- Record provenance viewer — show file name, import date, and hash for each record.
- Compact analytics dashboard — mini KPIs like total meds, avg. encounters per year.
- Search bar — global search across diagnoses, labs, and medications.
+Tagging system â€” allow manual tags for visits (â€œurgent care,â€ â€œfollow-up,â€ â€œimmunizationâ€).
+ Record provenance viewer â€” show file name, import date, and hash for each record.
+ Compact analytics dashboard â€” mini KPIs like total meds, avg. encounters per year.
+ Search bar â€” global search across diagnoses, labs, and medications.
  Toggle between dark and light mode using Streamlit theme config.
  Highlight abnormal labs using color-coded ranges.
- Configurable data directory — selectable local folder for SQLite DB and imported files.
- Schema browser — automatically generate a visual ER diagram in-app from the DB.
- Data export panel — let users download filtered data as CSV.
- Notes viewer — parse and display narrative clinical notes separately from structured fields.
- Basic auth or local PIN — lightweight password for sensitive sessions.
- Help overlay — small inline tooltips explaining each section of the UI.
- Error sandbox — log ingestion errors and let the user download them for inspection.
- Theming presets — toggle between “clinical,” “minimalist,” and “research notebook” styles.
- Data quality checks — add a tab summarizing missing values, inconsistent codes, or duplicate entries.
+ Configurable data directory â€” selectable local folder for SQLite DB and imported files.
+ Schema browser â€” automatically generate a visual ER diagram in-app from the DB.
+ Data export panel â€” let users download filtered data as CSV.
+ Notes viewer â€” parse and display narrative clinical notes separately from structured fields.
+ Basic auth or local PIN â€” lightweight password for sensitive sessions.
+ Help overlay â€” small inline tooltips explaining each section of the UI.
+ Error sandbox â€” log ingestion errors and let the user download them for inspection.
+ Theming presets â€” toggle between â€œclinical,â€ â€œminimalist,â€ and â€œresearch notebookâ€ styles.
+ Data quality checks â€” add a tab summarizing missing values, inconsistent codes, or duplicate entries.
 
 In addition, I want to be a good resource user and do file housekeeping as needed.
 
@@ -351,3 +351,107 @@ Move the additional tables to the next version (that'll be easy to implement). M
 [2025-10-20 00:24:50 UTC] Walk me through how to do option 1. I've never forked a repo before
 [2025-10-20 00:59:58 UTC] For the GitHub action, I don't want to have to approve pull requests every day. Is there a way to only request a PR if the files differ or have been updated?
 [2025-10-20 01:01:12 UTC] BTW - I ended up opting to change the repo setting rather than forking.
+[2025-10-20 23:39:55 UTC]
+<user_instructions> [omitted per AGENTS.md policy]
+
+[2025-10-20 23:39:57 UTC]
+Save this session's logs to docs/AI_prompts.md.
+
+[2025-10-20 23:48:45 UTC]
+Do you recall our discussion on v0.2.0? We've added allergies and insurance tables. Let's move onto implementing a notes viewer. We currently have a progress_notes table that holds the encounter progress notes. Those are displayed on the front end, but they don't have any formatting or style. What are our options in enhancing this view? I think it's just the raw text as it has been ingested.
+
+[2025-10-20 23:50:26 UTC]
+Before we do any of that, re-read the AGENTS.md instructions and ensure the AI_prompts.md file adheres to the requirements.
+
+
+[2025-10-21 00:02:17 UTC]
+Let's work on the front end of things.... let's switch all of the <br> to wrapping <p>. Let's also detect sections, which are typically in all caps. Also, give me a way to target the new tags through use of an ID tag for the entirety of the progress note so that children can be CSS styled.
+[2025-10-21 00:08:43 UTC]
+I want views.py to function as a builder from different pieces.... can we isolate the progress notes functions in a separate script and call them when needed in views.py? The same for the lab graphs. I want views to specify the pages or views that are seen, not the building blocks to create those.
+[2025-10-21 00:19:45 UTC]
+Before moving on, there is an error associated with the updated stylesheet github action. The problem is for line 29 col 13:
+
+Context access might be invalid: no_changes
+[2025-10-21 00:37:42 UTC]
+Why is my CSS in cda_custom.css not targeting the section headers? I don't see it even being an option when I pull up the FIreFox web developer inspector for the section elements.
+
+.progress-note-section {
+    font-size: 1.2rem;
+    color: var(--primary-color);
+    font-weight: bold;
+    border-bottom: 6px solid var(--secondary-color);
+    margin-top: 10px;
+}
+[2025-10-21 00:40:20 UTC]
+OK take the style that I pasted into the prior prompt and inject that into the progress note. Make it its own static style and read that before the progress note is generated so that the styles are injected correctly.
+[2025-10-21 00:45:52 UTC]
+Two changes.... the br -> p change should only happen when there are two break tags in a row. Otherwise, a single break tag should remain. Next, the capitals rule doesn't work as well as I thought it would. There are two ways forward. One way is to figure out some common progress notes section strings and pre-specify them. The other way is to require only characters within a single line because we're picking up labs that have numeric values. If we require only upper case characters for section headers, that may work. Then, there are some sub-headers that I don't think will be as easy to figure out programmatically - they'll have to be pre-specified.
+[2025-10-21 00:55:14 UTC]
+I've attempted to separate out my colors from the other stylesheets; however, the @import statement doesn't seem to be working. Can you review the static CSS and see why?
+[2025-10-27 22:39:03 UTC]
+Log prompts in docs/AI_prompts.md
+
+The looks like section heading isn't being consistently applied for the progress notes
+[2025-10-27 22:40:26 UTC]
+Modify the note_components.py file to account for that.
+[2025-10-27 23:01:10 UTC]
+Yeah, we need to parse the titles regardless of where in the paragraph they appear
+
+[2025-10-27 23:22:28 UTC]
+Save these prompts in docs/AI_prompts.md
+
+Let's work on the ER diagram to be used in the streamlit app... we don't have to be fancy, but I would like documentation to eventually live in the streamlit app and this is one way of doing that. I would like, on the left-hand navigation section, a place that I could click to see the database schema.
+
+[2025-10-27 23:29:32 UTC]
+Fix the pylance error in view.py: Import ".schema_components" could not be resolved
+
+[2025-10-27 23:31:43 UTC]
+I reopened and that didn't fix the issue
+
+[2025-10-27 23:34:38 UTC]
+OK. that worked, but it's a little hard to see. Can we implement a zoom and text color changer?
+
+[2025-10-27 23:38:45 UTC]
+Text color picker is perfect. The issue is with the zoom - it doesn't zoom in closer to the graph.
+
+[2025-10-27 23:44:32 UTC]
+The text size didn't change on the zoom - it just made things further from one another. Also, it slows down FireFox. Rather than a slider, let's use zoom options of 0.5x ,1x, 2x, 5x, and 10x.
+
+[2025-10-27 23:49:55 UTC]
+Nothing at all is rendering now. Likely due to the JS script
+
+[2025-10-27 23:52:44 UTC]
+I'm running into FireFox script page "load" issues.
+
+[2025-10-27 23:55:21 UTC]
+Absolutely no effect on text size and I'm still getting a pop up that the page is slowing down FireFox.
+
+[2025-10-28 00:10:45 UTC]
+What is the LAYOUT_HINTS code doing in the schema_coponents? That looks like hard-coded table names.
+
+[2025-10-28 00:15:07 UTC]
+The ID variables are little long for the cards:
+id INTEGER PRIMARY KEY AUTOINCREMENT
+
+Can we shorten PRIMARY KEY to PK and AUTOINCREMENT to AUTO?
+
+[2025-10-28 00:17:07 UTC]
+The curve labels are being drawn on top of each other
+
+[2025-10-28 00:20:07 UTC]
+Better, but I'm still seeing some labels overwriting each other. Can you make the curve labels box have a white background at 50% alpha in addition to further correcting for overlap?
+
+[2025-10-28 00:21:45 UTC]
+Rather than on the curve, it might be better to just list the relationships underneath each card. I don't think we'll solve the curve label overlap tonight.
+
+[2025-10-28 00:31:16 UTC]
+allergy and insurance are really long and aren't accommodated by the 300 height I customized - what can we do
+
+[2025-10-28 00:39:25 UTC]
+It looks like relationships only show up in one of the tables and not both tables - can this be fixed?
+
+[2025-10-28 00:44:14 UTC]
+Stuck?
+
+[2025-10-28 00:53:24 UTC]
+Last update - I want a box in the upper left-hand corner to provide the meaning of some of the shortened things.... PK = primary key; NN = not null; DEF = default; INT = integer

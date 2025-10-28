@@ -1,0 +1,13 @@
+@import "colors.css";
+
+.progress-note {
+    background-color: var(--background-color);
+    color: var(--primary-color);
+}
+
+.progress-note-section {
+    font-size: 1.2rem;
+    font-weight: bold;
+    border-bottom: 6px solid var(--secondary-color);
+    margin-top: 10px;
+}
