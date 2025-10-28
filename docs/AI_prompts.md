@@ -396,3 +396,62 @@ The looks like section heading isn't being consistently applied for the progress
 Modify the note_components.py file to account for that.
 [2025-10-27 23:01:10 UTC]
 Yeah, we need to parse the titles regardless of where in the paragraph they appear
+
+[2025-10-27 23:22:28 UTC]
+Save these prompts in docs/AI_prompts.md
+
+Let's work on the ER diagram to be used in the streamlit app... we don't have to be fancy, but I would like documentation to eventually live in the streamlit app and this is one way of doing that. I would like, on the left-hand navigation section, a place that I could click to see the database schema.
+
+[2025-10-27 23:29:32 UTC]
+Fix the pylance error in view.py: Import ".schema_components" could not be resolved
+
+[2025-10-27 23:31:43 UTC]
+I reopened and that didn't fix the issue
+
+[2025-10-27 23:34:38 UTC]
+OK. that worked, but it's a little hard to see. Can we implement a zoom and text color changer?
+
+[2025-10-27 23:38:45 UTC]
+Text color picker is perfect. The issue is with the zoom - it doesn't zoom in closer to the graph.
+
+[2025-10-27 23:44:32 UTC]
+The text size didn't change on the zoom - it just made things further from one another. Also, it slows down FireFox. Rather than a slider, let's use zoom options of 0.5x ,1x, 2x, 5x, and 10x.
+
+[2025-10-27 23:49:55 UTC]
+Nothing at all is rendering now. Likely due to the JS script
+
+[2025-10-27 23:52:44 UTC]
+I'm running into FireFox script page "load" issues.
+
+[2025-10-27 23:55:21 UTC]
+Absolutely no effect on text size and I'm still getting a pop up that the page is slowing down FireFox.
+
+[2025-10-28 00:10:45 UTC]
+What is the LAYOUT_HINTS code doing in the schema_coponents? That looks like hard-coded table names.
+
+[2025-10-28 00:15:07 UTC]
+The ID variables are little long for the cards:
+id INTEGER PRIMARY KEY AUTOINCREMENT
+
+Can we shorten PRIMARY KEY to PK and AUTOINCREMENT to AUTO?
+
+[2025-10-28 00:17:07 UTC]
+The curve labels are being drawn on top of each other
+
+[2025-10-28 00:20:07 UTC]
+Better, but I'm still seeing some labels overwriting each other. Can you make the curve labels box have a white background at 50% alpha in addition to further correcting for overlap?
+
+[2025-10-28 00:21:45 UTC]
+Rather than on the curve, it might be better to just list the relationships underneath each card. I don't think we'll solve the curve label overlap tonight.
+
+[2025-10-28 00:31:16 UTC]
+allergy and insurance are really long and aren't accommodated by the 300 height I customized - what can we do
+
+[2025-10-28 00:39:25 UTC]
+It looks like relationships only show up in one of the tables and not both tables - can this be fixed?
+
+[2025-10-28 00:44:14 UTC]
+Stuck?
+
+[2025-10-28 00:53:24 UTC]
+Last update - I want a box in the upper left-hand corner to provide the meaning of some of the shortened things.... PK = primary key; NN = not null; DEF = default; INT = integer

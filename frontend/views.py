@@ -19,6 +19,7 @@ import db_utils
 import ui_components
 from . import xml_utils
 from .note_components import render_progress_notes
+from .schema_components import render_schema_documentation
 from .trend_components import render_patient_trends
 
 
@@ -57,6 +58,9 @@ def render_patient_encounter_experience(conn) -> bool:
         return False
     if state["app_view"] == "trends":
         _show_patient_trends_page(conn)
+        return False
+    if state["app_view"] == "schema":
+        _show_schema_documentation()
         return False
     _show_encounter_overview(conn)
     return True
@@ -99,6 +103,7 @@ def _navigation_controls() -> str:
     options = [
         ("Encounter overview", "overview"),
         ("Patient trends", "trends"),
+        ("Database schema", "schema"),
     ]
     labels = [label for label, _ in options]
     nav_view = state.get("nav_view", "overview")
@@ -223,6 +228,11 @@ def _show_patient_trends_page(conn) -> None:
     st.caption(" | ".join(subtitle_parts))
 
     render_patient_trends(conn, patient_id, show_section_header=False)
+
+
+def _show_schema_documentation() -> None:
+    """Render the schema documentation view inside the main panel."""
+    render_schema_documentation()
 
 
 def _format_records_for_list(records: Iterable[dict[str, Any]], fields: list[str]) -> list[str]:
