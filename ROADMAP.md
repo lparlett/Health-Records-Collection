@@ -8,19 +8,19 @@ This roadmap describes the next development stages for Health-Records-Collection
 
 Goal: extend structured data without widening ingestion scope.
 
-[x] Add Allergies and Insurance tables with clear relationships.
-[x] Implement a Notes viewer for narrative clinical text.
-[x] Auto-generate ER diagram and schema browser.
+[X] Add Allergies and Insurance tables with clear relationships.
+[X] Implement a Notes viewer for narrative clinical text.
+[X] Auto-generate ER diagram and schema browser.
 
 ### v0.3.0 — Integrated Ingestion
 
 Goal: unify ingestion and display under the Streamlit front end.
 
-[] Upload ZIPs directly through Streamlit.
-[] Display progress indicators and error messages in real time.
-[] Maintain a configurable local data directory for SQLite and imported archives.
-[] Add error-sandbox tab for ingestion diagnostics and downloadable logs.
-[] Begin file-housekeeping routines: clean temp files, verify hashes, log storage use.
+[ ] Upload ZIPs directly through Streamlit.
+[ ] Display progress indicators and error messages in real time.
+[ ] Maintain a configurable local data directory for SQLite and imported archives.
+[ ] Add error-sandbox tab for ingestion diagnostics and downloadable logs.
+[ ] Begin file-housekeeping routines: clean temp files, verify hashes, log storage use.
 
 ### v0.4.0 — Editing & Provenance
 
