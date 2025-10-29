@@ -50,12 +50,10 @@ from services.patient import insert_patient
 from services.procedures import insert_procedures
 from services.progress_notes import insert_progress_notes
 from services.vitals import insert_vitals
+import settings
 
 logger = logging.getLogger(__name__)
 
-RAW_DIR: Path = Path("data/raw")
-PARSED_DIR: Path = Path("data/parsed")
-DB_PATH: Path = Path("db/health_records.db")
 SCHEMA_FILE: Path = Path("schema.sql")
 CCD_NAMESPACE = {"hl7": "urn:hl7-org:v3"}
 
@@ -111,8 +109,10 @@ def init_db() -> sqlite3.Connection:
     Raises:
         sqlite3.Error: If the database connection cannot be established.
     """
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
+    paths = settings.load_paths()
+    db_path = paths["db_path"]
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA foreign_keys = ON;")
 
     if SCHEMA_FILE.exists():
@@ -243,7 +243,8 @@ def ingest_archive(
         )
         return
 
-    destination = PARSED_DIR / archive_path.stem
+    paths = settings.load_paths()
+    destination = paths["parsed_dir"] / archive_path.stem
     unzip_raw_files(archive_path, destination)
 
     metadata_lookup = _load_metadata(destination)
@@ -583,7 +584,9 @@ def main(argv: Sequence[str] | None = None) -> None:
     )
 
     with closing(init_db()) as conn:
-        for archive_path in RAW_DIR.glob("*.zip"):
+        paths = settings.load_paths()
+        raw_dir = paths["raw_dir"]
+        for archive_path in raw_dir.glob("*.zip"):
             ingest_archive(conn, archive_path)
 
 

@@ -82,10 +82,18 @@ def test_ingest_archive_records_data_source(
     parsed_dir = tmp_path / "parsed"
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
+    parsed_dir.mkdir()
 
-    monkeypatch.setattr(ingest, "PARSED_DIR", parsed_dir)
-    monkeypatch.setattr(ingest, "RAW_DIR", raw_dir)
-    monkeypatch.setattr(ingest, "DB_PATH", Path(tmp_path / "db" / "health_records.db"))
+    db_path = tmp_path / "db" / "health_records.db"
+
+    def _fake_load_paths():
+        return {
+            "raw_dir": raw_dir,
+            "parsed_dir": parsed_dir,
+            "db_path": db_path,
+        }
+
+    monkeypatch.setattr(ingest.settings, "load_paths", _fake_load_paths)
 
     ingest.ingest_archive(schema_conn, archive_path)
 
@@ -183,10 +191,18 @@ def test_ingest_archive_skips_duplicate_hash(
     parsed_dir = tmp_path / "parsed"
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
+    parsed_dir.mkdir()
 
-    monkeypatch.setattr(ingest, "PARSED_DIR", parsed_dir)
-    monkeypatch.setattr(ingest, "RAW_DIR", raw_dir)
-    monkeypatch.setattr(ingest, "DB_PATH", Path(tmp_path / "db" / "records.db"))
+    db_path = tmp_path / "db" / "records.db"
+
+    def _fake_load_paths():
+        return {
+            "raw_dir": raw_dir,
+            "parsed_dir": parsed_dir,
+            "db_path": db_path,
+        }
+
+    monkeypatch.setattr(ingest.settings, "load_paths", _fake_load_paths)
 
     ingest.ingest_archive(schema_conn, archive_path)
 
@@ -338,10 +354,18 @@ def test_ingest_archive_persists_allergies_and_insurance(
     parsed_dir = tmp_path / "parsed"
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
+    parsed_dir.mkdir()
 
-    monkeypatch.setattr(ingest, "PARSED_DIR", parsed_dir)
-    monkeypatch.setattr(ingest, "RAW_DIR", raw_dir)
-    monkeypatch.setattr(ingest, "DB_PATH", Path(tmp_path / "db" / "health_records_ins.db"))
+    db_path = tmp_path / "db" / "health_records_ins.db"
+
+    def _fake_load_paths():
+        return {
+            "raw_dir": raw_dir,
+            "parsed_dir": parsed_dir,
+            "db_path": db_path,
+        }
+
+    monkeypatch.setattr(ingest.settings, "load_paths", _fake_load_paths)
 
     ingest.ingest_archive(schema_conn, archive_path)
 

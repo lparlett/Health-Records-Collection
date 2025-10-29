@@ -6,14 +6,23 @@ import pandas as pd
 import yaml
 
 from db.schema import ensure_schema
+import settings
 
 # Load config
 CONFIG_PATH = Path(__file__).parent / "config.yaml"
 with open(CONFIG_PATH, "r") as f:
     CONFIG = yaml.safe_load(f)
 
-DB_PATH = CONFIG["db_path"]
+DEFAULT_DB_PATH = Path(CONFIG["db_path"]).expanduser()
 SCHEMA_SQL_PATH = Path(__file__).resolve().parents[1] / "schema.sql"
+
+
+def _resolve_db_path() -> Path:
+    try:
+        paths = settings.load_paths()
+        return paths["db_path"]
+    except Exception:  # pragma: no cover - defensive fallback
+        return DEFAULT_DB_PATH
 
 
 def _database_has_patient_table(conn: sqlite3.Connection) -> bool:
@@ -43,8 +52,10 @@ def _ensure_database_ready(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
-def get_connection(db_path=DB_PATH):
-    conn = sqlite3.connect(db_path)
+def get_connection(db_path: Path | str | None = None):
+    if db_path is None:
+        db_path = _resolve_db_path()
+    conn = sqlite3.connect(str(db_path))
     _ensure_database_ready(conn)
     return conn
 

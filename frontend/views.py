@@ -17,6 +17,7 @@ import streamlit.components.v1 as components
 
 import db_utils
 import ui_components
+import settings
 from . import xml_utils
 from .note_components import render_progress_notes
 from .schema_components import render_schema_documentation
@@ -67,6 +68,9 @@ def render_patient_encounter_experience(conn) -> bool:
     if state["app_view"] == "upload":
         _show_upload_page(conn)
         return False
+    if state["app_view"] == "settings":
+        _show_settings_page()
+        return False
     _show_encounter_overview(conn)
     return True
 
@@ -110,6 +114,7 @@ def _navigation_controls() -> str:
         ("Patient trends", "trends"),
         ("Database schema", "schema"),
         ("Upload records", "upload"),
+        ("Settings", "settings"),
     ]
     labels = [label for label, _ in options]
     nav_view = state.get("nav_view", "overview")
@@ -127,19 +132,6 @@ def _navigation_controls() -> str:
     if selected_view != state.get("nav_view"):
         state["nav_view"] = selected_view
     return state["nav_view"]
-
-
-def _show_upload_page(conn: sqlite3.Connection) -> None:
-    """Render the upload workflow and surface latest status messaging."""
-    state = st.session_state
-    feedback = state.get("upload_feedback")
-    if isinstance(feedback, dict):
-        for message in feedback.get("success", []):
-            st.success(message)
-        for message in feedback.get("errors", []):
-            st.error(message)
-        state["upload_feedback"] = None
-    render_upload_page(conn, rerun_callback=_rerun)
 
 
 def _select_patient(
@@ -252,6 +244,94 @@ def _show_patient_trends_page(conn) -> None:
 def _show_schema_documentation() -> None:
     """Render the schema documentation view inside the main panel."""
     render_schema_documentation()
+
+
+def _show_upload_page(conn: sqlite3.Connection) -> None:
+    """Render the upload workflow and surface latest status messaging."""
+    state = st.session_state
+    feedback = state.get("upload_feedback")
+    if isinstance(feedback, dict):
+        for message in feedback.get("success", []):
+            st.success(message)
+        for message in feedback.get("errors", []):
+            st.error(message)
+        state["upload_feedback"] = None
+    render_upload_page(conn, rerun_callback=_rerun)
+
+
+def _show_settings_page() -> None:
+    """Render application configuration controls."""
+    st.header("Application Settings")
+    st.subheader("Storage Locations")
+
+    current = settings.load_settings()
+    paths = current["paths"]
+
+    with st.form("app-settings-form"):
+        raw_dir_input = st.text_input(
+            "Raw data directory",
+            str(paths["raw_dir"]),
+            help="Incoming ZIP archives are stored here before parsing.",
+        )
+        parsed_dir_input = st.text_input(
+            "Parsed data directory",
+            str(paths["parsed_dir"]),
+            help="XML documents extracted from archives are maintained here.",
+        )
+        db_path_input = st.text_input(
+            "Database file",
+            str(paths["db_path"]),
+            help="Path to the SQLite database file used by the application.",
+        )
+        submitted = st.form_submit_button("Save settings")
+
+    if not submitted:
+        st.caption(
+            f"User-specific overrides are stored at {settings.SETTINGS_FILE}."
+        )
+        return
+
+    candidate_paths = {
+        "raw_dir": raw_dir_input,
+        "parsed_dir": parsed_dir_input,
+        "db_path": db_path_input,
+    }
+    resolved_paths: dict[str, Path] = {}
+    errors: list[str] = []
+
+    for key, value in candidate_paths.items():
+        trimmed = value.strip()
+        if not trimmed:
+            errors.append(f"{key.replace('_', ' ').title()} cannot be empty.")
+            continue
+        try:
+            resolved = Path(trimmed).expanduser()
+        except Exception as exc:  # pragma: no cover - defensive
+            errors.append(f"Invalid path for {key.replace('_', ' ')}: {exc}")
+            continue
+        if key != "db_path" and resolved.suffix:
+            errors.append(
+                f"{key.replace('_', ' ').title()} should be a directory, not a file."
+            )
+            continue
+        resolved_paths[key] = resolved
+
+    if errors:
+        for error in errors:
+            st.error(error)
+        return
+
+    try:
+        settings.save_settings({"paths": {key: str(value) for key, value in resolved_paths.items()}})
+        settings.ensure_runtime_paths({"paths": resolved_paths})
+    except Exception as exc:  # pragma: no cover - defensive
+        st.error(f"Failed to persist settings: {exc}")
+        return
+
+    st.success("Settings updated. Reloading app...")
+    _rerun()
+
+
 
 
 def _format_records_for_list(records: Iterable[dict[str, Any]], fields: list[str]) -> list[str]:

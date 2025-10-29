@@ -125,12 +125,10 @@ def render_patient_trends(
 
     if selected_meta["dataset"] == "vital":
         series_df = vitals_df.copy()
-        if selected_meta["name"] is None:
-            mask = series_df["_type_clean"].isna()
-            display_name = "Unspecified vital"
-        else:
-            mask = series_df["_type_clean"] == selected_meta["name"]
-            display_name = selected_meta["name"]
+        mask = series_df["_loinc_clean"] == selected_meta["code"]
+        if mask.sum() == 0:
+            mask = (series_df["_loinc_clean"].isna() & series_df["_type_clean"].isna())
+        display_name = selected_meta.get("display") or selected_meta.get("name") or selected_meta.get("code") or "Unspecified vital"
         series_df = series_df.loc[mask].copy()
         tooltip_fields = [
             alt.Tooltip("measurement_time:T", title="Timestamp"),
@@ -143,18 +141,12 @@ def render_patient_trends(
     else:
         series_df = labs_df.copy()
         mask = pd.Series(True, index=series_df.index)
-        if selected_meta["test_name"] is None:
-            mask &= series_df["_name_clean"].isna()
-            display_name = selected_meta["loinc_code"] or "Unspecified lab"
-        else:
-            mask &= series_df["_name_clean"] == selected_meta["test_name"]
-            display_name = selected_meta["test_name"]
-        if selected_meta["loinc_code"] is None:
+        mask &= series_df["_loinc_clean"] == selected_meta["loinc_code"]
+        if mask.sum() == 0:
             mask &= series_df["_loinc_clean"].isna()
-        else:
-            mask &= series_df["_loinc_clean"] == selected_meta["loinc_code"]
-            if selected_meta["test_name"]:
-                display_name += f" ({selected_meta['loinc_code']})"
+        display_name = selected_meta["loinc_code"]
+        if selected_meta.get("test_name"):
+            display_name += f" ({selected_meta['test_name']})"
         series_df = series_df.loc[mask].copy()
         tooltip_fields = [
             alt.Tooltip("measurement_time:T", title="Timestamp"),
