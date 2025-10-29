@@ -134,19 +134,6 @@ def _navigation_controls() -> str:
     return state["nav_view"]
 
 
-def _show_upload_page(conn: sqlite3.Connection) -> None:
-    """Render the upload workflow and surface latest status messaging."""
-    state = st.session_state
-    feedback = state.get("upload_feedback")
-    if isinstance(feedback, dict):
-        for message in feedback.get("success", []):
-            st.success(message)
-        for message in feedback.get("errors", []):
-            st.error(message)
-        state["upload_feedback"] = None
-    render_upload_page(conn, rerun_callback=_rerun)
-
-
 def _select_patient(
     patients: pd.DataFrame,
     *,
@@ -335,7 +322,7 @@ def _show_settings_page() -> None:
         return
 
     try:
-        settings.save_settings({"paths": resolved_paths})
+        settings.save_settings({"paths": {key: str(value) for key, value in resolved_paths.items()}})
         settings.ensure_runtime_paths({"paths": resolved_paths})
     except Exception as exc:  # pragma: no cover - defensive
         st.error(f"Failed to persist settings: {exc}")
