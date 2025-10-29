@@ -5,6 +5,9 @@ db/health.db
 db/health_records.db
 db/health_records.db-journal
 
+# Encryption keys
+user/encryption.key
+
 # Ignore Python cache files
 __pycache__/
 *.pyc
