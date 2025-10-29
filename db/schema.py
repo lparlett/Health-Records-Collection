@@ -293,6 +293,7 @@ def ensure_data_source_columns(conn: sqlite3.Connection) -> None:
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
+    ensure_archive_registry(conn)
     ensure_provider_schema(conn)
     ensure_encounter_schema(conn)
     ensure_allergy_schema(conn)
@@ -322,4 +323,22 @@ def ensure_immunization_constraints(conn: sqlite3.Connection) -> None:
                 COALESCE(cvx_code, '')
             )
         """)
+
+
+def ensure_archive_registry(conn: sqlite3.Connection) -> None:
+    """Ensure the ingested_archive registry table exists."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS ingested_archive (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            archive_name TEXT NOT NULL,
+            archive_sha256 TEXT NOT NULL UNIQUE,
+            first_ingested_at TEXT NOT NULL,
+            last_ingested_at TEXT NOT NULL,
+            ingest_count INTEGER NOT NULL DEFAULT 1
+        )
+    """)
+    conn.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_ingested_archive_hash
+            ON ingested_archive(archive_sha256)
+    """)
 

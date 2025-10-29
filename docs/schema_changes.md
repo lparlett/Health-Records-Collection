@@ -1,5 +1,10 @@
 # Schema Changes Log
 
+## 2025-10-29
+
+- Introduced `ingested_archive` registry table to track archive SHA256 hashes, ingestion timestamps, and counts for duplicate detection (AI-assisted by Codex + Lauren).
+- Added supporting schema migration helpers to ensure the registry exists during database initialization.
+
 ## 2025-10-19
 
 - Expanded the `allergy` table with provider and encounter foreign keys, coded substance and reaction metadata, onset/noted timestamps, source identifiers, and supporting indexes to minimise duplicates (AI-assisted by Codex + Lauren).

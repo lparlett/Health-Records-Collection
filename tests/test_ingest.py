@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import zipfile
+import hashlib
 
 import logging
 from unittest import mock
@@ -9,9 +10,7 @@ from unittest import mock
 import ingest
 
 
-def test_ingest_archive_records_data_source(
-    tmp_path, schema_conn, monkeypatch
-) -> None:
+def _create_sample_archive(tmp_path: Path, filename: str = "sample.zip") -> Path:
     xml_content = """
     <ClinicalDocument xmlns="urn:hl7-org:v3">
       <recordTarget>
@@ -68,10 +67,17 @@ def test_ingest_archive_records_data_source(
     </SubmitObjectsRequest>
     """
 
-    archive_path = tmp_path / "sample.zip"
+    archive_path = tmp_path / filename
     with zipfile.ZipFile(archive_path, "w") as zf:
         zf.writestr("IHE_XDM/Lauren1/DOC0001.XML", xml_content)
         zf.writestr("IHE_XDM/Lauren1/METADATA.XML", metadata_xml)
+    return archive_path
+
+
+def test_ingest_archive_records_data_source(
+    tmp_path, schema_conn, monkeypatch
+) -> None:
+    archive_path = _create_sample_archive(tmp_path, "sample.zip")
 
     parsed_dir = tmp_path / "parsed"
     raw_dir = tmp_path / "raw"
@@ -147,6 +153,50 @@ def test_ingest_archive_records_data_source(
     ).fetchone()[0]
     assert attachment_count == 1
 
+    registry_row = schema_conn.execute(
+        """
+        SELECT archive_name, archive_sha256, ingest_count
+          FROM ingested_archive
+        """
+    ).fetchone()
+    assert registry_row is not None
+    archive_name, archive_hash, ingest_count = registry_row
+    assert archive_name == "sample.zip"
+    assert ingest_count == 1
+    expected_hash = hashlib.sha256(archive_path.read_bytes()).hexdigest()
+    assert archive_hash == expected_hash
+
+
+def test_ingest_archive_skips_duplicate_hash(
+    tmp_path, schema_conn, monkeypatch
+) -> None:
+    archive_path = _create_sample_archive(tmp_path, "duplicate.zip")
+
+    parsed_dir = tmp_path / "parsed"
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+
+    monkeypatch.setattr(ingest, "PARSED_DIR", parsed_dir)
+    monkeypatch.setattr(ingest, "RAW_DIR", raw_dir)
+    monkeypatch.setattr(ingest, "DB_PATH", Path(tmp_path / "db" / "records.db"))
+
+    ingest.ingest_archive(schema_conn, archive_path)
+
+    ds_count, ingest_count = schema_conn.execute(
+        "SELECT COUNT(*), MAX(ingest_count) FROM data_source CROSS JOIN ingested_archive"
+    ).fetchone()
+    assert ds_count == 1
+    assert ingest_count == 1
+
+    ingest.ingest_archive(schema_conn, archive_path)
+
+    ds_count_after = schema_conn.execute("SELECT COUNT(*) FROM data_source").fetchone()[0]
+    ingest_count_after = schema_conn.execute(
+        "SELECT ingest_count FROM ingested_archive WHERE archive_name = ?",
+        ("duplicate.zip",),
+    ).fetchone()[0]
+    assert ds_count_after == 1
+    assert ingest_count_after == 1
 
 def test_ingest_archive_persists_allergies_and_insurance(
     tmp_path,

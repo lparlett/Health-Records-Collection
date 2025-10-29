@@ -479,3 +479,5 @@ What are some security ingestion triggers that need testing?
 In the upload_components.py code, I want you to add a function between validate archive size and archive path that validates it is a zip file. The streamlit file_uploader documentation says it is the dev's responsibility to confirm that the file type is appropriate, so we're not going to just rely on the file_uploader function.
 [2025-10-29 16:08:31 UTC]
 I think the ingestion is fairly rigorous against duplicating encounters if the zip file is uploaded more than once, but are there any other ways of handling the duplicate zip file other than incrementing by one? I don't want to reveal the possible names of other zip files, but I also don't want to have the person inadvertantly upload five copies of the same data.
+[2025-10-29 16:13:07 UTC]
+Refresh worked! Thanks for your patience - I'm still learning. OK. Now, let's focus on the content hash comparison with error message when a zip is attempted to be uploaded when it was handled before.

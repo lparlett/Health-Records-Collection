@@ -3,25 +3,27 @@
 # Date: 2025-10-29
 # Reviewed by: Lauren
 # Review date: 2025-10-29
-# Tests: Manual Streamlit verification;
+# Tests: Manual Streamlit verification; tests/test_upload_components.py
 # AI-assisted: Portions of this module were generated with AI assistance.
 """Streamlit components enabling ZIP uploads that invoke the ingestion pipeline."""
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
 import shutil
 import sqlite3
 import unicodedata
 from pathlib import Path
-from typing import Callable, List, Optional
+from typing import Callable, Dict, List, Optional
 
 import streamlit as st
 from streamlit.runtime.uploaded_file_manager import UploadedFile
 import zipfile
 
 from ingest import ingest_archive
+from services.archives import archive_was_ingested
 
 logger = logging.getLogger(__name__)
 
@@ -70,8 +72,24 @@ def render_upload_page(
             try:
                 _validate_archive_size(archive.size, archive.name)
                 _validate_archive_type(archive)
+                archive_hash = _compute_uploaded_hash(archive)
+                prior_ingest = archive_was_ingested(conn, archive_hash)
+                if prior_ingest:
+                    errors.append(
+                        _format_duplicate_message(archive.name, prior_ingest)
+                    )
+                    logger.info(
+                        "Skipped duplicate archive %s (hash %s).",
+                        archive.name,
+                        archive_hash,
+                    )
+                    continue
                 archive_path = _persist_archive(archive, RAW_ARCHIVE_DIR)
-                ingest_archive(conn, archive_path)
+                ingest_archive(
+                    conn,
+                    archive_path,
+                    archive_sha256=archive_hash,
+                )
                 successes.append(f"Ingested {archive_path.name}")
             except ValueError as exc:
                 errors.append(str(exc))
@@ -111,6 +129,34 @@ def _validate_archive_type(archive: UploadedFile) -> None:
         raise ValueError(f"{archive.name} is not a valid ZIP archive.") from exc
     finally:
         archive.seek(0)
+
+
+def _compute_uploaded_hash(archive: UploadedFile) -> str:
+    """Return SHA-256 hash for an uploaded archive stream."""
+    hasher = hashlib.sha256()
+    archive.seek(0)
+    for chunk in iter(lambda: archive.read(8192), b""):
+        if not chunk:
+            break
+        hasher.update(chunk)
+    archive.seek(0)
+    return hasher.hexdigest()
+
+
+def _format_duplicate_message(
+    filename: str,
+    registry_row: Dict[str, object],
+) -> str:
+    """Compose a human-readable duplicate notice."""
+    last_ingested = registry_row.get("last_ingested_at") or registry_row.get(
+        "first_ingested_at"
+    )
+    count = registry_row.get("ingest_count")
+    suffix = ""
+    if isinstance(count, int) and count > 1:
+        suffix = f" ({count} previous ingests)"
+    timestamp = last_ingested or "a prior run"
+    return f"{filename} was previously ingested on {timestamp}{suffix} and was skipped."
 
 
 def _persist_archive(archive: UploadedFile, destination: Path) -> Path:

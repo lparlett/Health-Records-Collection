@@ -22,6 +22,18 @@ CREATE TABLE IF NOT EXISTS data_source (
 
 CREATE INDEX IF NOT EXISTS idx_data_source_ingested_at ON data_source(ingested_at);
 
+CREATE TABLE IF NOT EXISTS ingested_archive (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    archive_name TEXT NOT NULL,
+    archive_sha256 TEXT NOT NULL UNIQUE,
+    first_ingested_at TEXT NOT NULL,
+    last_ingested_at TEXT NOT NULL,
+    ingest_count INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ingested_archive_hash
+    ON ingested_archive(archive_sha256);
+
 -- =====================
 -- Core Patient Table
 -- =====================

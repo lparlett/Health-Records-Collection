@@ -128,11 +128,19 @@ def test_render_upload_page_ingests_archives(monkeypatch, tmp_path):
     stubs = _StreamlitStub(uploads=[stub_file], submit_result=True)
     monkeypatch.setattr(upload_components, "st", stubs)
     monkeypatch.setattr(upload_components, "RAW_ARCHIVE_DIR", tmp_path)
+    monkeypatch.setattr(upload_components, "archive_was_ingested", lambda conn, sha: None)
 
     ingested_paths: List[Path] = []
+    received_hashes: List[str] = []
 
-    def _fake_ingest(conn: sqlite3.Connection, archive_path: Path) -> None:
+    def _fake_ingest(
+        conn: sqlite3.Connection,
+        archive_path: Path,
+        *,
+        archive_sha256: Optional[str] = None,
+    ) -> None:
         ingested_paths.append(archive_path)
+        received_hashes.append(archive_sha256 or "")
 
     monkeypatch.setattr(upload_components, "ingest_archive", _fake_ingest)
 
@@ -155,6 +163,8 @@ def test_render_upload_page_ingests_archives(monkeypatch, tmp_path):
     assert saved_path.parent == tmp_path
     # Filename sanitisation should replace spaces and punctuation with underscores.
     assert saved_path.name == "Patient_Records_.zip"
+    assert len(received_hashes) == 1
+    assert received_hashes[0]
 
     feedback = stubs.session_state.get("upload_feedback")
     assert feedback is not None
@@ -173,10 +183,16 @@ def test_render_upload_page_blocks_oversized_archives(monkeypatch, tmp_path):
     stubs = _StreamlitStub(uploads=[stub_file], submit_result=True)
     monkeypatch.setattr(upload_components, "st", stubs)
     monkeypatch.setattr(upload_components, "RAW_ARCHIVE_DIR", tmp_path)
+    monkeypatch.setattr(upload_components, "archive_was_ingested", lambda conn, sha: None)
 
     ingest_called = False
 
-    def _fake_ingest(conn: sqlite3.Connection, archive_path: Path) -> None:
+    def _fake_ingest(
+        conn: sqlite3.Connection,
+        archive_path: Path,
+        *,
+        archive_sha256: Optional[str] = None,
+    ) -> None:
         nonlocal ingest_called
         ingest_called = True
 
@@ -209,10 +225,16 @@ def test_render_upload_page_rejects_non_zip(monkeypatch, tmp_path):
     stubs = _StreamlitStub(uploads=[stub_file], submit_result=True)
     monkeypatch.setattr(upload_components, "st", stubs)
     monkeypatch.setattr(upload_components, "RAW_ARCHIVE_DIR", tmp_path)
+    monkeypatch.setattr(upload_components, "archive_was_ingested", lambda conn, sha: None)
 
     ingest_called = False
 
-    def _fake_ingest(conn: sqlite3.Connection, archive_path: Path) -> None:
+    def _fake_ingest(
+        conn: sqlite3.Connection,
+        archive_path: Path,
+        *,
+        archive_sha256: Optional[str] = None,
+    ) -> None:
         nonlocal ingest_called
         ingest_called = True
 
@@ -237,3 +259,55 @@ def test_render_upload_page_rejects_non_zip(monkeypatch, tmp_path):
     assert feedback["success"] == []
     assert len(feedback["errors"]) == 1
     assert "not a valid ZIP archive" in feedback["errors"][0]
+
+
+def test_render_upload_page_detects_duplicate_archives(monkeypatch, tmp_path):
+    """Skip ingestion when the archive hash already exists in the registry."""
+    stub_file = _DummyUploadedFile("duplicate.zip", _build_zip_bytes())
+    stubs = _StreamlitStub(uploads=[stub_file], submit_result=True)
+    monkeypatch.setattr(upload_components, "st", stubs)
+    monkeypatch.setattr(upload_components, "RAW_ARCHIVE_DIR", tmp_path)
+
+    def _fake_lookup(conn: sqlite3.Connection, archive_hash: str):
+        return {
+            "archive_name": "duplicate.zip",
+            "archive_sha256": archive_hash,
+            "first_ingested_at": "2025-10-20T05:14:00Z",
+            "last_ingested_at": "2025-10-20T05:14:00Z",
+            "ingest_count": 1,
+        }
+
+    monkeypatch.setattr(upload_components, "archive_was_ingested", _fake_lookup)
+
+    ingest_called = False
+
+    def _fake_ingest(
+        conn: sqlite3.Connection,
+        archive_path: Path,
+        *,
+        archive_sha256: Optional[str] = None,
+    ) -> None:
+        nonlocal ingest_called
+        ingest_called = True
+
+    monkeypatch.setattr(upload_components, "ingest_archive", _fake_ingest)
+
+    rerun_called = {"flag": False}
+
+    def _rerun() -> None:
+        rerun_called["flag"] = True
+
+    conn = sqlite3.connect(":memory:")
+    try:
+        upload_components.render_upload_page(conn, rerun_callback=_rerun)
+    finally:
+        conn.close()
+
+    assert ingest_called is False
+    assert rerun_called["flag"] is True
+
+    feedback = stubs.session_state.get("upload_feedback")
+    assert feedback is not None
+    assert feedback["success"] == []
+    assert len(feedback["errors"]) == 1
+    assert "was previously ingested" in feedback["errors"][0]
