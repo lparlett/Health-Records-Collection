@@ -486,3 +486,8 @@ We have a minor lab duplication issue to correct. Labs needs to be unique by dat
 [2025-10-29 17:36:57 UTC]
 Question about the ingested_archive table... if we have this strict non-duplication in place, why would we need a first ingested and last ingested and ingestion count?
 
+[2025-10-29 18:00:47 UTC]
+Let's move onto issue #21 for this 0.3.0 release.
+[2025-10-29 18:07:34 UTC]
+OK. So we'll want to be able to easily configure where the app saves the raw and parsed data and where the database lives. We'll have the defaults in the app directory data/raw data/parsed and db/ directories, but we should make that a configuration the user can change if they want.
+

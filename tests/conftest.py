@@ -6,6 +6,7 @@ from typing import Iterator
 import pytest
 import services.providers as provider_service
 from db.schema import ensure_schema
+import settings
 
 
 @pytest.fixture
@@ -59,3 +60,10 @@ def data_source_id(schema_conn: sqlite3.Connection) -> int:
 def clear_provider_cache() -> None:
     """Reset provider cache between tests to avoid cross-connection leakage."""
     provider_service._PROVIDER_CACHE.clear()
+
+
+@pytest.fixture(autouse=True)
+def isolate_user_settings(monkeypatch, tmp_path_factory) -> None:
+    """Ensure user settings are stored outside the real home directory during tests."""
+    settings_dir = tmp_path_factory.mktemp("settings")
+    monkeypatch.setattr(settings, "SETTINGS_FILE", settings_dir / "user_settings.yaml")

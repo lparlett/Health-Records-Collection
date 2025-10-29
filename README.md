@@ -123,6 +123,10 @@ pip install -r requirements.txt
 
 ---
 
+### Configuration
+
+Use the **Settings** view in the Streamlit sidebar to update the raw, parsed, and database paths. Overrides are saved to `~/.health_records_settings.yaml` and the app automatically reloads after changes.
+
 ## External Resources
 
 - **CDA Rendering**
