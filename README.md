@@ -1,4 +1,4 @@
-# Health Records Collection
+﻿# Health Records Collection
 
 <!-- markdownlint-disable MD013 -->
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/)
@@ -125,7 +125,7 @@ pip install -r requirements.txt
 
 ### Configuration
 
-Use the **Settings** view in the Streamlit sidebar to update the raw, parsed, and database paths. Overrides are saved to `~/.health_records_settings.yaml` and the app automatically reloads after changes.
+Use the **Settings** view in the Streamlit sidebar to update the raw, parsed, and database paths. Overrides are saved to `user/settings.yaml` and the app automatically reloads after changes.
 
 ## External Resources
 

@@ -24,7 +24,9 @@ DEFAULT_SETTINGS: Dict[str, Dict[str, str]] = {
     }
 }
 
-SETTINGS_FILE: Path = Path.home() / ".health_records_settings.yaml"
+BASE_DIR = Path(__file__).resolve().parent
+USER_SETTINGS_DIR = BASE_DIR / "user"
+SETTINGS_FILE: Path = USER_SETTINGS_DIR / "settings.yaml"
 
 
 def _merge_dicts(base: Dict[str, Any], overrides: Dict[str, Any]) -> Dict[str, Any]:
