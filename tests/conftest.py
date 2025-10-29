@@ -1,7 +1,10 @@
 import hashlib
 import sqlite3
+import sys
 from pathlib import Path
 from typing import Iterator
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import pytest
 import services.providers as provider_service
@@ -64,6 +67,13 @@ def clear_provider_cache() -> None:
 
 @pytest.fixture(autouse=True)
 def isolate_user_settings(monkeypatch, tmp_path_factory) -> None:
-    """Ensure user settings are stored outside the real home directory during tests."""
+    """Ensure user settings and encryption artifacts use a temp directory during tests."""
+    from importlib import import_module
+
+    settings = import_module("settings")
+    encryption_module = import_module("security.encryption")
+
     settings_dir = tmp_path_factory.mktemp("settings")
-    monkeypatch.setattr(settings, "SETTINGS_FILE", settings_dir / "user_settings.yaml")
+    monkeypatch.setattr(settings, "USER_SETTINGS_DIR", settings_dir)
+    monkeypatch.setattr(settings, "SETTINGS_FILE", settings_dir / "settings.yaml")
+    encryption_module._MANAGER = None

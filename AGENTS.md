@@ -169,9 +169,13 @@ Source: [StackHawk](https://www.stackhawk.com/blog/4-best-practices-for-ai-code-
 * **main** — always stable, production-ready code  
 * **release/X.Y.Z** — branch from `main`  
   * Used to integrate multiple features, test, and prepare for tagging  
-* **feature/short-slug** — branch from a `release/X.Y.Z` branch  
+* **feature/short-slug** — branch from a current `release/X.Y.Z` branch  
   * Used for developing or refactoring specific features or fixes  
+  * When the feature is complete and verified, merge it back into that same release branch immediately.
+  * The release branch should therefore accumulate all completed features.
+* Subsequent features for the same release must branch from the updated release branch so they include all previously merged work.
 * Merge completed `release/X.Y.Z` branches back into `main` when verified
+* When the release is ready, merge the release branch back into `main` (and tag as needed) before starting the next release.
 
 ### Merging & tagging
 

@@ -158,9 +158,9 @@ def test_ingest_archive_records_data_source(
     assert attachment_row is not None
     attachment_id, attachment_patient_id, attachment_path, attachment_ds_id, attachment_mime = attachment_row
     assert attachment_patient_id == schema_conn.execute("SELECT id FROM patient").fetchone()[0]
-    assert attachment_path.endswith("DOC0001.XML")
+    assert attachment_path.endswith("DOC0001.XML.enc")
     assert attachment_ds_id == data_source_id
-    assert attachment_mime in ("text/xml", "application/xml")
+    assert attachment_mime in ("application/octet-stream", "application/xml")
     assert ds_attachment_id == attachment_id
 
     attachment_count = schema_conn.execute(

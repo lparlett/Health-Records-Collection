@@ -159,6 +159,7 @@ requirements.txt    Locked Python dependencies
 
 ## Configuration & Customization
 
+  - Encryption keys are stored in `user/encryption.key`; attachments are encrypted at rest and decrypted on demand for previews.
 - Update `frontend/config.yaml` to change the dashboard title, layout, database
   path, or default row limits.
 - Extend parsing coverage by adding new modules in `parsers/` and wiring them

@@ -491,3 +491,4 @@ Let's move onto issue #21 for this 0.3.0 release.
 [2025-10-29 18:07:34 UTC]
 OK. So we'll want to be able to easily configure where the app saves the raw and parsed data and where the database lives. We'll have the defaults in the app directory data/raw data/parsed and db/ directories, but we should make that a configuration the user can change if they want.
 
+[2025-10-29 21:05:58 UTC]\nLet's focus on the next feature in 0.3.0 #48 - Encrypt data at rest and in transit or simply, feature/48-encryption\n

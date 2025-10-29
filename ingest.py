@@ -50,7 +50,7 @@ from services.patient import insert_patient
 from services.procedures import insert_procedures
 from services.progress_notes import insert_progress_notes
 from services.vitals import insert_vitals
-import settings
+from security import encryption
 
 logger = logging.getLogger(__name__)
 
@@ -514,14 +514,20 @@ def _record_attachment(
     file_path: Path,
 ) -> Optional[int]:
     """Persist attachment metadata for the raw document."""
+    manager = encryption.get_encryption_manager()
     try:
-        relative_path = _relative_attachment_path(file_path)
+        secure_path = manager.encrypt_file(file_path)
     except Exception as exc:  # pragma: no cover - defensive
-        logger.warning("Unable to resolve attachment path for %s: %s", file_path, exc)
-        relative_path = file_path
+        logger.warning("Unable to encrypt attachment %s: %s", file_path, exc)
+        secure_path = file_path
+    try:
+        relative_path = _relative_attachment_path(secure_path)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("Unable to resolve attachment path for %s: %s", secure_path, exc)
+        relative_path = secure_path
 
-    mime_type, _ = mimetypes.guess_type(str(file_path))
-    description = f"Raw CCD document ({file_path.name})"
+    mime_type, _ = mimetypes.guess_type(str(secure_path))
+    description = f"Raw CCD document ({secure_path.name})"
 
     try:
         attachment_id = upsert_attachment(
@@ -529,11 +535,11 @@ def _record_attachment(
             patient_id=patient_id,
             data_source_id=data_source_id,
             file_path=relative_path,
-            mime_type=mime_type or "application/xml",
+            mime_type=mime_type or "application/octet-stream",
             description=description,
         )
     except sqlite3.DatabaseError as exc:
-        logger.warning("Failed to record attachment for %s: %s", file_path, exc)
+        logger.warning("Failed to record attachment for %s: %s", secure_path, exc)
         return None
     return attachment_id
 

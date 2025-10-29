@@ -53,6 +53,17 @@ def validate_stylesheet(file_path: Path) -> bool:
         return False
 
 def transform_cda_to_html(xml_path: str) -> Optional[str]:
+    xml_path_obj = Path(xml_path)
+    if xml_path_obj.suffix == ".enc":
+        try:
+            decrypted_path = encryption.decrypt_to_temp(xml_path_obj)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.error("Failed to decrypt %s: %s", xml_path, exc)
+            return None
+        xml_path_obj = decrypted_path
+        xml_path = str(xml_path_obj)
+    else:
+        xml_path_obj = xml_path_obj
     """
     Transform a CDA XML document to HTML using the HL7 CDA.xsl stylesheet
     with custom styling.

@@ -14,6 +14,7 @@ from typing import Optional, Union
 import webbrowser
 
 from . import static_resources, xml_utils
+from security import encryption
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -25,26 +26,33 @@ def build_file_uri(file_path: PathLike, *, validate: bool = True) -> Optional[st
     path = Path(file_path)
     if not path.is_absolute():
         path = REPO_ROOT / path
+    if path.suffix == '.enc':
+        try:
+            path = encryption.decrypt_to_temp(path)
+        except Exception as exc:  # pragma: no cover - defensive
+            logging.getLogger(__name__).error("Failed to decrypt %s: %s", file_path, exc)
+            return None
     try:
         resolved = path.resolve(strict=False)
     except OSError:
         resolved = path.absolute()
 
     resolved_str = str(resolved)
-    is_unc_path = resolved_str.startswith("\\\\")
+    is_unc_path = resolved_str.startswith("\\")
 
     if validate and not resolved.exists() and not is_unc_path:
         return None
 
     if is_unc_path:
-        unc_body = resolved_str[2:].replace("\\", "/")
+        unc_body = resolved_str[2:].replace("\", "/")
         return f"file://{unc_body}"
 
     try:
         return resolved.as_uri()
     except ValueError:
-        normalized = resolved_str.replace("\\", "/")
+        normalized = resolved_str.replace("\", "/")
         return f"file:///{normalized.lstrip('/')}"
+
 
 
 def open_file(file_path: str) -> None:
