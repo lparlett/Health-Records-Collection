@@ -23,7 +23,7 @@ def upsert_data_source(
     conn: sqlite3.Connection,
     file_path: Path,
     *,
-    source_archive: Optional[str] = None,
+    archive_id: Optional[int] = None,
     metadata: Optional[dict[str, object]] = None,
 ) -> int:
     """Ensure provenance metadata exists for an ingested CCD artifact.
@@ -31,7 +31,7 @@ def upsert_data_source(
     Args:
         conn: Active SQLite connection with foreign keys enabled.
         file_path: Path to the CCD XML file being persisted.
-        source_archive: Optional archive name that contained the CCD file.
+        archive_id: Optional ingested_archive primary key for the containing archive.
 
     Returns:
         int: The primary key of the corresponding `data_source` row.
@@ -54,7 +54,7 @@ def upsert_data_source(
         .replace("+00:00", "Z")
     )
 
-    curated_archive = source_archive or None
+    curated_archive_id = int(archive_id) if archive_id is not None else None
     metadata = metadata or {}
     document_created = metadata.get("document_created")
     repository_unique_id = metadata.get("repository_unique_id")
@@ -90,7 +90,7 @@ def upsert_data_source(
             original_filename,
             ingested_at,
             file_sha256,
-            source_archive,
+            source_archive_id,
             document_created,
             repository_unique_id,
             document_hash,
@@ -100,7 +100,7 @@ def upsert_data_source(
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(file_sha256) DO UPDATE SET
             original_filename = excluded.original_filename,
-            source_archive = COALESCE(excluded.source_archive, data_source.source_archive),
+            source_archive_id = COALESCE(excluded.source_archive_id, data_source.source_archive_id),
             document_created = COALESCE(excluded.document_created, data_source.document_created),
             repository_unique_id = COALESCE(excluded.repository_unique_id, data_source.repository_unique_id),
             document_hash = COALESCE(excluded.document_hash, data_source.document_hash),
@@ -112,7 +112,7 @@ def upsert_data_source(
             file_path.name,
             ingested_at,
             file_sha256,
-            curated_archive,
+            curated_archive_id,
             document_created_text,
             repository_unique_id_text,
             document_hash_text,

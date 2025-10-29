@@ -455,3 +455,34 @@ Stuck?
 
 [2025-10-28 00:53:24 UTC]
 Last update - I want a box in the upper left-hand corner to provide the meaning of some of the shortened things.... PK = primary key; NN = not null; DEF = default; INT = integer
+[2025-10-29 15:20:37 UTC]
+Review AGENTS.md and log prompts to doc/AI_prompts.md. I want to work on the features for release 0.3.0. Let's start with uploading the zip file into the Streamlit app and having it run the ingest.py itself. Create a feature branch for this and let's begin.
+
+[2025-10-29 15:20:38 UTC]
+confirmed
+
+[2025-10-29 15:20:39 UTC]
+Sorry. docs/AI_prompts.md, not doc/AI_prompts.md.
+[2025-10-29 15:21:51 UTC]
+#19
+[2025-10-29 15:27:12 UTC]
+The way I picture this is that in the left-hand navigation area would be a button like "Upload records". That would take you to a window/screen where you could either drag & drop or click to select the appropriate zip files. We'll just focus on the zip file type for now. Then, after the zip file has been added, ingest.py is run on that file and the Streamlit instance is refreshed to now serve the updated information in addition to the old information.
+[2025-10-29 15:30:56 UTC]
+Go for it
+[2025-10-29 15:40:05 UTC]
+I ran the Streamlit package and can confirm the UI flow and UX is as expected. Next, you design test coverage around this new ingestion behavior. In the meantime, I'll examine any TODO items.
+[2025-10-29 15:48:53 UTC]
+I see the TODO(security) in the upload script. What does that indicate that I should do?
+[2025-10-29 15:55:50 UTC]
+What are some security ingestion triggers that need testing?
+[2025-10-29 16:04:29 UTC]
+In the upload_components.py code, I want you to add a function between validate archive size and archive path that validates it is a zip file. The streamlit file_uploader documentation says it is the dev's responsibility to confirm that the file type is appropriate, so we're not going to just rely on the file_uploader function.
+[2025-10-29 16:08:31 UTC]
+I think the ingestion is fairly rigorous against duplicating encounters if the zip file is uploaded more than once, but are there any other ways of handling the duplicate zip file other than incrementing by one? I don't want to reveal the possible names of other zip files, but I also don't want to have the person inadvertantly upload five copies of the same data.
+[2025-10-29 16:13:07 UTC]
+Refresh worked! Thanks for your patience - I'm still learning. OK. Now, let's focus on the content hash comparison with error message when a zip is attempted to be uploaded when it was handled before.
+[2025-10-29 16:32:34 UTC]
+We have a minor lab duplication issue to correct. Labs needs to be unique by date and LOINC. That isn't currently happening with the data. Let's fix that.
+[2025-10-29 17:36:57 UTC]
+Question about the ingested_archive table... if we have this strict non-duplication in place, why would we need a first ingested and last ingested and ingestion count?
+

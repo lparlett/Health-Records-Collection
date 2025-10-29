@@ -168,18 +168,22 @@ def get_encounter_detail(conn, encounter_id):
                p.family_name AS provider_family_name,
                ds.id AS data_source_id,
                ds.original_filename,
-               ds.source_archive,
+               ds.source_archive_id,
                ds.document_created,
                ds.repository_unique_id,
                ds.document_hash,
                ds.document_size,
                ds.author_institution,
                ds.attachment_id,
+               ia.archive_name AS source_archive,
+               ia.ingest_count AS source_archive_ingest_count,
+               ia.last_ingested_at AS source_archive_last_ingested_at,
                a.file_path AS attachment_path,
                a.mime_type AS attachment_mime_type
           FROM encounter e
           LEFT JOIN provider p ON e.provider_id = p.id
           LEFT JOIN data_source ds ON e.data_source_id = ds.id
+          LEFT JOIN ingested_archive ia ON ds.source_archive_id = ia.id
           LEFT JOIN attachment a ON ds.attachment_id = a.id
          WHERE e.id = ?
         """
@@ -206,7 +210,10 @@ def get_encounter_detail(conn, encounter_id):
         "data_source": {
             "id": meta_row.get("data_source_id"),
             "original_filename": meta_row.get("original_filename"),
+            "source_archive_id": meta_row.get("source_archive_id"),
             "source_archive": meta_row.get("source_archive"),
+            "source_archive_ingest_count": meta_row.get("source_archive_ingest_count"),
+            "source_archive_last_ingested_at": meta_row.get("source_archive_last_ingested_at"),
             "document_created": meta_row.get("document_created"),
             "repository_unique_id": meta_row.get("repository_unique_id"),
             "document_hash": meta_row.get("document_hash"),

@@ -21,6 +21,7 @@ from . import xml_utils
 from .note_components import render_progress_notes
 from .schema_components import render_schema_documentation
 from .trend_components import render_patient_trends
+from .upload_components import render_upload_page
 
 
 def _ensure_state() -> None:
@@ -31,6 +32,7 @@ def _ensure_state() -> None:
     state.setdefault("selected_patient_id", None)
     state.setdefault("selected_patient_label", None)
     state.setdefault("selected_encounter_id", None)
+    state.setdefault("upload_feedback", None)
     if "_rerun_fn" not in state:
         rerun_fn = getattr(st, "experimental_rerun", None) or getattr(st, "rerun", None)
         state["_rerun_fn"] = rerun_fn
@@ -61,6 +63,9 @@ def render_patient_encounter_experience(conn) -> bool:
         return False
     if state["app_view"] == "schema":
         _show_schema_documentation()
+        return False
+    if state["app_view"] == "upload":
+        _show_upload_page(conn)
         return False
     _show_encounter_overview(conn)
     return True
@@ -104,6 +109,7 @@ def _navigation_controls() -> str:
         ("Encounter overview", "overview"),
         ("Patient trends", "trends"),
         ("Database schema", "schema"),
+        ("Upload records", "upload"),
     ]
     labels = [label for label, _ in options]
     nav_view = state.get("nav_view", "overview")
@@ -121,6 +127,19 @@ def _navigation_controls() -> str:
     if selected_view != state.get("nav_view"):
         state["nav_view"] = selected_view
     return state["nav_view"]
+
+
+def _show_upload_page(conn: sqlite3.Connection) -> None:
+    """Render the upload workflow and surface latest status messaging."""
+    state = st.session_state
+    feedback = state.get("upload_feedback")
+    if isinstance(feedback, dict):
+        for message in feedback.get("success", []):
+            st.success(message)
+        for message in feedback.get("errors", []):
+            st.error(message)
+        state["upload_feedback"] = None
+    render_upload_page(conn, rerun_callback=_rerun)
 
 
 def _select_patient(

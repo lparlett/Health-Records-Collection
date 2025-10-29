@@ -9,6 +9,7 @@ from __future__ import annotations
 """Main ingestion workflow for CCD archives."""
 
 import argparse
+import hashlib
 import logging
 import mimetypes
 import sqlite3
@@ -35,6 +36,7 @@ from parsers import (
     parse_vitals,
 )
 from services.allergies import insert_allergies
+from services.archives import archive_was_ingested, register_ingested_archive
 from services.attachments import upsert_attachment
 from services.common import clean_str
 from services.conditions import insert_conditions
@@ -213,18 +215,87 @@ def parse_ccd(xml_file: Path) -> ParsedCCD:
     }
 
 
-def ingest_archive(conn: sqlite3.Connection, archive_path: Path) -> None:
+def ingest_archive(
+    conn: sqlite3.Connection,
+    archive_path: Path,
+    *,
+    archive_sha256: Optional[str] = None,
+) -> None:
     """Ingest a single CCD archive into the database.
 
     Args:
         conn: Open SQLite connection.
         archive_path: ZIP archive to ingest.
     """
+    if archive_sha256 is None:
+        try:
+            archive_sha256 = _compute_archive_sha256(archive_path)
+        except OSError as exc:
+            logger.warning("Unable to hash %s: %s", archive_path, exc)
+            return
+
+    existing_archive = archive_was_ingested(conn, archive_sha256)
+    if existing_archive:
+        logger.info(
+            "Skipping %s; previously ingested on %s.",
+            archive_path.name,
+            existing_archive.get("last_ingested_at") or existing_archive.get("first_ingested_at"),
+        )
+        return
+
     destination = PARSED_DIR / archive_path.stem
     unzip_raw_files(archive_path, destination)
 
     metadata_lookup = _load_metadata(destination)
 
+    try:
+        data_source_ids = _ingest_documents_from_archive(
+            conn,
+            archive_path,
+            destination,
+            metadata_lookup,
+            archive_name=archive_path.name,
+        )
+    except Exception:
+        logger.exception("Ingestion failed for archive %s.", archive_path.name)
+        raise
+
+    archive_id = register_ingested_archive(conn, archive_path.name, archive_sha256)
+    if data_source_ids:
+        conn.executemany(
+            "UPDATE data_source SET source_archive_id = ? WHERE id = ?",
+            [(archive_id, ds_id) for ds_id in data_source_ids],
+        )
+        conn.commit()
+    logger.debug(
+        "Registered archive %s with hash %s (id=%s).",
+        archive_path.name,
+        archive_sha256,
+        archive_id,
+    )
+
+
+def _compute_archive_sha256(archive_path: Path) -> str:
+    """Return the SHA-256 hash for the provided archive path."""
+    hasher = hashlib.sha256()
+    with archive_path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(8192), b""):
+            if not chunk:
+                break
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
+def _ingest_documents_from_archive(
+    conn: sqlite3.Connection,
+    archive_path: Path,
+    destination: Path,
+    metadata_lookup: dict[str, dict[str, Any]],
+    *,
+    archive_name: str,
+) -> list[int]:
+    """Process all CCD documents within a prepared archive directory."""
+    data_source_ids: set[int] = set()
     for xml_file in destination.rglob("*.xml"):
         if xml_file.name.lower() == "metadata.xml":
             logger.debug("Skipping metadata descriptor %s.", xml_file)
@@ -249,9 +320,9 @@ def ingest_archive(conn: sqlite3.Connection, archive_path: Path) -> None:
             data_source_id = upsert_data_source(
                 conn,
                 xml_file,
-                source_archive=archive_path.name,
                 metadata=metadata_lookup.get(meta_key),
             )
+            data_source_ids.add(data_source_id)
         except (OSError, sqlite3.DatabaseError) as exc:
             logger.warning(
                 "Skipping %s due to provenance capture error: %s",
@@ -262,7 +333,7 @@ def ingest_archive(conn: sqlite3.Connection, archive_path: Path) -> None:
 
         record_metadata = {
             "data_source_id": data_source_id,
-            "source_archive": archive_path.name,
+            "source_archive": archive_name,
             "source_document": xml_file.name,
         }
         patient_record = {**patient_data, **record_metadata}
@@ -342,7 +413,7 @@ def ingest_archive(conn: sqlite3.Connection, archive_path: Path) -> None:
             given,
             family,
         )
-
+    return list(data_source_ids)
 
 def _load_metadata(root: Path) -> dict[str, dict[str, Any]]:
     """Return a mapping of document path -> metadata extracted from METADATA.XML."""
