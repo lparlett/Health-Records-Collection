@@ -481,3 +481,5 @@ In the upload_components.py code, I want you to add a function between validate 
 I think the ingestion is fairly rigorous against duplicating encounters if the zip file is uploaded more than once, but are there any other ways of handling the duplicate zip file other than incrementing by one? I don't want to reveal the possible names of other zip files, but I also don't want to have the person inadvertantly upload five copies of the same data.
 [2025-10-29 16:13:07 UTC]
 Refresh worked! Thanks for your patience - I'm still learning. OK. Now, let's focus on the content hash comparison with error message when a zip is attempted to be uploaded when it was handled before.
+[2025-10-29 16:32:34 UTC]
+We have a minor lab duplication issue to correct. Labs needs to be unique by date and LOINC. That isn't currently happening with the data. Let's fix that.

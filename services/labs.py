@@ -93,29 +93,28 @@ def insert_labs(
 
     normalized_labs = [dict(lab) for lab in labs]
 
-    def _key(date_value: Any, encounter_value: Any, loinc_value: Any) -> tuple[Any, Any, Any]:
+    def _key(date_value: Any, loinc_value: Any) -> tuple[Any, Any]:
         return (
             clean_str(date_value),
-            coerce_int(encounter_value),
             clean_str(loinc_value),
         )
 
     existing_keys_query = """
-        SELECT date, encounter_id, loinc_code
+        SELECT date, loinc_code
           FROM lab_result
          WHERE patient_id = ?
     """
     existing_keys = {
-        _key(row[0], row[1], row[2])
+        _key(row[0], row[1])
         for row in conn.execute(existing_keys_query, (patient_id,))
     }
 
     rows_to_insert: list[Tuple[Any, ...]] = []
-    pending_keys: set[tuple[Any, Any, Any]] = set()
+    pending_keys: set[tuple[Any, Any]] = set()
 
     for lab_entry in normalized_labs:
         row = build_row(lab_entry)
-        unique_key = _key(row[8], row[1], row[2])
+        unique_key = _key(row[8], row[2])
         if unique_key in existing_keys or unique_key in pending_keys:
             continue
         pending_keys.add(unique_key)

@@ -298,6 +298,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
     ensure_encounter_schema(conn)
     ensure_allergy_schema(conn)
     ensure_insurance_schema(conn)
+    ensure_lab_constraints(conn)
     ensure_medication_constraints(conn)
     ensure_immunization_constraints(conn)
     ensure_data_source_columns(conn)
@@ -323,6 +324,28 @@ def ensure_immunization_constraints(conn: sqlite3.Connection) -> None:
                 COALESCE(cvx_code, '')
             )
         """)
+
+
+def ensure_lab_constraints(conn: sqlite3.Connection) -> None:
+    """Enforce uniqueness of lab results by patient, LOINC, and date."""
+    conn.execute("""
+        DELETE FROM lab_result
+              WHERE rowid NOT IN (
+                    SELECT MIN(rowid)
+                      FROM lab_result
+                     GROUP BY patient_id,
+                              COALESCE(loinc_code, ''),
+                              COALESCE(date, '')
+              )
+    """)
+    conn.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_lab_unique_patient_loinc_date
+            ON lab_result (
+                patient_id,
+                COALESCE(loinc_code, ''),
+                COALESCE(date, '')
+            )
+    """)
 
 
 def ensure_archive_registry(conn: sqlite3.Connection) -> None:
