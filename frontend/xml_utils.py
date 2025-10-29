@@ -1,5 +1,4 @@
 """XML transformation utilities for CDA documents."""
-import os
 from pathlib import Path
 import tempfile
 import logging
@@ -7,6 +6,7 @@ import datetime
 import lxml.etree as ET
 from typing import Optional
 from . import static_resources
+from security import encryption
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -53,6 +53,16 @@ def validate_stylesheet(file_path: Path) -> bool:
         return False
 
 def transform_cda_to_html(xml_path: str) -> Optional[str]:
+    """
+    Transform a CDA XML document to HTML using the HL7 CDA.xsl stylesheet
+    with custom styling.
+
+    Args:
+        xml_path: Path to the XML file to transform
+
+    Returns:
+        Path to temporary HTML file or None if transformation fails
+    """
     xml_path_obj = Path(xml_path)
     if xml_path_obj.suffix == ".enc":
         try:
@@ -64,30 +74,7 @@ def transform_cda_to_html(xml_path: str) -> Optional[str]:
         xml_path = str(xml_path_obj)
     else:
         xml_path_obj = xml_path_obj
-    """
-    Transform a CDA XML document to HTML using the HL7 CDA.xsl stylesheet
-    with custom styling.
-    
-    Args:
-        xml_path: Path to the XML file to transform
-        
-    Returns:
-        Path to temporary HTML file or None if transformation fails
-    """
     xml_content = ""  # Initialize for error handling
-    def debug_xml(xml_content: str, stage: str) -> None:
-        """Helper to log XML content during transformation"""
-        debug_path = Path(tempfile.gettempdir()) / f"debug_{stage}.xml"
-        with open(debug_path, 'w', encoding='utf-8') as f:
-            f.write(xml_content)
-        logger.debug(f"Debug file written: {debug_path}")
-        
-        try:
-            # Validate the XML is well-formed
-            ET.fromstring(xml_content.encode('utf-8'))
-            logger.debug(f"{stage} XML is well-formed")
-        except ET.XMLSyntaxError as e:
-            logger.error(f"{stage} XML parsing error: {str(e)}")
 
     try:
         # Get stylesheet path using resource manager
@@ -105,10 +92,10 @@ def transform_cda_to_html(xml_path: str) -> Optional[str]:
         css_path = static_dir / "cda_custom.css"
             
         # Log transformation details
-        logger.info(f"Transforming XML file: {xml_path}")
-        logger.info(f"Using stylesheet: {xsl_path}")
-        logger.info(f"Using CSS: {css_path}")
-        logger.info(f"Using color CSS: {color_css_path}")
+        logger.debug(f"Transforming XML file: {xml_path}")
+        logger.debug(f"Using stylesheet: {xsl_path}")
+        logger.debug(f"Using CSS: {css_path}")
+        logger.debug(f"Using color CSS: {color_css_path}")
             
         # Read and validate input XML
         xml_content = Path(xml_path).read_text(encoding='utf-8')
@@ -117,10 +104,8 @@ def transform_cda_to_html(xml_path: str) -> Optional[str]:
             return None
                 
         if '<?xml' not in xml_content:
-            logger.info("Adding XML declaration")
+            logger.debug("Adding XML declaration")
             xml_content = '<?xml version="1.0" encoding="UTF-8"?>\n' + xml_content
-            
-        debug_xml(xml_content, 'input')
         
         # Log XML content size for debugging
         logger.debug(f"XML content size: {len(xml_content)} bytes")
@@ -228,20 +213,12 @@ Content-Type: {'application/xhtml+xml' if temp_suffix == '.xhtml' else 'text/htm
             # Write the file
             f.write(html_str.encode('utf-8'))
             
-            # Create a debug copy that won't be deleted
-            debug_path = Path(tempfile.gettempdir()) / f"debug_final_{Path(xml_path).name}{temp_suffix}"
-            with open(debug_path, 'wb') as debug_f:
-                debug_f.write(html_str.encode('utf-8'))
-            
-            logger.info(f"Transformation successful")
+            logger.debug(f"Transformation successful")
             logger.debug(f"Output saved as: {temp_suffix} file")
             logger.debug(f"File saved to: {html_path}")
-            logger.debug(f"Debug copy saved to: {debug_path}")
             
         return html_path
         
     except Exception as e:
         logger.error(f"Error in transformation: {str(e)}")
-        if xml_content:  # Debug the state when error occurred
-            debug_xml(xml_content, 'error')
         return None

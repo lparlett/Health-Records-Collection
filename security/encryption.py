@@ -1,4 +1,4 @@
-"""File encryption helpers for data at rest."""
+﻿"""File encryption helpers for data at rest."""
 from __future__ import annotations
 
 import base64
@@ -48,7 +48,7 @@ except ModuleNotFoundError:  # pragma: no cover - depends on optional dependency
 
 logger = logging.getLogger(__name__)
 
-_MANAGER: "EncryptionManager" | None = None
+_MANAGER: EncryptionManager | None = None
 
 
 class EncryptionManager:

@@ -376,7 +376,8 @@ def _render_attachment_section(attachment: dict[str, Any]) -> None:
     st.markdown(f"**Attachment:** `{attachment_label}`")
     st.text(f"Type: {mime_label}")
 
-    if file_path.suffix.lower() != ".xml":
+    suffixes = [s.lower() for s in file_path.suffixes]
+    if suffixes[-2:] != [".xml", ".enc"]:
         st.caption("Preview is currently available for XML attachments only.")
         return
 
