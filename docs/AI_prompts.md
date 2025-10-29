@@ -483,3 +483,6 @@ I think the ingestion is fairly rigorous against duplicating encounters if the z
 Refresh worked! Thanks for your patience - I'm still learning. OK. Now, let's focus on the content hash comparison with error message when a zip is attempted to be uploaded when it was handled before.
 [2025-10-29 16:32:34 UTC]
 We have a minor lab duplication issue to correct. Labs needs to be unique by date and LOINC. That isn't currently happening with the data. Let's fix that.
+[2025-10-29 17:36:57 UTC]
+Question about the ingested_archive table... if we have this strict non-duplication in place, why would we need a first ingested and last ingested and ingestion count?
+

@@ -4,6 +4,7 @@
 
 - Introduced `ingested_archive` registry table to track archive SHA256 hashes, ingestion timestamps, and counts for duplicate detection (AI-assisted by Codex + Lauren).
 - Added supporting schema migration helpers to ensure the registry exists during database initialization.
+- Converted `data_source.source_archive` into a foreign key (`source_archive_id`) referencing `ingested_archive`, with migrations to backfill legacy rows (AI-assisted by Codex + Lauren).
 - Enforced `lab_result` uniqueness by patient, LOINC, and date with pre-index deduplication cleanup (AI-assisted by Codex + Lauren).
 
 ## 2025-10-19

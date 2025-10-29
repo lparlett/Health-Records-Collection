@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS data_source (
     original_filename TEXT NOT NULL,
     ingested_at TEXT NOT NULL,
     file_sha256 TEXT NOT NULL,
-    source_archive TEXT,
+    source_archive_id INTEGER,
     document_created TEXT,
     repository_unique_id TEXT,
     document_hash TEXT,
@@ -17,7 +17,8 @@ CREATE TABLE IF NOT EXISTS data_source (
     author_institution TEXT,
     attachment_id INTEGER,
     UNIQUE(file_sha256),
-    FOREIGN KEY(attachment_id) REFERENCES attachment(id)
+    FOREIGN KEY(attachment_id) REFERENCES attachment(id),
+    FOREIGN KEY(source_archive_id) REFERENCES ingested_archive(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_data_source_ingested_at ON data_source(ingested_at);

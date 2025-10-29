@@ -109,10 +109,11 @@ pip install -r requirements.txt
 
 - **Schema & services (`schema.sql`, `services/`)**
   - `schema.sql` defines core tables for patients, providers, encounters,
-    medications, lab results, allergies, insurance coverage, conditions (with codes), procedures,
-    vitals, immunizations, attachments, progress notes, and the `ingested_archive`
-    registry used to track archive hashes and ingestion counts, each linking back to
-    enriched `data_source` metadata.
+    medications, lab results, allergies, insurance coverage, conditions
+    (with codes), procedures, vitals, immunizations, attachments, progress notes,
+    and the `ingested_archive` registry used to track archive hashes and ingestion
+    counts, each linking back to enriched `data_source` metadata (now including
+    `source_archive_id` foreign keys to `ingested_archive`).
   - Service modules encapsulate insert logic, deduplication, and foreign key
     wiring for each domain. `services/data_sources.py` manages provenance rows
     so other modules can reference a shared `data_source_id`, while `services/archives.py`

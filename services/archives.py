@@ -52,7 +52,7 @@ def register_ingested_archive(
     conn: sqlite3.Connection,
     archive_name: str,
     archive_sha256: str,
-) -> None:
+) -> int:
     """Record or update the registry entry for an ingested archive."""
     timestamp = (
         datetime.now(timezone.utc)
@@ -64,7 +64,7 @@ def register_ingested_archive(
     cur = conn.cursor()
     cur.execute(
         """
-        SELECT ingest_count
+        SELECT id, ingest_count
           FROM ingested_archive
          WHERE archive_sha256 = ?
         """,
@@ -84,7 +84,9 @@ def register_ingested_archive(
             """,
             (archive_name, archive_sha256, timestamp, timestamp),
         )
+        archive_id = int(cur.lastrowid)
     else:
+        archive_id = int(row[0])
         cur.execute(
             """
             UPDATE ingested_archive
@@ -96,3 +98,4 @@ def register_ingested_archive(
             (archive_name, timestamp, archive_sha256),
         )
     conn.commit()
+    return archive_id

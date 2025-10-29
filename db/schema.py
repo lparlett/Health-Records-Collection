@@ -1,7 +1,9 @@
 """Database schema helpers."""
 from __future__ import annotations
 
+import hashlib
 import sqlite3
+from datetime import datetime, timezone
 from textwrap import dedent
 from typing import Iterator
 
@@ -294,6 +296,7 @@ def ensure_data_source_columns(conn: sqlite3.Connection) -> None:
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
     ensure_archive_registry(conn)
+    ensure_data_source_archive_reference(conn)
     ensure_provider_schema(conn)
     ensure_encounter_schema(conn)
     ensure_allergy_schema(conn)
@@ -346,6 +349,154 @@ def ensure_lab_constraints(conn: sqlite3.Connection) -> None:
                 COALESCE(date, '')
             )
     """)
+
+
+def ensure_data_source_archive_reference(conn: sqlite3.Connection) -> None:
+    """Ensure data_source.source_archive_id references ingested_archive."""
+    cur = conn.cursor()
+    cur.execute("PRAGMA table_info(data_source)")
+    rows = cur.fetchall()
+    if not rows:
+        return
+    columns = {row[1]: row for row in rows}
+    archive_id_col = columns.get("source_archive_id")
+    if archive_id_col and (archive_id_col[2] or "").upper() == "INTEGER":
+        return
+    legacy_col = columns.get("source_archive")
+    if legacy_col is None:
+        return
+
+    fk_state = cur.execute("PRAGMA foreign_keys").fetchone()[0]
+    conn.execute("PRAGMA foreign_keys = OFF")
+    conn.execute("ALTER TABLE data_source RENAME TO data_source__legacy")
+    conn.execute(
+        """
+        CREATE TABLE data_source (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            original_filename TEXT NOT NULL,
+            ingested_at TEXT NOT NULL,
+            file_sha256 TEXT NOT NULL,
+            source_archive_id INTEGER,
+            document_created TEXT,
+            repository_unique_id TEXT,
+            document_hash TEXT,
+            document_size INTEGER,
+            author_institution TEXT,
+            attachment_id INTEGER,
+            UNIQUE(file_sha256),
+            FOREIGN KEY(attachment_id) REFERENCES attachment(id),
+            FOREIGN KEY(source_archive_id) REFERENCES ingested_archive(id)
+        )
+        """
+    )
+
+    legacy_rows = conn.execute(
+        """
+        SELECT id,
+               original_filename,
+               ingested_at,
+               file_sha256,
+               source_archive,
+               document_created,
+               repository_unique_id,
+               document_hash,
+               document_size,
+               author_institution,
+               attachment_id
+          FROM data_source__legacy
+        """
+    ).fetchall()
+
+    archive_cache: dict[str, int] = {}
+    insert_sql = """
+        INSERT INTO data_source (
+            id,
+            original_filename,
+            ingested_at,
+            file_sha256,
+            source_archive_id,
+            document_created,
+            repository_unique_id,
+            document_hash,
+            document_size,
+            author_institution,
+            attachment_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """
+
+    for row in legacy_rows:
+        archive_name = row[4]
+        archive_id: int | None = None
+        if archive_name:
+            archive_id = archive_cache.get(archive_name)
+            if archive_id is None:
+                archive_id = _ensure_archive_entry(conn, archive_name, row[2])
+                archive_cache[archive_name] = archive_id
+        conn.execute(
+            insert_sql,
+            (
+                row[0],
+                row[1],
+                row[2],
+                row[3],
+                archive_id,
+                row[5],
+                row[6],
+                row[7],
+                row[8],
+                row[9],
+                row[10],
+            ),
+        )
+
+    conn.execute("DROP TABLE data_source__legacy")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_data_source_ingested_at ON data_source(ingested_at)"
+    )
+    conn.commit()
+    if fk_state:
+        conn.execute("PRAGMA foreign_keys = ON")
+
+
+def _ensure_archive_entry(
+    conn: sqlite3.Connection,
+    archive_name: str,
+    fallback_ingested_at: str | None,
+) -> int:
+    """Return archive id for legacy data_source rows, creating entries as needed."""
+    cur = conn.cursor()
+    row = cur.execute(
+        "SELECT id FROM ingested_archive WHERE archive_name = ? LIMIT 1",
+        (archive_name,),
+    ).fetchone()
+    if row:
+        return int(row[0])
+
+    if fallback_ingested_at and fallback_ingested_at.strip():
+        timestamp = fallback_ingested_at.strip()
+    else:
+        timestamp = (
+            datetime.now(timezone.utc)
+            .replace(microsecond=0)
+            .isoformat()
+            .replace("+00:00", "Z")
+        )
+    hash_source = f"legacy::{archive_name}::{timestamp}"
+    archive_hash = hashlib.sha256(hash_source.encode("utf-8")).hexdigest()
+    cur.execute(
+        """
+        INSERT INTO ingested_archive (
+            archive_name,
+            archive_sha256,
+            first_ingested_at,
+            last_ingested_at,
+            ingest_count
+        ) VALUES (?, ?, ?, ?, 1)
+        """,
+        (archive_name, archive_hash, timestamp, timestamp),
+    )
+    conn.commit()
+    return int(cur.lastrowid)
 
 
 def ensure_archive_registry(conn: sqlite3.Connection) -> None:

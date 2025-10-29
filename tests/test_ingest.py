@@ -92,23 +92,28 @@ def test_ingest_archive_records_data_source(
     ds_row = schema_conn.execute(
         """
         SELECT
-            id,
-            original_filename,
-            source_archive,
-            document_created,
-            repository_unique_id,
-            document_hash,
-            document_size,
-            author_institution,
-            attachment_id
-          FROM data_source
+            ds.id,
+            ds.original_filename,
+            ds.source_archive_id,
+            ia.archive_name,
+            ia.ingest_count,
+            ds.document_created,
+            ds.repository_unique_id,
+            ds.document_hash,
+            ds.document_size,
+            ds.author_institution,
+            ds.attachment_id
+          FROM data_source ds
+          LEFT JOIN ingested_archive ia ON ds.source_archive_id = ia.id
         """
     ).fetchone()
     assert ds_row is not None
     (
         data_source_id,
         original_filename,
-        source_archive,
+        source_archive_id,
+        source_archive_name,
+        source_archive_ingest_count,
         document_created,
         repository_unique_id,
         document_hash,
@@ -117,7 +122,9 @@ def test_ingest_archive_records_data_source(
         ds_attachment_id,
     ) = ds_row
     assert original_filename == "DOC0001.XML"
-    assert source_archive == "sample.zip"
+    assert source_archive_name == "sample.zip"
+    assert source_archive_id is not None
+    assert source_archive_ingest_count == 1
     assert document_created == "2025-01-01T12:34:56Z"
     assert repository_unique_id == "urn:repository:123"
     assert document_hash == "abc123hash"
@@ -155,16 +162,17 @@ def test_ingest_archive_records_data_source(
 
     registry_row = schema_conn.execute(
         """
-        SELECT archive_name, archive_sha256, ingest_count
+        SELECT id, archive_name, archive_sha256, ingest_count
           FROM ingested_archive
         """
     ).fetchone()
     assert registry_row is not None
-    archive_name, archive_hash, ingest_count = registry_row
+    archive_id, archive_name, archive_hash, ingest_count = registry_row
     assert archive_name == "sample.zip"
     assert ingest_count == 1
     expected_hash = hashlib.sha256(archive_path.read_bytes()).hexdigest()
     assert archive_hash == expected_hash
+    assert archive_id == source_archive_id
 
 
 def test_ingest_archive_skips_duplicate_hash(

@@ -1,3 +1,4 @@
+import hashlib
 import sqlite3
 from pathlib import Path
 from typing import Iterator
@@ -25,16 +26,30 @@ def schema_conn() -> Iterator[sqlite3.Connection]:
 def data_source_id(schema_conn: sqlite3.Connection) -> int:
     """Insert a reusable data_source row for tests that need a valid foreign key."""
     cursor = schema_conn.cursor()
+    archive_hash = hashlib.sha256(b"archive.zip").hexdigest()
+    cursor.execute(
+        """
+        INSERT INTO ingested_archive (
+            archive_name,
+            archive_sha256,
+            first_ingested_at,
+            last_ingested_at,
+            ingest_count
+        ) VALUES (?, ?, '2025-10-12T00:00:00Z', '2025-10-12T00:00:00Z', 1)
+        """,
+        ("archive.zip", archive_hash),
+    )
+    archive_id = int(cursor.lastrowid)
     cursor.execute(
         """
         INSERT INTO data_source (
             original_filename,
             ingested_at,
             file_sha256,
-            source_archive
+            source_archive_id
         ) VALUES (?, ?, ?, ?)
         """,
-        ("sample.xml", "2025-10-12T00:00:00Z", "hash-sample", "archive.zip"),
+        ("sample.xml", "2025-10-12T00:00:00Z", "hash-sample", archive_id),
     )
     schema_conn.commit()
     return int(cursor.lastrowid)

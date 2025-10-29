@@ -249,21 +249,29 @@ def ingest_archive(
     metadata_lookup = _load_metadata(destination)
 
     try:
-        _ingest_documents_from_archive(
+        data_source_ids = _ingest_documents_from_archive(
             conn,
             archive_path,
             destination,
             metadata_lookup,
+            archive_name=archive_path.name,
         )
     except Exception:
         logger.exception("Ingestion failed for archive %s.", archive_path.name)
         raise
 
-    register_ingested_archive(conn, archive_path.name, archive_sha256)
+    archive_id = register_ingested_archive(conn, archive_path.name, archive_sha256)
+    if data_source_ids:
+        conn.executemany(
+            "UPDATE data_source SET source_archive_id = ? WHERE id = ?",
+            [(archive_id, ds_id) for ds_id in data_source_ids],
+        )
+        conn.commit()
     logger.debug(
-        "Registered archive %s with hash %s.",
+        "Registered archive %s with hash %s (id=%s).",
         archive_path.name,
         archive_sha256,
+        archive_id,
     )
 
 
@@ -283,8 +291,11 @@ def _ingest_documents_from_archive(
     archive_path: Path,
     destination: Path,
     metadata_lookup: dict[str, dict[str, Any]],
-) -> None:
+    *,
+    archive_name: str,
+) -> list[int]:
     """Process all CCD documents within a prepared archive directory."""
+    data_source_ids: set[int] = set()
     for xml_file in destination.rglob("*.xml"):
         if xml_file.name.lower() == "metadata.xml":
             logger.debug("Skipping metadata descriptor %s.", xml_file)
@@ -309,9 +320,9 @@ def _ingest_documents_from_archive(
             data_source_id = upsert_data_source(
                 conn,
                 xml_file,
-                source_archive=archive_path.name,
                 metadata=metadata_lookup.get(meta_key),
             )
+            data_source_ids.add(data_source_id)
         except (OSError, sqlite3.DatabaseError) as exc:
             logger.warning(
                 "Skipping %s due to provenance capture error: %s",
@@ -322,7 +333,7 @@ def _ingest_documents_from_archive(
 
         record_metadata = {
             "data_source_id": data_source_id,
-            "source_archive": archive_path.name,
+            "source_archive": archive_name,
             "source_document": xml_file.name,
         }
         patient_record = {**patient_data, **record_metadata}
@@ -402,6 +413,7 @@ def _ingest_documents_from_archive(
             given,
             family,
         )
+    return list(data_source_ids)
 
 def _load_metadata(root: Path) -> dict[str, dict[str, Any]]:
     """Return a mapping of document path -> metadata extracted from METADATA.XML."""
