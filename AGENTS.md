@@ -7,31 +7,6 @@ Goals: reproducibility, privacy, and clarity.
 
 ---
 
-## Prompt Logging
-
-* Ask once per session: “Where should I store this session’s prompts?”. Skip logging if no path is given in user response.
-* Record **only prompts** verbatim.
-* DO NOT record:
-  * your responses
-  * IDE context information
-  * active file
-  * this file
-* Append each prompt chronologically with UTC timestamps.
-* Do not duplicate prompts with the same UTC timestamp.
-* Log entry format while complying with Markdown syntax:
-
-  ```txt
-  [YYYY-MM-DD HH:MM:SS UTC]
-  <prompt text>
-  ```
-
-* For each response, include a confirmation that the prompt was logged. Do not stop logging unless requested by the user.
-* When the user wraps part of a prompt in `[redact this from logging] ... [stop redaction]`, replace that inner text with `[redacted]` in the log entry while keeping the rest of the prompt verbatim.
-  * Example: `Please note [redact this from logging]secret[/stop redaction] info` is logged as `Please note [redacted] info`.
-* Strip or redact diagnostic dumps (for instance, copy and pasted error information) before logging; replace pasted troubleshooting details with `[troubleshooting redacted]`.
-
----
-
 ## Repository Structure
 
 ```txt
@@ -116,6 +91,7 @@ Source: [StackHawk](https://www.stackhawk.com/blog/4-best-practices-for-ai-code-
 * Prefer packages with strong security track records
 * Flag any dependencies that haven't been updated in 12+ months
 * Always check for known vulnerabilities before suggesting packages
+* Before commits, check that the `requirements.txt` file is updated
 
 ### Code Review Requirements
 
