@@ -3,18 +3,18 @@
 <!-- markdownlint-disable MD013 -->
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/)
 [![Streamlit](https://img.shields.io/badge/Streamlit-dashboard-ff4b4b.svg?logo=streamlit)](https://streamlit.io)
-[![SQLite](https://img.shields.io/badge/SQLite-database-07405e.svg?logo=sqlite)](https://www.sqlite.org)
+[![SQLCipher](https://img.shields.io/badge/SQLCipher-encrypted%20SQLite-07405e.svg)](https://www.zetetic.net/sqlcipher/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![AI-assisted with Codex](https://img.shields.io/badge/AI--Assisted-OpenAI_Codex-blueviolet?logo=openai&logoColor=white)](AI_disclosure.md)
 [![DOI](https://zenodo.org/badge/1065521249.svg)](https://doi.org/10.5281/zenodo.17388275)
 <!-- markdownlint-enable MD013 -->
 
-Tools for unifying personal electronic health record (EHR) exports into a local
-SQLite database and exploring them with a Streamlit dashboard. The repository
-contains no protected health information; the ingest pipeline expects you to
-provide your own CCD exports. Portions of the scaffolding were drafted with
-generative AI and reviewed by human maintainers - see the full
-[AI disclosure](AI_disclosure.md) for details.
+Tools for unifying personal electronic health record (EHR) exports into an
+SQLCipher-encrypted SQLite database and exploring them with a Streamlit
+dashboard. The repository contains no protected health information; the ingest
+pipeline expects you to provide your own CCD exports. Portions of the
+scaffolding were drafted with generative AI and reviewed by human maintainers -
+see the full [AI disclosure](AI_disclosure.md) for details.
 
 ---
 
@@ -23,8 +23,8 @@ generative AI and reviewed by human maintainers - see the full
 ### Requirements
 
 - Python 3.12 or newer
-- SQLite (bundled with Python)
 - Streamlit-compatible browser (Chrome, Edge, Firefox, Safari)
+- No manual SQLCipher install required; `sqlcipher3-wheels` bundles the engine
 
 ### Setup
 
@@ -40,50 +40,33 @@ pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-### Ingest and Explore
+### Launch and Explore
 
-1. Drop each CCD ZIP export into `data/raw/`.
-1. Run the ingestion workflow:
-
-   ```bash
-   python ingest.py
-   ```
-  
-   This creates or refreshes `db/health_records.db`, extracts ZIP contents into
-   `data/parsed/`, and populates all supported tables.
-
-   - Add `--log-level debug` to surface detailed troubleshooting messages
-   while you iterate:
-
-     ```bash
-     python ingest.py --log-level debug
-     ```
-
-   - To capture logs without printing patient identifiers to the console,
-   direct output to a file:
-
-     ```bash
-     python ingest.py --log-level info --log-file logs/ingest.log
-     ```
-
-     Debug logs include richer context, so avoid enabling them on shared systems.
-1. Launch the dashboard:
+1. Start the Streamlit dashboard:
 
    ```bash
    streamlit run frontend/app.py
    ```
-  
-   Streamlit opens at [http://localhost:8501](http://localhost:8501) with an
-   encounter overview, table browser, and SQL scratchpad.
+
+   The app opens at [http://localhost:8501](http://localhost:8501).
+2. Enter the SQLCipher passphrase when prompted. The first successful entry
+   establishes the encrypted database; subsequent sessions reuse the same key.
+3. Use **Upload records** in the sidebar to add CCD ZIP archives. Uploaded
+   files are saved to `data/raw/`, ingested immediately, and the original XML
+   documents are re-encrypted on disk.
+4. Browse encounters, run ad-hoc SQL queries, and review schema notes without
+   leaving the dashboard. Command-line ingestion remains available via
+   `python ingest.py` for automation, but the Streamlit workflow covers the
+   standard path.
 
 ---
 
 ## How It Works
 
 - **Ingestion pipeline (`ingest.py`)**
-  - Unzips CCD packages from `data/raw/` into `data/parsed/` (skipping extracts
-    that already exist).
-- Parses XML with lxml using modular parsers in `parsers/` for patients,
+  - Receives CCD archives from the Streamlit upload flow (or the optional CLI),
+    writes them to `data/raw/`, and unzips contents into `data/parsed/`.
+  - Parses XML with lxml using modular parsers in `parsers/` for patients,
     encounters, allergies, conditions, medications, labs, procedures, vitals,
     immunizations, progress notes, and insurance coverage.
   - Records file-level provenance in the `data_source` table (original filename,
@@ -92,6 +75,8 @@ pip install -r requirements.txt
     through every downstream insert.
   - Normalizes providers, deduplicates medications and immunizations, and
     invokes service modules in `services/` to load data into SQLite.
+  - Encrypts the source CCD documents with `security/encryption` so the original
+    XML is stored as `.enc` files alongside the SQLCipher database.
   - Applies schema migrations on the fly via `db/schema.py` to keep older
     databases compatible.
 
@@ -104,6 +89,16 @@ pip install -r requirements.txt
     Streamlit dataframes.
   - Connection utilities in `db_utils.py` keep the UI responsive with row
     limits and read-only access.
+  - The **Upload records** view invokes ingestion under the hood, hashes archives
+    to avoid duplicates, and encrypts the original CCD files before persisting
+    them to disk.
+  - Database files are encrypted at rest via SQLCipher. The Streamlit
+    dashboard prompts for the passphrase at launch, and headless workflows
+    can supply it through the `HRC_SQLCIPHER_PASSPHRASE` environment variable
+    (handled by `security/sqlcipher_support.py`). We vendor the
+    community-maintained `sqlcipher3-wheels` package so Windows installs do not
+    require compiling SQLCipher manually; verify the wheel hashes in deployment
+    pipelines for defense-in-depth.
   - XML files are rendered using the HL7 CDA Core Stylesheet, automatically
     updated weekly from the official repository with proper attribution.
 
@@ -125,7 +120,9 @@ pip install -r requirements.txt
 
 ### Configuration
 
-Use the **Settings** view in the Streamlit sidebar to update the raw, parsed, and database paths. Overrides are saved to `user/settings.yaml` and the app automatically reloads after changes.
+Use the **Settings** view in the Streamlit sidebar to update the raw, parsed,
+and database paths. Overrides are saved to `user/settings.yaml` and the app
+automatically reloads after changes.
 
 ## External Resources
 
@@ -159,7 +156,8 @@ requirements.txt    Locked Python dependencies
 
 ## Configuration & Customization
 
-  - Encryption keys are stored in `user/encryption.key`; attachments are encrypted at rest and decrypted on demand for previews.
+- Encryption keys are stored in `user/encryption.key`; attachments are encrypted
+  at rest and decrypted on demand for previews.
 - Update `frontend/config.yaml` to change the dashboard title, layout, database
   path, or default row limits.
 - Extend parsing coverage by adding new modules in `parsers/` and wiring them
@@ -170,6 +168,9 @@ requirements.txt    Locked Python dependencies
   rerunning `python ingest.py`.
 - Control ingestion verbosity per run with `--log-level {error,warning,info,debug}`
   and optionally persist output via `--log-file path/to/logs.txt`.
+- Enter the SQLCipher passphrase when the Streamlit dashboard prompts for it,
+  or provide `HRC_SQLCIPHER_PASSPHRASE` in your shell for automated ingest
+  and headless scripts.
 
 ---
 

@@ -9,10 +9,21 @@
 from __future__ import annotations
 
 import sqlite3
-from typing import Mapping, Sequence
+from typing import Mapping, Sequence, Tuple
 
 from services.common import clean_str, coerce_int
 from services.encounters import find_encounter_id
+
+try:  # pragma: no cover - depends on optional SQLCipher driver
+    from sqlcipher3 import dbapi2 as sqlcipher
+except ImportError:  # pragma: no cover - fallback for plain sqlite
+    sqlcipher = None
+
+INTEGRITY_ERRORS: Tuple[type[Exception], ...]
+if sqlcipher:
+    INTEGRITY_ERRORS = (sqlite3.IntegrityError, sqlcipher.IntegrityError)
+else:
+    INTEGRITY_ERRORS = (sqlite3.IntegrityError,)
 
 __all__ = ["insert_medications"]
 
@@ -99,7 +110,7 @@ def insert_medications(
         )
         try:
             cur.execute(sql, row)
-        except sqlite3.IntegrityError:
+        except INTEGRITY_ERRORS:
             duplicates += 1
             if ds_id is not None:
                 cur.execute(

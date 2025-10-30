@@ -72,8 +72,10 @@ def isolate_user_settings(monkeypatch, tmp_path_factory) -> None:
 
     settings = import_module("settings")
     encryption_module = import_module("security.encryption")
+    sqlcipher_support = import_module("security.sqlcipher_support")
 
     settings_dir = tmp_path_factory.mktemp("settings")
     monkeypatch.setattr(settings, "USER_SETTINGS_DIR", settings_dir)
     monkeypatch.setattr(settings, "SETTINGS_FILE", settings_dir / "settings.yaml")
     encryption_module._MANAGER = None
+    sqlcipher_support.clear_cached_passphrase()

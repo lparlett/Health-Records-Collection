@@ -1,12 +1,25 @@
+# Purpose: Provide SQLCipher-backed database helpers for the frontend.
+# Author: Codex + Lauren
+# Date: 2025-10-29
+# Tests: tests/test_db_utils.py
+# AI-assisted: Module updated with AI assistance.
+"""Helpers for working with the encrypted application database."""
+
+from __future__ import annotations
+
+import logging
+import sqlite3
 from pathlib import Path
 
-import sqlite3
-
 import pandas as pd
+from sqlcipher3 import dbapi2 as sqlcipher
 import yaml
 
 from db.schema import ensure_schema
 import settings
+from security import sqlcipher_support
+
+logger = logging.getLogger(__name__)
 
 # Load config
 CONFIG_PATH = Path(__file__).parent / "config.yaml"
@@ -52,10 +65,47 @@ def _ensure_database_ready(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
-def get_connection(db_path: Path | str | None = None):
+def _open_encrypted_connection(
+    db_path: Path, *, passphrase: str
+) -> sqlcipher.Connection:
+    """Return an SQLCipher connection initialised with hardening pragmas."""
+    conn = sqlcipher.connect(str(db_path))
+    sqlcipher_support.configure_connection(conn, passphrase)
+    return conn
+
+
+def get_connection(
+    db_path: Path | str | None = None, *, passphrase: str | None = None
+) -> sqlcipher.Connection:
+    """
+    Return an SQLCipher-encrypted database connection, ensuring schema exists.
+
+    Args:
+        db_path: Explicit path to the database file. Defaults to configured path.
+        passphrase: Optional SQLCipher passphrase override. When omitted, the
+            value is sourced via `security.sqlcipher_support.get_passphrase()`.
+
+    Returns:
+        An initialised SQLCipher connection ready for use.
+
+    Raises:
+        RuntimeError: If the connection cannot be unlocked with the passphrase.
+    """
     if db_path is None:
         db_path = _resolve_db_path()
-    conn = sqlite3.connect(str(db_path))
+    db_path = Path(db_path)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if passphrase:
+        key = sqlcipher_support.cache_passphrase(passphrase)
+    else:
+        key = sqlcipher_support.get_passphrase()
+    try:
+        conn = _open_encrypted_connection(db_path, passphrase=key)
+    except sqlcipher.DatabaseError as exc:  # pragma: no cover - defensive
+        logger.error("Unable to unlock encrypted database %s: %s", db_path, exc)
+        raise RuntimeError("Invalid SQLCipher passphrase supplied.") from exc
+
     _ensure_database_ready(conn)
     return conn
 
