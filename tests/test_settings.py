@@ -26,6 +26,15 @@ def test_load_paths_uses_defaults(tmp_path, monkeypatch):
     assert paths["db_path"].parent.exists()
 
 
+def test_load_settings_returns_ingestion_defaults(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "SETTINGS_FILE", tmp_path / "user_settings.yaml")
+    config = settings.load_settings()
+    ingestion = config["ingestion"]
+
+    assert ingestion["delete_uploaded_archives"] is True
+    assert ingestion["delete_unencrypted_extracted_files"] is True
+
+
 def test_save_settings_overrides_defaults(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "SETTINGS_FILE", tmp_path / "user_settings.yaml")
     custom_raw = tmp_path / "custom_raw"
@@ -38,7 +47,11 @@ def test_save_settings_overrides_defaults(tmp_path, monkeypatch):
                 "raw_dir": custom_raw,
                 "parsed_dir": custom_parsed,
                 "db_path": custom_db,
-            }
+            },
+            "ingestion": {
+                "delete_uploaded_archives": False,
+                "delete_unencrypted_extracted_files": False,
+            },
         }
     )
 
@@ -49,3 +62,7 @@ def test_save_settings_overrides_defaults(tmp_path, monkeypatch):
     assert custom_raw.exists()
     assert custom_parsed.exists()
     assert custom_db.parent.exists()
+
+    ingestion = settings.load_settings()["ingestion"]
+    assert ingestion["delete_uploaded_archives"] is False
+    assert ingestion["delete_unencrypted_extracted_files"] is False

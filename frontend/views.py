@@ -266,6 +266,7 @@ def _show_settings_page() -> None:
 
     current = settings.load_settings()
     paths = current["paths"]
+    ingestion_settings = current["ingestion"]
 
     with st.form("app-settings-form"):
         raw_dir_input = st.text_input(
@@ -282,6 +283,24 @@ def _show_settings_page() -> None:
             "Database file",
             str(paths["db_path"]),
             help="Path to the SQLite database file used by the application.",
+        )
+
+        st.subheader("Ingestion Cleanup")
+        delete_archives = st.checkbox(
+            "Delete uploaded ZIP archives after ingestion",
+            value=ingestion_settings["delete_uploaded_archives"],
+            help=(
+                "Remove original CCD archives from disk once ingestion completes "
+                "successfully. Disable to retain the source ZIP files."
+            ),
+        )
+        delete_non_xml = st.checkbox(
+            "Delete extracted non-XML files after ingestion",
+            value=ingestion_settings["delete_unencrypted_extracted_files"],
+            help=(
+                "Remove unencrypted artifacts (e.g., PDFs, HTML) generated during "
+                "parsing while keeping XML and encrypted (.enc) files."
+            ),
         )
         submitted = st.form_submit_button("Save settings")
 
@@ -322,7 +341,15 @@ def _show_settings_page() -> None:
         return
 
     try:
-        settings.save_settings({"paths": {key: str(value) for key, value in resolved_paths.items()}})
+        settings.save_settings(
+            {
+                "paths": {key: str(value) for key, value in resolved_paths.items()},
+                "ingestion": {
+                    "delete_uploaded_archives": delete_archives,
+                    "delete_unencrypted_extracted_files": delete_non_xml,
+                },
+            }
+        )
         settings.ensure_runtime_paths({"paths": resolved_paths})
     except Exception as exc:  # pragma: no cover - defensive
         st.error(f"Failed to persist settings: {exc}")

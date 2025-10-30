@@ -20,13 +20,13 @@ see the full [AI disclosure](AI_disclosure.md) for details.
 
 ## Quick Start
 
-### Requirements
+### :toolbox: Requirements
 
 - Python 3.12 or newer
 - Streamlit-compatible browser (Chrome, Edge, Firefox, Safari)
 - No manual SQLCipher install required; `sqlcipher3-wheels` bundles the engine
 
-### Setup
+### :scroll: Setup
 
 ```bash
 git clone <repo-url>
@@ -40,7 +40,7 @@ pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-### Launch and Explore
+### :rocket: Launch and Explore
 
 1. Start the Streamlit dashboard:
 
@@ -51,9 +51,12 @@ pip install -r requirements.txt
    The app opens at [http://localhost:8501](http://localhost:8501).
 2. Enter the SQLCipher passphrase when prompted. The first successful entry
    establishes the encrypted database; subsequent sessions reuse the same key.
+   **If you lose this key, you will not be able to unencrypt the database.**
 3. Use **Upload records** in the sidebar to add CCD ZIP archives. Uploaded
    files are saved to `data/raw/`, ingested immediately, and the original XML
-   documents are re-encrypted on disk.
+   documents are re-encrypted on disk. By default the source ZIP and any
+   residual unencrypted artifacts are removed after ingestion; adjust this
+   behaviour under *Settings* if you prefer to retain them.
 4. Browse encounters, run ad-hoc SQL queries, and review schema notes without
    leaving the dashboard. Command-line ingestion remains available via
    `python ingest.py` for automation, but the Streamlit workflow covers the
@@ -61,7 +64,7 @@ pip install -r requirements.txt
 
 ---
 
-## How It Works
+## :microscope: How It Works
 
 - **Ingestion pipeline (`ingest.py`)**
   - Receives CCD archives from the Streamlit upload flow (or the optional CLI),
@@ -77,6 +80,9 @@ pip install -r requirements.txt
     invokes service modules in `services/` to load data into SQLite.
   - Encrypts the source CCD documents with `security/encryption` so the original
     XML is stored as `.enc` files alongside the SQLCipher database.
+  - Performs post-ingest cleanup according to user preferences, deleting the
+    original archive and any leftover non-XML files when the secure defaults
+    remain enabled.
   - Applies schema migrations on the fly via `db/schema.py` to keep older
     databases compatible.
 
@@ -118,13 +124,7 @@ pip install -r requirements.txt
 
 ---
 
-### Configuration
-
-Use the **Settings** view in the Streamlit sidebar to update the raw, parsed,
-and database paths. Overrides are saved to `user/settings.yaml` and the app
-automatically reloads after changes.
-
-## External Resources
+## :raised_hands: External Resources
 
 - **CDA Rendering**
   - This project uses the [HL7 CDA Core Stylesheet](https://github.com/HL7/cda-core-xsl)
@@ -137,16 +137,18 @@ automatically reloads after changes.
 
 ---
 
-## Repository Layout
+## :star: Repository Layout
 
 ```text
 data/               Raw ZIP exports (`raw/`) and extracted XML (`parsed/`)
 db/                 SQLite artifacts (`health_records.db`) and schema helpers
 frontend/           Streamlit application entry point, views, and utilities
 parsers/            CCD XML parsers grouped by domain
+security/           Security-related functions
 services/           Persistence helpers for each domain table
 tests/              Pytest suite covering parsers, services,
                     schema, and ingest flow
+user/               User-specific settings
 ingest.py           Command-line ingestion workflow
 schema.sql          Canonical database definition
 requirements.txt    Locked Python dependencies
@@ -154,7 +156,7 @@ requirements.txt    Locked Python dependencies
 
 ---
 
-## Configuration & Customization
+## :gear: Configuration & Customization
 
 - Encryption keys are stored in `user/encryption.key`; attachments are encrypted
   at rest and decrypted on demand for previews.
@@ -168,6 +170,11 @@ requirements.txt    Locked Python dependencies
   rerunning `python ingest.py`.
 - Control ingestion verbosity per run with `--log-level {error,warning,info,debug}`
   and optionally persist output via `--log-file path/to/logs.txt`.
+- Use the Settings view to toggle post-ingest cleanup (archive deletion and
+  removal of non-XML extracts) to match your retention policy.
+- Use the **Settings** view in the Streamlit sidebar to update the raw, parsed,
+  and database paths. Overrides are saved to `user/settings.yaml` and the app
+  automatically reloads after changes.
 - Enter the SQLCipher passphrase when the Streamlit dashboard prompts for it,
   or provide `HRC_SQLCIPHER_PASSPHRASE` in your shell for automated ingest
   and headless scripts.

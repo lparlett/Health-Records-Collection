@@ -244,7 +244,11 @@ def ingest_archive(
         )
         return
 
-    paths = settings.load_paths()
+    app_settings = settings.load_settings()
+    settings.ensure_runtime_paths(app_settings)
+    paths = app_settings["paths"]
+    ingestion_settings = app_settings["ingestion"]
+
     destination = paths["parsed_dir"] / archive_path.stem
     unzip_raw_files(archive_path, destination)
 
@@ -275,6 +279,65 @@ def ingest_archive(
         archive_sha256,
         archive_id,
     )
+
+    _finalise_ingestion_artifacts(
+        archive_path,
+        destination,
+        delete_archive=ingestion_settings["delete_uploaded_archives"],
+        delete_non_xml=ingestion_settings["delete_unencrypted_extracted_files"],
+    )
+
+
+def _delete_non_xml_files(destination: Path) -> int:
+    """Remove non-XML, non-encrypted files from an extracted archive directory."""
+    if not destination.exists():
+        return 0
+    removed = 0
+    for file_path in destination.rglob("*"):
+        if not file_path.is_file():
+            continue
+        suffixes = [suffix.lower() for suffix in file_path.suffixes]
+        if ".xml" in suffixes or ".enc" in suffixes:
+            continue
+        try:
+            file_path.unlink()
+            removed += 1
+        except OSError as exc:
+            logger.warning("Failed to delete %s: %s", file_path, exc)
+    for directory in sorted(
+        (path for path in destination.rglob("*") if path.is_dir()),
+        key=lambda path: len(path.parts),
+        reverse=True,
+    ):
+        try:
+            directory.rmdir()
+        except OSError:
+            continue
+    return removed
+
+
+def _finalise_ingestion_artifacts(
+    archive_path: Path,
+    extraction_root: Path,
+    *,
+    delete_archive: bool,
+    delete_non_xml: bool,
+) -> None:
+    """Apply configured cleanup steps after a successful ingestion."""
+    if delete_non_xml:
+        removed = _delete_non_xml_files(extraction_root)
+        if removed:
+            logger.debug(
+                "Removed %s non-XML file(s) from %s after ingestion.",
+                removed,
+                extraction_root,
+            )
+    if delete_archive and archive_path.exists():
+        try:
+            archive_path.unlink()
+            logger.debug("Deleted ingested archive %s.", archive_path.name)
+        except OSError as exc:
+            logger.warning("Unable to delete archive %s: %s", archive_path, exc)
 
 
 def _compute_archive_sha256(archive_path: Path) -> str:
