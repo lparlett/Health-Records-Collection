@@ -20,11 +20,11 @@ see the full [AI disclosure](AI_disclosure.md) for details.
 
 ## Quick Start
 
-### :toolbox: Requirements
+### :ballot_box_with_check: Requirements
 
-- Python 3.12 or newer
-- Streamlit-compatible browser (Chrome, Edge, Firefox, Safari)
-- No manual SQLCipher install required; `sqlcipher3-wheels` bundles the engine
+- [X] Python 3.12 or newer
+- [X] Streamlit-compatible browser (Chrome, Edge, Firefox, Safari)
+- [X] No manual SQLCipher install required; `sqlcipher3-wheels` bundles the engine
 
 ### :scroll: Setup
 
@@ -181,7 +181,7 @@ requirements.txt    Locked Python dependencies
 
 ---
 
-## Development
+## :100: Development
 
 - Run the automated tests with:
 
@@ -196,6 +196,6 @@ requirements.txt    Locked Python dependencies
 
 ---
 
-## License
+## :thumbsup: License
 
 MIT License. See [LICENSE](LICENSE) for full terms.

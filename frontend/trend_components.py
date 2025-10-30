@@ -125,10 +125,13 @@ def render_patient_trends(
 
     if selected_meta["dataset"] == "vital":
         series_df = vitals_df.copy()
-        mask = series_df["_loinc_clean"] == selected_meta["code"]
-        if mask.sum() == 0:
-            mask = (series_df["_loinc_clean"].isna() & series_df["_type_clean"].isna())
-        display_name = selected_meta.get("display") or selected_meta.get("name") or selected_meta.get("code") or "Unspecified vital"
+        if selected_meta.get("name"):
+            mask = series_df["_type_clean"] == selected_meta["name"]
+        else:
+            mask = series_df["_type_clean"].isna()
+        if mask.sum() == 0 and selected_meta.get("name"):
+            mask = series_df["vital_type"] == selected_meta["name"]
+        display_name = selected_meta.get("name") or "Unspecified vital"
         series_df = series_df.loc[mask].copy()
         tooltip_fields = [
             alt.Tooltip("measurement_time:T", title="Timestamp"),
