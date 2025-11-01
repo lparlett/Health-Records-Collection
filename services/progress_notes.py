@@ -53,11 +53,12 @@ def insert_progress_notes(
 
         note_hash = _hash_text(raw_text)
         provider_name = clean_str(note.get("provider"))
-        provider_id = get_or_create_provider(conn, provider_name) if provider_name else None
+        provider_id = (
+            get_or_create_provider(conn, provider_name) if provider_name else None
+        )
 
-        encounter_hint = (
-            clean_str(note.get("encounter_date"))
-            or clean_str(note.get("note_datetime"))
+        encounter_hint = clean_str(note.get("encounter_date")) or clean_str(
+            note.get("note_datetime")
         )
         encounter_id = find_encounter_id(
             conn,

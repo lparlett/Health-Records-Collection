@@ -178,13 +178,17 @@ def _show_encounter_overview(conn) -> None:
         st.info("No patients found in the database.")
         return
 
-    patient_id, patient_row = _select_patient(patients, sidebar_header="Encounter Filters")
+    patient_id, patient_row = _select_patient(
+        patients, sidebar_header="Encounter Filters"
+    )
     if patient_id is None or patient_row is None:
         st.info("No patients found in the database.")
         return
 
     state = st.session_state
-    patient_label = state.get("selected_patient_label") or patient_row.get("display_name")
+    patient_label = state.get("selected_patient_label") or patient_row.get(
+        "display_name"
+    )
     subtitle_parts = [f"Patient: {patient_label}"]
     birth_date = patient_row.get("birth_date")
     if birth_date:
@@ -201,7 +205,9 @@ def _show_encounter_overview(conn) -> None:
     for _, row in encounters.iterrows():
         encounter_id = int(row["encounter_id"])
         encounter_date = _format_datetime(row.get("encounter_date"))
-        encounter_type = (row.get("encounter_type") or "Encounter").strip() or "Encounter"
+        encounter_type = (
+            row.get("encounter_type") or "Encounter"
+        ).strip() or "Encounter"
         provider = row.get("provider_display_name") or "Unknown provider"
         notes = (row.get("notes") or "").strip()
 
@@ -231,7 +237,9 @@ def _show_patient_trends_page(conn) -> None:
         return
 
     state = st.session_state
-    patient_label = state.get("selected_patient_label") or patient_row.get("display_name")
+    patient_label = state.get("selected_patient_label") or patient_row.get(
+        "display_name"
+    )
     subtitle_parts = [f"Patient: {patient_label}"]
     birth_date = patient_row.get("birth_date")
     if birth_date:
@@ -305,9 +313,7 @@ def _show_settings_page() -> None:
         submitted = st.form_submit_button("Save settings")
 
     if not submitted:
-        st.caption(
-            f"User-specific overrides are stored at {settings.SETTINGS_FILE}."
-        )
+        st.caption(f"User-specific overrides are stored at {settings.SETTINGS_FILE}.")
         return
 
     candidate_paths = {
@@ -359,9 +365,9 @@ def _show_settings_page() -> None:
     _rerun()
 
 
-
-
-def _format_records_for_list(records: Iterable[dict[str, Any]], fields: list[str]) -> list[str]:
+def _format_records_for_list(
+    records: Iterable[dict[str, Any]], fields: list[str]
+) -> list[str]:
     lines: list[str] = []
     for record in records:
         parts = [record.get(field) for field in fields if record.get(field)]
@@ -431,7 +437,7 @@ def _render_attachment_section(attachment: dict[str, Any]) -> None:
 
 def _show_encounter_detail(conn: sqlite3.Connection) -> None:
     """Show detailed encounter information.
-    
+
     Args:
         conn: Database connection
     """
@@ -463,48 +469,44 @@ def _show_encounter_detail(conn: sqlite3.Connection) -> None:
 
     # Show encounter summary in main container
     with st.container():
-            st.subheader("Encounter Metadata")
-            cols = st.columns(2)
-            with cols[0]:
+        st.subheader("Encounter Metadata")
+        cols = st.columns(2)
+        with cols[0]:
+            st.markdown(
+                f"**Date:** {_format_datetime(metadata.get('encounter_date'), show_time=True)}"
+            )
+            st.markdown(f"**Type:** {metadata.get('encounter_type') or 'Unknown'}")
+            st.markdown(f"**Provider:** {metadata.get('provider_display_name')}")
+        with cols[1]:
+            ds = metadata.get("data_source") or {}
+            st.markdown(f"**Source Archive:** {ds.get('source_archive') or '-'}")
+            st.markdown(f"**Document:** {ds.get('original_filename') or '-'}")
+            if ds.get("document_created"):
                 st.markdown(
-                    f"**Date:** {_format_datetime(metadata.get('encounter_date'), show_time=True)}"
+                    f"**Document Created:** {_format_datetime(ds.get('document_created'), show_time=True)}"
                 )
-                st.markdown(f"**Type:** {metadata.get('encounter_type') or 'Unknown'}")
-                st.markdown(f"**Provider:** {metadata.get('provider_display_name')}")
-            with cols[1]:
-                ds = metadata.get("data_source") or {}
-                st.markdown(f"**Source Archive:** {ds.get('source_archive') or '-'}")
-                st.markdown(f"**Document:** {ds.get('original_filename') or '-'}")
-                if ds.get("document_created"):
-                    st.markdown(
-                        f"**Document Created:** {_format_datetime(ds.get('document_created'), show_time=True)}"
-                    )
-                if ds.get("repository_unique_id"):
-                    st.markdown(f"**Repository ID:** {ds.get('repository_unique_id')}")
-                if ds.get("document_hash"):
-                    st.markdown(f"**Document Hash:** `{ds.get('document_hash')}`")
-                if ds.get("document_size"):
-                    st.markdown(
-                        f"**Document Size:** {ds.get('document_size')} bytes"
-                    )
-                if ds.get("author_institution"):
-                    st.markdown(
-                        f"**Author Institution:** {ds.get('author_institution')}"
-                    )
+            if ds.get("repository_unique_id"):
+                st.markdown(f"**Repository ID:** {ds.get('repository_unique_id')}")
+            if ds.get("document_hash"):
+                st.markdown(f"**Document Hash:** `{ds.get('document_hash')}`")
+            if ds.get("document_size"):
+                st.markdown(f"**Document Size:** {ds.get('document_size')} bytes")
+            if ds.get("author_institution"):
+                st.markdown(f"**Author Institution:** {ds.get('author_institution')}")
 
-            notes = metadata.get("notes")
-            if notes:
-                st.markdown("**Encounter Notes**")
-                st.markdown(notes)
+        notes = metadata.get("notes")
+        if notes:
+            st.markdown("**Encounter Notes**")
+            st.markdown(notes)
 
-            attachment = metadata.get("attachment") or {}
-            if attachment.get("file_path"):
-                _render_attachment_section(attachment)
+        attachment = metadata.get("attachment") or {}
+        if attachment.get("file_path"):
+            _render_attachment_section(attachment)
     render_progress_notes(
         detail["progress_notes"],
         format_datetime=_format_datetime,
     )
-    
+
     _show_section(
         "Conditions",
         detail["conditions"],
@@ -551,4 +553,3 @@ def show_query(conn):
             st.dataframe(df, use_container_width=True)
         except Exception as e:
             st.error(f"Error: {e}")
-

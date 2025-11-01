@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 # Purpose: Parse immunisation administrations from CCD documents.
 # Author: Codex assistant
 # Date: 2025-10-11
@@ -8,12 +6,19 @@ from __future__ import annotations
 
 """Immunisation parsing helpers for CCD ingestion."""
 
+from __future__ import annotations
+
 from collections.abc import Iterable
 from typing import Any
 
-from lxml import etree
-
-from .common import get_text_by_id
+from .common import (
+    ensure_element_list,
+    extract_effective_time,
+    extract_notes,
+    first_non_empty,
+    normalize_whitespace,
+)
+from .xml_types import ElementType, ElementTreeType
 
 ImmunizationEntry = dict[str, Any]
 
@@ -23,39 +28,15 @@ CVX_CODE_SYSTEMS: set[str] = {
 }
 
 
-def _clean_text(value: str | None) -> str | None:
-    """Trim and normalise whitespace in a narrative string."""
-    if value is None:
-        return None
-    cleaned = value.strip()
-    if not cleaned:
-        return None
-    return " ".join(cleaned.split())
-
-
-def _extract_time(node: etree._Element | None, ns: dict[str, str]) -> str | None:
-    """Extract a timestamp value from an ``effectiveTime`` element."""
-    if node is None:
-        return None
-    value = node.get("value")
-    if value:
-        return value
-    low = node.find("hl7:low", namespaces=ns)
-    if low is not None and low.get("value"):
-        return low.get("value")
-    high = node.find("hl7:high", namespaces=ns)
-    if high is not None and high.get("value"):
-        return high.get("value")
-    return None
-
-
-def _collect_cvx_codes(code_element: etree._Element | None, ns: dict[str, str]) -> list[str]:
+def _collect_cvx_codes(
+    code_element: ElementType | None, ns: dict[str, str]
+) -> list[str]:
     """Collect CVX identifiers from a code element and its translations."""
     codes: list[str] = []
     if code_element is None:
         return codes
 
-    def handle_element(element: etree._Element) -> None:
+    def handle_element(element: ElementType) -> None:
         code_value = element.get("code")
         code_system = element.get("codeSystem")
         if code_value and code_system in CVX_CODE_SYSTEMS:
@@ -68,46 +49,21 @@ def _collect_cvx_codes(code_element: etree._Element | None, ns: dict[str, str]) 
     return codes
 
 
-def _get_reference_text(
-    tree: etree._ElementTree,
-    ns: dict[str, str],
-    parent: etree._Element | None,
-    xpath: str,
-) -> str | None:
-    """Resolve a referenced narrative string relative to the provided parent."""
-    if parent is None:
-        return None
-    ref = parent.find(xpath, namespaces=ns)
-    if ref is None:
-        return None
-    ref_value = ref.get("value")
-    if not ref_value:
-        return None
-    return _clean_text(get_text_by_id(tree, ns, ref_value))
-
-
-def _ensure_element_list(value: object) -> list[etree._Element]:
-    """Coerce XPath results into a list of XML elements."""
-    if isinstance(value, list):
-        return [node for node in value if isinstance(node, etree._Element)]
-    if isinstance(value, etree._Element):
-        return [value]
-    return []
-
-
 def _unique_non_empty(values: Iterable[str | None]) -> list[str]:
     """Return unique, cleaned string values while preserving order."""
     unique: list[str] = []
     seen: set[str] = set()
     for value in values:
-        cleaned = _clean_text(value)
+        cleaned = normalize_whitespace(value)
         if cleaned and cleaned not in seen:
             seen.add(cleaned)
             unique.append(cleaned)
     return unique
 
 
-def parse_immunizations(tree: etree._ElementTree, ns: dict[str, str]) -> list[ImmunizationEntry]:
+def parse_immunizations(
+    tree: ElementTreeType, ns: dict[str, str]
+) -> list[ImmunizationEntry]:
     """Parse administered immunisations from a CCD document.
 
     Args:
@@ -122,7 +78,7 @@ def parse_immunizations(tree: etree._ElementTree, ns: dict[str, str]) -> list[Im
         ".//hl7:section[hl7:code[@code='11369-6']]",
         namespaces=ns,
     )
-    section_nodes = _ensure_element_list(section_nodes_raw)
+    section_nodes = ensure_element_list(section_nodes_raw)
     section = section_nodes[0] if section_nodes else None
     if section is None or section.get("nullFlavor") == "NI":
         return immunizations
@@ -131,11 +87,17 @@ def parse_immunizations(tree: etree._ElementTree, ns: dict[str, str]) -> list[Im
         "hl7:entry/hl7:substanceAdministration",
         namespaces=ns,
     )
-    for admin in _ensure_element_list(admin_nodes_raw):
+    for admin in ensure_element_list(admin_nodes_raw):
         status_el = admin.find("hl7:statusCode", namespaces=ns)
-        status = status_el.get("code") if status_el is not None else None
+        status = normalize_whitespace(
+            status_el.get("code") if status_el is not None else None
+        )
 
-        effective_time = _extract_time(admin.find("hl7:effectiveTime", namespaces=ns), ns)
+        start, end = extract_effective_time(
+            admin.find("hl7:effectiveTime", namespaces=ns),
+            ns,
+        )
+        effective_time = start or end
 
         code_el = admin.find("hl7:code", namespaces=ns)
         material_code_el = admin.find(
@@ -150,32 +112,47 @@ def parse_immunizations(tree: etree._ElementTree, ns: dict[str, str]) -> list[Im
         product_name: str | None = None
         if material_name_el is not None:
             raw_product = material_name_el.xpath("string()")
-            if not isinstance(raw_product, str):
-                raw_product = str(raw_product or "")
-            product_name = _clean_text(raw_product)
+            product_name = normalize_whitespace(raw_product)
 
         name_candidates = [
-            _clean_text(code_el.get("displayName")) if code_el is not None else None,
-            _get_reference_text(tree, ns, code_el, "hl7:originalText/hl7:reference"),
-            _get_reference_text(tree, ns, admin, "hl7:text/hl7:reference"),
-            _clean_text(material_code_el.get("displayName")) if material_code_el is not None else None,
-            _get_reference_text(tree, ns, material_code_el, "hl7:originalText/hl7:reference"),
+            (
+                normalize_whitespace(code_el.get("displayName"))
+                if code_el is not None
+                else None
+            ),
+            (
+                extract_notes(tree, code_el, ns, text_xpath="hl7:originalText")
+                if code_el is not None
+                else None
+            ),
+            extract_notes(tree, admin, ns),
+            (
+                normalize_whitespace(material_code_el.get("displayName"))
+                if material_code_el is not None
+                else None
+            ),
+            (
+                extract_notes(tree, material_code_el, ns, text_xpath="hl7:originalText")
+                if material_code_el is not None
+                else None
+            ),
             product_name,
-            _clean_text(code_el.get("code")) if code_el is not None else None,
-            _clean_text(material_code_el.get("code")) if material_code_el is not None else None,
+            normalize_whitespace(code_el.get("code")) if code_el is not None else None,
+            (
+                normalize_whitespace(material_code_el.get("code"))
+                if material_code_el is not None
+                else None
+            ),
         ]
-
-        vaccine_name: str | None = None
-        for candidate in name_candidates:
-            if candidate:
-                vaccine_name = candidate
-                break
+        vaccine_name = first_non_empty(*name_candidates)
 
         lot_number_el = admin.find(
             "hl7:consumable/hl7:manufacturedProduct/hl7:manufacturedMaterial/hl7:lotNumberText",
             namespaces=ns,
         )
-        lot_number = _clean_text(lot_number_el.text if lot_number_el is not None else None)
+        lot_number = normalize_whitespace(
+            lot_number_el.text if lot_number_el is not None else None
+        )
 
         cvx_codes = _collect_cvx_codes(code_el, ns)
         if material_code_el is not None:

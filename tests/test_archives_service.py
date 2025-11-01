@@ -16,7 +16,9 @@ from services import archives
 def test_archive_registration_inserts_new_row(schema_conn: sqlite3.Connection) -> None:
     """First registration should create a new row with count = 1."""
     archive_hash = "abc123"
-    archive_id = archives.register_ingested_archive(schema_conn, "first.zip", archive_hash)
+    archive_id = archives.register_ingested_archive(
+        schema_conn, "first.zip", archive_hash
+    )
 
     row = archives.archive_was_ingested(schema_conn, archive_hash)
     assert row is not None
@@ -30,10 +32,14 @@ def test_archive_registration_inserts_new_row(schema_conn: sqlite3.Connection) -
 def test_archive_registration_updates_existing(schema_conn: sqlite3.Connection) -> None:
     """Repeated registration should increment count and update timestamps."""
     archive_hash = "def456"
-    first_id = archives.register_ingested_archive(schema_conn, "initial.zip", archive_hash)
+    first_id = archives.register_ingested_archive(
+        schema_conn, "initial.zip", archive_hash
+    )
     first_row = archives.archive_was_ingested(schema_conn, archive_hash)
     assert first_row is not None
-    second_id = archives.register_ingested_archive(schema_conn, "updated-name.zip", archive_hash)
+    second_id = archives.register_ingested_archive(
+        schema_conn, "updated-name.zip", archive_hash
+    )
 
     second_row = archives.archive_was_ingested(schema_conn, archive_hash)
     assert second_row is not None

@@ -74,9 +74,7 @@ def _create_sample_archive(tmp_path: Path, filename: str = "sample.zip") -> Path
     return archive_path
 
 
-def test_ingest_archive_records_data_source(
-    tmp_path, schema_conn, monkeypatch
-) -> None:
+def test_ingest_archive_records_data_source(tmp_path, schema_conn, monkeypatch) -> None:
     archive_path = _create_sample_archive(tmp_path, "sample.zip")
 
     parsed_dir = tmp_path / "parsed"
@@ -139,14 +137,10 @@ def test_ingest_archive_records_data_source(
     assert document_size == 512
     assert author_institution == "Unit Test Hospital"
 
-    patient_row = schema_conn.execute(
-        "SELECT data_source_id FROM patient"
-    ).fetchone()
+    patient_row = schema_conn.execute("SELECT data_source_id FROM patient").fetchone()
     assert patient_row == (data_source_id,)
 
-    patient_count = schema_conn.execute(
-        "SELECT COUNT(*) FROM patient"
-    ).fetchone()[0]
+    patient_count = schema_conn.execute("SELECT COUNT(*) FROM patient").fetchone()[0]
     assert patient_count == 1
 
     attachment_row = schema_conn.execute(
@@ -156,8 +150,17 @@ def test_ingest_archive_records_data_source(
         """
     ).fetchone()
     assert attachment_row is not None
-    attachment_id, attachment_patient_id, attachment_path, attachment_ds_id, attachment_mime = attachment_row
-    assert attachment_patient_id == schema_conn.execute("SELECT id FROM patient").fetchone()[0]
+    (
+        attachment_id,
+        attachment_patient_id,
+        attachment_path,
+        attachment_ds_id,
+        attachment_mime,
+    ) = attachment_row
+    assert (
+        attachment_patient_id
+        == schema_conn.execute("SELECT id FROM patient").fetchone()[0]
+    )
     assert attachment_path.endswith("DOC0001.XML.enc")
     assert attachment_ds_id == data_source_id
     assert attachment_mime in ("application/octet-stream", "application/xml")
@@ -214,13 +217,16 @@ def test_ingest_archive_skips_duplicate_hash(
 
     ingest.ingest_archive(schema_conn, archive_path)
 
-    ds_count_after = schema_conn.execute("SELECT COUNT(*) FROM data_source").fetchone()[0]
+    ds_count_after = schema_conn.execute("SELECT COUNT(*) FROM data_source").fetchone()[
+        0
+    ]
     ingest_count_after = schema_conn.execute(
         "SELECT ingest_count FROM ingested_archive WHERE archive_name = ?",
         ("duplicate.zip",),
     ).fetchone()[0]
     assert ds_count_after == 1
     assert ingest_count_after == 1
+
 
 def test_ingest_archive_persists_allergies_and_insurance(
     tmp_path,
@@ -416,9 +422,7 @@ def test_configure_logging_respects_cli_options(tmp_path, monkeypatch):
     dummy_handler.setLevel(logging.CRITICAL)
     root_logger.addHandler(dummy_handler)
 
-    args = ingest.parse_args(
-        ["--log-level", "debug", "--log-file", str(log_file)]
-    )
+    args = ingest.parse_args(["--log-level", "debug", "--log-file", str(log_file)])
     assert args.log_level == "debug"
     assert args.log_file == log_file
 

@@ -36,7 +36,9 @@ def insert_conditions(
     cur = conn.cursor()
     for cond in conditions:
         provider_name = clean_str(cond.get("provider"))
-        provider_id = get_or_create_provider(conn, provider_name) if provider_name else None
+        provider_id = (
+            get_or_create_provider(conn, provider_name) if provider_name else None
+        )
 
         encounter_id = find_encounter_id(
             conn,

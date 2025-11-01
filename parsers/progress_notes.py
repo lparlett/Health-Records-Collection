@@ -5,13 +5,13 @@
 # AI-assisted: Portions of this file were generated with AI assistance.
 
 """Progress note parsing helpers."""
-
 from __future__ import annotations
 
 import re
-from typing import Any, Optional, Sequence, cast
+from typing import Optional
 
-from lxml import etree
+from .common import iter_elements, normalize_whitespace
+from .xml_types import ElementType, ElementTreeType
 
 __all__ = ["parse_progress_notes"]
 
@@ -37,33 +37,9 @@ _TIME_PATTERN = re.compile(r"(\d{1,2}):(\d{2})\s*([AP]M)", re.IGNORECASE)
 _TZ_PATTERN = re.compile(r"\b([A-Z]{2,4})$")
 
 
-def _iter_elements(value: object) -> list[etree._Element]:
-    """Convert mixed XPath outputs into a list of XML elements."""
-    elements: list[etree._Element] = []
-    if isinstance(value, etree._Element):
-        elements.append(value)
-    elif isinstance(value, Sequence):
-        for item in value:
-            if isinstance(item, etree._Element):
-                elements.append(item)
-    return elements
-
-
-def _normalize_text(value: object) -> str | None:
-    """Return a trimmed string representation of XML or scalar data."""
-    if value is None:
-        return None
-    if isinstance(value, bytes):
-        text = value.decode("utf-8", errors="ignore")
-    elif isinstance(value, str):
-        text = value
-    else:
-        text = str(value)
-    text = text.strip()
-    return text or None
-
-
-def parse_progress_notes(tree: etree._ElementTree, ns: dict[str, str]) -> list[dict[str, Optional[str]]]:
+def parse_progress_notes(
+    tree: ElementTreeType, ns: dict[str, str]
+) -> list[dict[str, Optional[str]]]:
     """Extract structured progress notes from CCD sections.
 
     Args:
@@ -74,19 +50,23 @@ def parse_progress_notes(tree: etree._ElementTree, ns: dict[str, str]) -> list[d
         list[dict[str, Optional[str]]]: Normalised progress note entries.
     """
     notes: list[dict[str, Optional[str]]] = []
-    section_nodes = cast(Sequence[Any], tree.xpath(".//hl7:section", namespaces=ns))
-    for section in _iter_elements(section_nodes):
+    section_nodes = tree.xpath(".//hl7:section", namespaces=ns)
+    for section in iter_elements(section_nodes):
         title_el = section.find("hl7:title", namespaces=ns)
-        title = (_normalize_text(title_el.text) or "").lower() if title_el is not None else ""
+        title = (
+            (normalize_whitespace(title_el.text) or "").lower()
+            if title_el is not None
+            else ""
+        )
         if "progress note" not in title:
             continue
 
         item_nodes = section.xpath("hl7:text/hl7:list/hl7:item", namespaces=ns)
-        for item in _iter_elements(item_nodes):
+        for item in iter_elements(item_nodes):
             caption_el = item.find("hl7:caption", namespaces=ns)
             caption_text = None
             if caption_el is not None:
-                caption_text = _normalize_text(caption_el.xpath("string()"))
+                caption_text = normalize_whitespace(caption_el.xpath("string()"))
 
             provider_name, note_iso_dt, encounter_hint = _parse_caption(caption_text)
 
@@ -113,40 +93,50 @@ def parse_progress_notes(tree: etree._ElementTree, ns: dict[str, str]) -> list[d
     return notes
 
 
-def _parse_caption(caption: Optional[str]) -> tuple[Optional[str], Optional[str], Optional[str]]:
-    """Parse provider and timestamp information from a note caption."""
-    if not caption:
-        return None, None, None
-
-    provider_part = caption
-    meta_part = ""
+def _split_caption_parts(caption: str) -> tuple[Optional[str], str]:
+    """Split the caption into provider and metadata segments."""
     if " - " in caption:
         provider_part, meta_part = caption.rsplit(" - ", 1)
+    else:
+        provider_part, meta_part = caption, ""
     provider_name = provider_part.strip() or None
-    meta = meta_part.strip()
+    return provider_name, meta_part.strip()
 
-    if not meta:
-        return provider_name, None, None
 
-    tz_code: Optional[str] = None
+def _extract_timezone(meta: str) -> tuple[str, Optional[str]]:
+    """Extract a timezone code from the metadata, returning remaining text."""
     tz_match = _TZ_PATTERN.search(meta)
-    if tz_match:
-        candidate = tz_match.group(1).upper()
-        if candidate in _TZ_OFFSETS:
-            tz_code = candidate
-            meta = meta[: tz_match.start()].strip()
+    if not tz_match:
+        return meta, None
+    candidate = tz_match.group(1).upper()
+    if candidate in _TZ_OFFSETS:
+        trimmed = meta[: tz_match.start()].strip()
+        return trimmed, candidate
+    return meta, None
 
+
+def _parse_date(meta: str) -> tuple[Optional[str], Optional[str]]:
+    """Parse date components from metadata."""
     date_match = _DATE_PATTERN.search(meta)
     if not date_match:
-        return provider_name, None, None
-
+        return None, None
     month, day, year = map(int, date_match.groups())
     compact_date = f"{year:04d}{month:02d}{day:02d}"
     iso_date = f"{year:04d}-{month:02d}-{day:02d}"
+    return iso_date, compact_date
 
+
+def _parse_time_component(
+    meta: str,
+    tz_code: Optional[str],
+    *,
+    iso_date: str,
+    compact_date: str,
+) -> tuple[str, Optional[str]]:
+    """Return ISO timestamp and encounter identifier from metadata."""
     time_match = _TIME_PATTERN.search(meta)
     if not time_match:
-        return provider_name, iso_date, compact_date
+        return iso_date, compact_date
 
     hour, minute, am_pm = time_match.groups()
     hour_int = int(hour)
@@ -168,15 +158,41 @@ def _parse_caption(caption: Optional[str]) -> tuple[Optional[str], Optional[str]
     else:
         note_iso = f"{iso_date}T{iso_time}"
 
+    return note_iso, encounter
+
+
+def _parse_caption(
+    caption: Optional[str],
+) -> tuple[Optional[str], Optional[str], Optional[str]]:
+    """Parse provider and timestamp information from a note caption."""
+    if not caption:
+        return None, None, None
+
+    provider_name, meta = _split_caption_parts(caption)
+
+    if not meta:
+        return provider_name, None, None
+
+    meta_without_tz, tz_code = _extract_timezone(meta)
+    iso_date, compact_date = _parse_date(meta_without_tz)
+    if iso_date is None or compact_date is None:
+        return provider_name, None, None
+
+    note_iso, encounter = _parse_time_component(
+        meta_without_tz,
+        tz_code,
+        iso_date=iso_date,
+        compact_date=compact_date,
+    )
     return provider_name, note_iso, encounter
 
 
-def _text_with_breaks(node: etree._Element) -> Optional[str]:
+def _text_with_breaks(node: ElementType) -> Optional[str]:
     """Traverse an HTML-ish node, preserving explicit line breaks."""
     parts: list[str] = []
 
-    def walk(elem: etree._Element) -> None:
-        text_value = _normalize_text(elem.text)
+    def walk(elem: ElementType) -> None:
+        text_value = normalize_whitespace(elem.text)
         if text_value:
             parts.append(text_value)
         for child in elem:
@@ -184,7 +200,7 @@ def _text_with_breaks(node: etree._Element) -> Optional[str]:
                 parts.append("\n")
             else:
                 walk(child)
-            tail_value = _normalize_text(child.tail)
+            tail_value = normalize_whitespace(child.tail)
             if tail_value:
                 parts.append(tail_value)
 
@@ -204,7 +220,7 @@ def _text_with_breaks(node: etree._Element) -> Optional[str]:
     return cleaned or None
 
 
-def _local_name(elem: etree._Element) -> str:
+def _local_name(elem: ElementType) -> str:
     """Return the local tag name sans namespace."""
     tag = elem.tag
     if isinstance(tag, str) and "}" in tag:

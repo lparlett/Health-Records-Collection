@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Defines Codex’s expected behavior and project conventions for the **Health-Records-Collection** repository.
+Defines Codex's expected behavior and project conventions for the **Health-Records-Collection** repository.
 Goals: reproducibility, privacy, and clarity.
 
 ---
@@ -34,6 +34,7 @@ Goals: reproducibility, privacy, and clarity.
 * Follow **PEP 8** for style, **PEP 484** for typing, **Google-style** for docstrings.
 * Use modular, testable functions with clear naming.
 * Header comment in each file: purpose, author (Codex + user), date, and related tests.
+* Verify every script passes `pylint` and is formatted with `black` before returning results to the user.
 * Keep imports explicit and alphabetized.
 * As often as practical, keep line length to 80.
 * Favor clarity over brevity; avoid one-liners that obscure logic.

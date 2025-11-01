@@ -9,9 +9,7 @@ def test_insert_vitals_links_to_existing_encounter(schema_conn, data_source_id):
         "INSERT INTO patient (given_name, family_name) VALUES (?, ?)",
         ("Test", "Patient"),
     )
-    patient_id = int(
-        schema_conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-    )
+    patient_id = int(schema_conn.execute("SELECT last_insert_rowid()").fetchone()[0])
 
     provider_id = get_or_create_provider(schema_conn, "Example Clinic")
     schema_conn.execute(

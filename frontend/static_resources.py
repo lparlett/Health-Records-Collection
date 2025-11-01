@@ -63,7 +63,7 @@ def get_attribution_block(filename: str) -> str:
         f"This {filename} is sourced from the HL7 CDA Core Stylesheet project:\n"
         "https://github.com/HL7/cda-core-xsl\n\n"
         f"Version: {CDA_CORE_VERSION}\n\n"
-        "Licensed under the Apache License, Version 2.0 (the \"License\");\n"
+        'Licensed under the Apache License, Version 2.0 (the "License");\n'
         "you may not use this file except in compliance with the License.\n"
         "You may obtain a copy of the License at\n"
         "http://www.apache.org/licenses/LICENSE-2.0\n\n"

@@ -28,12 +28,12 @@ References
 
 from __future__ import annotations
 
-from lxml import etree
+from .xml_types import ElementTreeType
 
 PatientData = dict[str, str | None]
 
 
-def parse_patient(tree: etree._ElementTree, ns: dict[str, str]) -> PatientData:
+def parse_patient(tree: ElementTreeType, ns: dict[str, str]) -> PatientData:
     """Return core demographics for the patient described in a CCD.
 
     Args:
@@ -46,7 +46,9 @@ def parse_patient(tree: etree._ElementTree, ns: dict[str, str]) -> PatientData:
     given = tree.findtext(".//hl7:patient//hl7:given", namespaces=ns)
     family = tree.findtext(".//hl7:patient//hl7:family", namespaces=ns)
     dob = tree.findtext(".//hl7:patient//hl7:birthTime", namespaces=ns)
-    gender = tree.findtext(".//hl7:patient//hl7:administrativeGenderCode", namespaces=ns)
+    gender = tree.findtext(
+        ".//hl7:patient//hl7:administrativeGenderCode", namespaces=ns
+    )
 
     return {
         "given": given,

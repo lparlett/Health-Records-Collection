@@ -59,16 +59,19 @@ def _load_progress_note_css() -> str:
     css_path = Path(__file__).resolve().parent / "static" / "progress_notes.css"
     return css_path.read_text(encoding="utf-8")
 
+
 def _load_progress_note_color_css() -> str:
     """Return the static CSS for progress note rendering."""
     colors_css_path = Path(__file__).resolve().parent / "static" / "colors.css"
     return colors_css_path.read_text(encoding="utf-8")
+
 
 def _normalize_heading_candidate(text: str) -> str:
     stripped = text.strip()
     stripped = re.sub(r"^[\-\*\u2022\uFFFD•]+\s*", "", stripped)
     stripped = stripped.rstrip(":").strip()
     return re.sub(r"\s+", " ", stripped).upper()
+
 
 def _looks_like_section_heading(line: str) -> bool:
     """Return True when a line resembles an uppercase section heading."""
@@ -131,9 +134,7 @@ def _build_progress_note_html(note_text: Optional[str], container_id: str) -> st
     )
     cleaned = re.sub(r"<br\s*/?>", "\n", cleaned, flags=re.IGNORECASE)
     paragraphs = [
-        segment.strip()
-        for segment in re.split(r"\n{2,}", cleaned)
-        if segment.strip()
+        segment.strip() for segment in re.split(r"\n{2,}", cleaned) if segment.strip()
     ]
 
     html_lines: list[str] = []
@@ -148,9 +149,7 @@ def _build_progress_note_html(note_text: Optional[str], container_id: str) -> st
                 if body_buffer:
                     body_text = "\n".join(body_buffer).strip("\n")
                     if body_text.strip():
-                        html_lines.append(
-                            f"<p>{_format_paragraph_body(body_text)}</p>"
-                        )
+                        html_lines.append(f"<p>{_format_paragraph_body(body_text)}</p>")
                     body_buffer.clear()
                 html_lines.append(
                     f'<p class="progress-note-section">{html.escape(heading_text)}</p>'
@@ -184,7 +183,9 @@ def render_progress_notes(
         try:
             color_css_rules = _load_progress_note_color_css()
             css_rules = _load_progress_note_css()
-            st.markdown(f"<style>{color_css_rules}{css_rules}</style>", unsafe_allow_html=True)
+            st.markdown(
+                f"<style>{color_css_rules}{css_rules}</style>", unsafe_allow_html=True
+            )
         except OSError:
             st.warning("Progress note styles could not be loaded.")
         else:

@@ -146,13 +146,11 @@ def _format_person_name(primary, given, family, fallback_label):
 
 def get_patients(conn):
     """Return a DataFrame of patients with a display name column."""
-    query = (
-        """
+    query = """
         SELECT id, given_name, family_name, birth_date
           FROM patient
          ORDER BY COALESCE(family_name, ''), COALESCE(given_name, ''), id
         """
-    )
     df = pd.read_sql(query, conn)
     if df.empty:
         df["display_name"] = []
@@ -174,8 +172,7 @@ def get_patients(conn):
 
 def get_patient_encounters(conn, patient_id):
     """Fetch encounter summary data for a patient."""
-    encounters_query = (
-        """
+    encounters_query = """
         SELECT e.id AS encounter_id,
                e.encounter_date,
                e.encounter_type,
@@ -188,7 +185,6 @@ def get_patient_encounters(conn, patient_id):
          WHERE e.patient_id = ?
          ORDER BY COALESCE(e.encounter_date, '' ) DESC, e.id DESC
         """
-    )
     encounters = pd.read_sql(encounters_query, conn, params=(patient_id,))
     if encounters.empty:
         encounters["provider_display_name"] = []
@@ -217,8 +213,7 @@ def _fetch_records(conn, query, params, drop=None):
 
 def get_encounter_detail(conn, encounter_id):
     """Return a dictionary containing the complete encounter detail."""
-    meta_query = (
-        """
+    meta_query = """
         SELECT e.id AS encounter_id,
                e.patient_id,
                e.encounter_date,
@@ -248,7 +243,6 @@ def get_encounter_detail(conn, encounter_id):
           LEFT JOIN attachment a ON ds.attachment_id = a.id
          WHERE e.id = ?
         """
-    )
     meta_df = pd.read_sql(meta_query, conn, params=(encounter_id,))
     if meta_df.empty:
         raise ValueError(f"Encounter {encounter_id} not found.")
@@ -274,7 +268,9 @@ def get_encounter_detail(conn, encounter_id):
             "source_archive_id": meta_row.get("source_archive_id"),
             "source_archive": meta_row.get("source_archive"),
             "source_archive_ingest_count": meta_row.get("source_archive_ingest_count"),
-            "source_archive_last_ingested_at": meta_row.get("source_archive_last_ingested_at"),
+            "source_archive_last_ingested_at": meta_row.get(
+                "source_archive_last_ingested_at"
+            ),
             "document_created": meta_row.get("document_created"),
             "repository_unique_id": meta_row.get("repository_unique_id"),
             "document_hash": meta_row.get("document_hash"),
@@ -427,8 +423,7 @@ def get_patient_vitals_timeseries(
 ):
     """Return a patient-level vital sign time series as a DataFrame."""
 
-    query = (
-        """
+    query = """
         SELECT vital_type,
                value,
                unit,
@@ -437,7 +432,6 @@ def get_patient_vitals_timeseries(
           FROM vital
          WHERE patient_id = ?
         """
-    )
     params: list = [patient_id]
     if vital_type:
         query += " AND vital_type = ?"
@@ -478,8 +472,7 @@ def get_patient_lab_timeseries(
 ):
     """Return lab result time series for a patient as a DataFrame."""
 
-    query = (
-        """
+    query = """
         SELECT loinc_code,
                test_name,
                result_value,
@@ -491,7 +484,6 @@ def get_patient_lab_timeseries(
           FROM lab_result
          WHERE patient_id = ?
         """
-    )
     params: list = [patient_id]
     if loinc_code:
         query += " AND loinc_code = ?"

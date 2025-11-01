@@ -1,4 +1,5 @@
 ﻿"""File encryption helpers for data at rest."""
+
 from __future__ import annotations
 
 import base64
@@ -29,7 +30,9 @@ except ModuleNotFoundError:  # pragma: no cover - depends on optional dependency
             out = bytearray()
             counter = 0
             while len(out) < length:
-                digest = hashlib.sha256(self._key + counter.to_bytes(8, "little")).digest()
+                digest = hashlib.sha256(
+                    self._key + counter.to_bytes(8, "little")
+                ).digest()
                 out.extend(digest)
                 counter += 1
             return bytes(out[:length])
@@ -43,7 +46,6 @@ except ModuleNotFoundError:  # pragma: no cover - depends on optional dependency
             data = base64.urlsafe_b64decode(token)
             stream = self._keystream(length=len(data))
             return bytes(a ^ b for a, b in zip(data, stream))
-
 
 
 logger = logging.getLogger(__name__)
@@ -78,7 +80,7 @@ class EncryptionManager:
         path = path.resolve()
         data = path.read_bytes()
         encrypted = self.encrypt_bytes(data)
-        secure_path = path.with_suffix(path.suffix + '.enc')
+        secure_path = path.with_suffix(path.suffix + ".enc")
         secure_path.write_bytes(encrypted)
         path.unlink()
         logger.debug("Encrypted %s -> %s", path, secure_path)
@@ -89,18 +91,19 @@ class EncryptionManager:
         encrypted_path = encrypted_path.resolve()
         plaintext = self.decrypt_bytes(encrypted_path.read_bytes())
         from importlib import import_module
+
         settings = import_module("settings")
         tmp_dir = settings.USER_SETTINGS_DIR / "tmp"
         tmp_dir.mkdir(parents=True, exist_ok=True)
         base_name = encrypted_path.stem  # removes only .enc
-        suffix = ''.join(encrypted_path.suffixes[:-1])
-        if suffix and not suffix.startswith('.'):
-            suffix = f'.{suffix}'
-        if suffix.count('.') > 1:
+        suffix = "".join(encrypted_path.suffixes[:-1])
+        if suffix and not suffix.startswith("."):
+            suffix = f".{suffix}"
+        if suffix.count(".") > 1:
             # suffixes joined like '.xml.enc' -> suffix becomes '.xml.enc'
-            suffix = '.' + '.'.join(encrypted_path.suffixes[:-1]).lstrip('.')
+            suffix = "." + ".".join(encrypted_path.suffixes[:-1]).lstrip(".")
         if not suffix:
-            suffix = ''
+            suffix = ""
         temp_name = f"{base_name}-{hashlib.sha256(str(encrypted_path).encode()).hexdigest()[:8]}{suffix}"
         temp_path = tmp_dir / temp_name
         temp_path.write_bytes(plaintext)

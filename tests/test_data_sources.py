@@ -8,6 +8,7 @@ import pytest
 
 from services.data_sources import link_attachment, upsert_data_source
 
+
 def _create_archive(conn: sqlite3.Connection, name: str) -> int:
     hash_value = hashlib.sha256(name.encode("utf-8")).hexdigest()
     conn.execute(
@@ -53,16 +54,12 @@ def test_upsert_data_source_inserts_and_updates(
     doc_path.write_text("test payload", encoding="utf-8")
 
     archive_id_1 = _create_archive(schema_conn, "batch-01.zip")
-    first_id = upsert_data_source(
-        schema_conn, doc_path, archive_id=archive_id_1
-    )
+    first_id = upsert_data_source(schema_conn, doc_path, archive_id=archive_id_1)
     assert isinstance(first_id, int) and first_id > 0
     _assert_single_row(schema_conn, "batch-01.zip")
 
     archive_id_2 = _create_archive(schema_conn, "batch-02.zip")
-    second_id = upsert_data_source(
-        schema_conn, doc_path, archive_id=archive_id_2
-    )
+    second_id = upsert_data_source(schema_conn, doc_path, archive_id=archive_id_2)
     assert second_id == first_id
     _assert_single_row(schema_conn, "batch-02.zip")
 
@@ -80,9 +77,7 @@ def test_upsert_data_source_creates_unique_rows(
     id_b = upsert_data_source(schema_conn, doc_b, archive_id=archive_id)
 
     assert id_a != id_b
-    count = schema_conn.execute(
-        "SELECT COUNT(*) FROM data_source"
-    ).fetchone()[0]
+    count = schema_conn.execute("SELECT COUNT(*) FROM data_source").fetchone()[0]
     assert count == 2
 
 
@@ -143,9 +138,7 @@ def test_link_attachment_updates_data_source(
     doc_path = tmp_path / "link.xml"
     doc_path.write_text("link", encoding="utf-8")
     archive_id = _create_archive(schema_conn, "archive.zip")
-    data_source_id = upsert_data_source(
-        schema_conn, doc_path, archive_id=archive_id
-    )
+    data_source_id = upsert_data_source(schema_conn, doc_path, archive_id=archive_id)
 
     schema_conn.execute(
         "INSERT INTO patient (given_name, family_name) VALUES (?, ?)",

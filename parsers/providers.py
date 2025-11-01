@@ -9,27 +9,27 @@
 from __future__ import annotations
 
 import re
-from typing import Optional
+from typing import Optional, Tuple
 
 KEYWORDS = (
-    ' hospital',
-    ' clinic',
-    ' health',
-    ' medical',
-    ' medicine',
-    ' center',
-    ' centre',
-    ' physicians',
-    ' associates',
-    ' associate',
-    ' the',
-    ' services',
-    ' department',
-    ' university',
-    ' institute',
-    ' group',
-    ' surgery',
-    ' of ',
+    " hospital",
+    " clinic",
+    " health",
+    " medical",
+    " medicine",
+    " center",
+    " centre",
+    " physicians",
+    " associates",
+    " associate",
+    " the",
+    " services",
+    " department",
+    " university",
+    " institute",
+    " group",
+    " surgery",
+    " of ",
 )
 
 
@@ -42,6 +42,85 @@ __all__ = [
 ]
 
 
+CREDENTIAL_PATTERN = re.compile(r"^[A-Z]{2,}(?:[./][A-Z]{2,})*$")
+CAMEL_PATTERN = re.compile(r"[A-Z][^A-Z]*")
+
+
+def _split_comma_credentials(name: str) -> Tuple[str, Optional[str]]:
+    parts = [part.strip() for part in name.split(",") if part.strip()]
+    if not parts:
+        return name.strip(), None
+    name_part = parts[0]
+    comma_credentials = " ".join(parts[1:]) if len(parts) > 1 else None
+    if comma_credentials:
+        comma_credentials = comma_credentials.strip() or None
+    return name_part, comma_credentials
+
+
+def _tokenize_name(name_part: str) -> list[str]:
+    return [token.strip() for token in name_part.split() if token.strip()]
+
+
+def _extract_trailing_credentials(tokens: list[str]) -> Tuple[list[str], list[str]]:
+    """Split trailing credential tokens (e.g., MD, FACP) from the name."""
+    tokens = tokens.copy()
+    credential_tokens: list[str] = []
+    while tokens:
+        token = tokens[-1]
+        cleaned = re.sub(r"[^A-Za-z./]", "", token)
+        stripped = cleaned.replace(".", "")
+        if CREDENTIAL_PATTERN.fullmatch(stripped):
+            credential_tokens.insert(0, stripped)
+            tokens.pop()
+            continue
+        suffix_match = re.match(r"^(.*?)([A-Z]{2,})$", stripped)
+        if suffix_match and len(tokens) == 1:
+            suffix = suffix_match.group(2)
+            base_original = token[: len(token) - len(suffix)]
+            if base_original.strip():
+                tokens[-1] = base_original
+            else:
+                tokens.pop()
+            credential_tokens.insert(0, suffix)
+            continue
+        break
+    return tokens, credential_tokens
+
+
+def _split_single_token(tokens: list[str]) -> list[str]:
+    """Split camel-cased tokens such as 'JohnSmith' into separate components."""
+    if len(tokens) != 1:
+        return tokens
+    token = tokens[0]
+    camel_parts = CAMEL_PATTERN.findall(token)
+    if len(camel_parts) >= 2:
+        return [" ".join(camel_parts[:-1]), camel_parts[-1]]
+    return tokens
+
+
+def _assign_name_components(tokens: list[str]) -> Tuple[Optional[str], Optional[str]]:
+    if not tokens:
+        return None, None
+    if len(tokens) == 1:
+        return None, tokens[0]
+    return " ".join(tokens[:-1]), tokens[-1]
+
+
+def _combine_credentials(
+    comma_credentials: Optional[str],
+    credential_tokens: list[str],
+) -> Optional[str]:
+    components = []
+    if comma_credentials:
+        components.append(comma_credentials)
+    if credential_tokens:
+        components.append(" ".join(credential_tokens))
+    if not components:
+        return None
+    combined = " ".join(components).strip()
+    return combined or None
+
+
 def normalize_spaces(value: str) -> str:
     """Return a lowercase string with all whitespace removed.
 
@@ -51,81 +130,23 @@ def normalize_spaces(value: str) -> str:
     Returns:
         str: Normalised string suitable for comparison.
     """
-    return ''.join(value.split()).lower()
+    return "".join(value.split()).lower()
 
 
 def parse_person_name(raw: str) -> tuple[Optional[str], Optional[str], Optional[str]]:
-    """Parse a provider name into given, family, and credential components.
-
-    Args:
-        raw: Original display name extracted from the CCD.
-
-    Returns:
-        tuple[Optional[str], Optional[str], Optional[str]]: Parsed name components.
-    """
-    name = (raw or '').strip()
+    """Parse a provider name into given, family, and credential components."""
+    name = (raw or "").strip()
     if not name:
         return None, None, None
+    name = re.sub(r"\s+", " ", name)
 
-    parts = [part.strip() for part in name.split(',') if part.strip()]
-    if parts:
-        name_part = parts[0]
-        comma_credentials = ' '.join(parts[1:]) or None if len(parts) > 1 else None
-    else:
-        name_part = name
-        comma_credentials = None
-
-    tokens = name_part.split()
-    if not tokens:
-        return None, None, comma_credentials
-
-    credential_tokens: list[str] = []
-    credential_pattern = re.compile(r'^[A-Z]{2,}(?:[./][A-Z]{2,})*$')
-
-    while tokens:
-        token = tokens[-1]
-        cleaned = re.sub(r'[^A-Za-z./]', '', token)
-        stripped = cleaned.replace('.', '')
-        if credential_pattern.fullmatch(stripped):
-            credential_tokens.insert(0, stripped)
-            tokens.pop()
-            continue
-        suffix_match = re.match(r'^(.*?)([A-Z]{2,})$', stripped)
-        if suffix_match and len(tokens) == 1:
-            base = suffix_match.group(1)
-            suffix = suffix_match.group(2)
-            base_original = token[: len(token) - len(suffix)]
-            if base_original:
-                tokens[-1] = base_original
-            else:
-                tokens.pop()
-            credential_tokens.insert(0, suffix)
-            continue
-        break
-
-    if len(tokens) == 1:
-        token = tokens[0]
-        camel_parts = re.findall(r'[A-Z][^A-Z]*', token)
-        if len(camel_parts) >= 2:
-            tokens = [' '.join(camel_parts[:-1]), camel_parts[-1]]
-
-    given: Optional[str] = None
-    family: Optional[str] = None
-    if tokens:
-        if len(tokens) == 1:
-            family = tokens[0]
-        else:
-            family = tokens[-1]
-            given = ' '.join(tokens[:-1])
-
-    credentials_components: list[str] = []
-    if comma_credentials:
-        credentials_components.append(comma_credentials)
-    if credential_tokens:
-        credentials_components.append(' '.join(credential_tokens))
-    credentials_value = ' '.join(credentials_components).strip() or None
-
-    return given or None, family or None, credentials_value
+    name_part, comma_credentials = _split_comma_credentials(name)
+    tokens = _tokenize_name(name_part)
+    tokens, credential_tokens = _extract_trailing_credentials(tokens)
+    tokens = _split_single_token(tokens)
+    given, family = _assign_name_components(tokens)
+    credentials_value = _combine_credentials(comma_credentials, credential_tokens)
+    return given, family, credentials_value
 
 
 def normalize_person_key(
@@ -143,12 +164,12 @@ def normalize_person_key(
     Returns:
         str: Lowercase normalisation key.
     """
-    base = ''
+    base = ""
     if given:
         base += given
     if family:
         base += family
-    base = ''.join(base.split())
+    base = "".join(base.split())
     if base:
         return base.lower()
     return normalize_spaces(fallback)
@@ -182,9 +203,21 @@ def is_probable_organization(name: str) -> bool:
         return True
     tokens = lower.split()
     if len(tokens) >= 3 and any(
-        token in {
-            'of', 'for', 'and', 'medical', 'health', 'hospital', 'clinic',
-            'physicians', 'associates', 'services', 'group', 'institute', 'university'
+        token
+        in {
+            "of",
+            "for",
+            "and",
+            "medical",
+            "health",
+            "hospital",
+            "clinic",
+            "physicians",
+            "associates",
+            "services",
+            "group",
+            "institute",
+            "university",
         }
         for token in tokens
     ):

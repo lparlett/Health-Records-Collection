@@ -75,9 +75,7 @@ def render_upload_page(
                 archive_hash = _compute_uploaded_hash(archive)
                 prior_ingest = archive_was_ingested(conn, archive_hash)
                 if prior_ingest:
-                    errors.append(
-                        _format_duplicate_message(archive.name, prior_ingest)
-                    )
+                    errors.append(_format_duplicate_message(archive.name, prior_ingest))
                     logger.info(
                         "Skipped duplicate archive %s (hash %s).",
                         archive.name,
@@ -96,7 +94,9 @@ def render_upload_page(
                 logger.warning("Validation failed for %s: %s", archive.name, exc)
             except Exception as exc:  # pragma: no cover - defensive
                 errors.append(f"Ingestion failed for {archive.name}: {exc}")
-                logger.exception("Unexpected error during ingestion for %s", archive.name)
+                logger.exception(
+                    "Unexpected error during ingestion for %s", archive.name
+                )
 
     st.session_state["upload_feedback"] = {
         "success": successes,

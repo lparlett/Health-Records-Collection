@@ -61,9 +61,7 @@ def test_insert_conditions_updates_existing_data_source(
         "provider": "Example Clinician",
         "data_source_id": data_source_id,
     }
-    assert schema_conn.execute(
-        "SELECT COUNT(*) FROM data_source"
-    ).fetchone()[0] >= 1
+    assert schema_conn.execute("SELECT COUNT(*) FROM data_source").fetchone()[0] >= 1
     insert_conditions(schema_conn, patient_id, [payload])
 
     payload["data_source_id"] = new_source

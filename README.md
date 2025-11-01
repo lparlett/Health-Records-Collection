@@ -7,6 +7,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![AI-assisted with Codex](https://img.shields.io/badge/AI--Assisted-OpenAI_Codex-blueviolet?logo=openai&logoColor=white)](AI_disclosure.md)
 [![DOI](https://zenodo.org/badge/1065521249.svg)](https://doi.org/10.5281/zenodo.17388275)
+![Codecov](https://img.shields.io/codecov/c/github/lparlett/Health-Records-Collection?logo=codecov&logoColor=%23F01F7A)
+
 <!-- markdownlint-enable MD013 -->
 
 Tools for unifying personal electronic health record (EHR) exports into an

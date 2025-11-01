@@ -169,15 +169,10 @@ def render_patient_trends(
             "encounter_id",
         ]
         parsed_ranges = series_df["reference_range"].apply(_parse_reference_range)
-        series_df["reference_low"] = parsed_ranges.map(
-            lambda bounds: bounds[0]
-        )
-        series_df["reference_high"] = parsed_ranges.map(
-            lambda bounds: bounds[1]
-        )
+        series_df["reference_low"] = parsed_ranges.map(lambda bounds: bounds[0])
+        series_df["reference_high"] = parsed_ranges.map(lambda bounds: bounds[1])
         reference_mask = (
-            series_df["reference_low"].notna()
-            & series_df["reference_high"].notna()
+            series_df["reference_low"].notna() & series_df["reference_high"].notna()
         )
         if reference_mask.any():
             toggle_key = f"trend-reference-band-{abs(hash(selected_label))}"
@@ -196,16 +191,11 @@ def render_patient_trends(
     st.caption(f"Selected series: {display_name}")
 
     units = sorted(
-        {
-            str(unit).strip()
-            for unit in series_df["unit"].dropna()
-            if str(unit).strip()
-        }
+        {str(unit).strip() for unit in series_df["unit"].dropna() if str(unit).strip()}
     )
     if len(units) > 1:
         st.warning(
-            "Multiple units detected for this series; values may not be "
-            "comparable."
+            "Multiple units detected for this series; values may not be " "comparable."
         )
     elif not units:
         st.info("No unit information recorded for this series.")
@@ -214,9 +204,7 @@ def render_patient_trends(
         series_df["value_numeric"].isna() & series_df["value_text"].notna()
     ]
     if not non_numeric.empty:
-        st.warning(
-            "Some results are non-numeric and are excluded from the chart."
-        )
+        st.warning("Some results are non-numeric and are excluded from the chart.")
 
     chart_df = series_df.dropna(subset=["measurement_time", "value_numeric"])
     if len(chart_df) >= 2:
@@ -254,12 +242,6 @@ def render_patient_trends(
         chart = chart.interactive()
         st.altair_chart(chart, use_container_width=True)
     else:
-        st.info(
-            "Not enough numeric data points with valid dates to render a "
-            "chart."
-        )
+        st.info("Not enough numeric data points with valid dates to render a " "chart.")
 
     st.dataframe(series_df[table_columns], use_container_width=True)
-
-
-

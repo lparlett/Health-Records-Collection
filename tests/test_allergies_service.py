@@ -108,4 +108,3 @@ def test_insert_allergies_inserts_and_updates(
         (patient_id,),
     ).fetchone()[0]
     assert count == 1
-

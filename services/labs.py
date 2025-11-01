@@ -54,14 +54,17 @@ def insert_labs(
             else None
         )
         performing_org_id = (
-            get_or_create_provider(conn, performing_org_name, entity_type="organization")
+            get_or_create_provider(
+                conn, performing_org_name, entity_type="organization"
+            )
             if performing_org_name
             else None
         )
         encounter_id = find_encounter_id(
             conn,
             patient_id,
-            encounter_date=clean_str(result.get("encounter_start")) or clean_str(result.get("date")),
+            encounter_date=clean_str(result.get("encounter_start"))
+            or clean_str(result.get("date")),
             provider_name=ordering_provider_name,
             provider_id=ordering_provider_id,
             source_encounter_id=clean_str(result.get("encounter_source_id")),
@@ -70,7 +73,8 @@ def insert_labs(
             encounter_id = find_encounter_id(
                 conn,
                 patient_id,
-                encounter_date=clean_str(result.get("encounter_end")) or clean_str(result.get("date")),
+                encounter_date=clean_str(result.get("encounter_end"))
+                or clean_str(result.get("date")),
                 provider_name=performing_org_name,
                 provider_id=performing_org_id,
                 source_encounter_id=clean_str(result.get("encounter_source_id")),
@@ -105,8 +109,7 @@ def insert_labs(
          WHERE patient_id = ?
     """
     existing_keys = {
-        _key(row[0], row[1])
-        for row in conn.execute(existing_keys_query, (patient_id,))
+        _key(row[0], row[1]) for row in conn.execute(existing_keys_query, (patient_id,))
     }
 
     rows_to_insert: list[Tuple[Any, ...]] = []

@@ -27,7 +27,9 @@ def _normalise_vaccine_name(name: object, fallback: object) -> Optional[str]:
     return None
 
 
-def _prepare_notes(product_name: Optional[str], existing_notes: Optional[str]) -> Optional[str]:
+def _prepare_notes(
+    product_name: Optional[str], existing_notes: Optional[str]
+) -> Optional[str]:
     """Compose a note string that includes product metadata when available."""
     parts: list[str] = []
     if product_name:

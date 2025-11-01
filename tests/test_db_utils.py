@@ -2,6 +2,7 @@ import sqlite3
 import pytest
 import frontend.db_utils as db_utils
 
+
 @pytest.fixture
 def temp_db(tmp_path):
     db_file = tmp_path / "test.db"
@@ -12,10 +13,12 @@ def temp_db(tmp_path):
     yield str(db_file)
     conn.close()
 
+
 def test_list_tables(temp_db):
     conn = sqlite3.connect(temp_db)
     tables = db_utils.list_tables(conn)
     assert "patient" in tables
+
 
 def test_get_table_preview(temp_db):
     conn = sqlite3.connect(temp_db)

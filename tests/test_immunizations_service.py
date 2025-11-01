@@ -47,7 +47,9 @@ def test_insert_immunizations_deduplicates_and_sets_provenance(
     ]
 
     insert_immunizations(schema_conn, patient_id, immunization_payload)
-    insert_immunizations(schema_conn, patient_id, immunization_payload)  # idempotent check
+    insert_immunizations(
+        schema_conn, patient_id, immunization_payload
+    )  # idempotent check
 
     rows = list(
         schema_conn.execute(

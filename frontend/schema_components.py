@@ -54,6 +54,7 @@ class EdgeSpec:
     source_anchor: Anchor
     target_anchor: Anchor
 
+
 @dataclass(frozen=True)
 class ForeignKey:
     """Foreign key relationship extracted from schema.sql."""
@@ -108,7 +109,9 @@ def _normalize_column_line(raw_line: str) -> str:
     collapsed = re.sub(r"\bAUTOINCREMENT\b", "AUTO", collapsed, flags=re.IGNORECASE)
     collapsed = re.sub(r"\bINTEGER\b", "INT", collapsed, flags=re.IGNORECASE)
     collapsed = re.sub(r"\bNOT\s+NULL\b", "NN", collapsed, flags=re.IGNORECASE)
-    collapsed = re.sub(r"\bDEFAULT\s+([^\s]+)\b", r"DEF \1", collapsed, flags=re.IGNORECASE)
+    collapsed = re.sub(
+        r"\bDEFAULT\s+([^\s]+)\b", r"DEF \1", collapsed, flags=re.IGNORECASE
+    )
     return collapsed
 
 
@@ -158,7 +161,11 @@ def _load_schema_definitions() -> tuple[TableDefinition, ...]:
         stripped = line.strip()
         upper = stripped.upper()
         if not capturing and upper.startswith("CREATE TABLE"):
-            match = re.match(r"CREATE TABLE(?: IF NOT EXISTS)?\s+([A-Za-z_][A-Za-z0-9_]*)", stripped, flags=re.IGNORECASE)
+            match = re.match(
+                r"CREATE TABLE(?: IF NOT EXISTS)?\s+([A-Za-z_][A-Za-z0-9_]*)",
+                stripped,
+                flags=re.IGNORECASE,
+            )
             if not match:
                 continue
             current_name = match.group(1)
@@ -191,7 +198,9 @@ def _load_schema_definitions() -> tuple[TableDefinition, ...]:
             current_fks.append(fk)
             continue
         upper_stripped = stripped.upper()
-        if upper_stripped.startswith("PRIMARY KEY") or upper_stripped.startswith("UNIQUE"):
+        if upper_stripped.startswith("PRIMARY KEY") or upper_stripped.startswith(
+            "UNIQUE"
+        ):
             current_columns.append(_normalize_column_line(stripped))
             continue
         if upper_stripped.startswith("CONSTRAINT"):
@@ -201,7 +210,9 @@ def _load_schema_definitions() -> tuple[TableDefinition, ...]:
     return tuple(tables)
 
 
-def _assign_layout(definitions: Sequence[TableDefinition]) -> Dict[str, tuple[int, int]]:
+def _assign_layout(
+    definitions: Sequence[TableDefinition],
+) -> Dict[str, tuple[int, int]]:
     """Return column/row positions for each table using hints with sensible fallbacks."""
     layout: Dict[str, tuple[int, int]] = dict(LAYOUT_HINTS)
     next_column = (max((col for col, _ in layout.values()), default=-1) + 1) or 0
@@ -234,7 +245,9 @@ def _build_specs() -> tuple[tuple[NodeSpec, ...], tuple[EdgeSpec, ...]]:
             )
         )
 
-    def infer_anchor(source: tuple[int, int], target: tuple[int, int]) -> tuple[Anchor, Anchor]:
+    def infer_anchor(
+        source: tuple[int, int], target: tuple[int, int]
+    ) -> tuple[Anchor, Anchor]:
         src_col, src_row = source
         tgt_col, tgt_row = target
         if src_col < tgt_col:
@@ -306,7 +319,9 @@ def render_schema_documentation() -> None:
             "Health Records Collection workspace."
         )
     )
-    diagram_html, diagram_height = _build_schema_diagram(zoom=zoom, text_color=text_color)
+    diagram_html, diagram_height = _build_schema_diagram(
+        zoom=zoom, text_color=text_color
+    )
     components.html(diagram_html, height=diagram_height, scrolling=True)
     st.markdown("### Entity Summary")
     st.table(pd.DataFrame(_schema_summary()))
@@ -355,7 +370,9 @@ def _build_schema_diagram(*, zoom: float, text_color: str) -> tuple[str, int]:
             )
         )
 
-    node_lookup: Dict[str, PositionedNode] = {node.spec.identifier: node for node in nodes}
+    node_lookup: Dict[str, PositionedNode] = {
+        node.spec.identifier: node for node in nodes
+    }
     edges_by_pair: Dict[tuple[str, str], list[EdgeSpec]] = defaultdict(list)
     outgoing_edges: Dict[str, list[EdgeSpec]] = defaultdict(list)
     incoming_edges: Dict[str, list[EdgeSpec]] = defaultdict(list)
@@ -365,22 +382,40 @@ def _build_schema_diagram(*, zoom: float, text_color: str) -> tuple[str, int]:
         edges_by_pair[(edge.source, edge.target)].append(edge)
         outgoing_edges[edge.source].append(edge)
         incoming_edges[edge.target].append(edge)
-        source_anchor_slots.setdefault(edge.source, {}).setdefault(edge.source_anchor, []).append(edge)
-        target_anchor_slots.setdefault(edge.target, {}).setdefault(edge.target_anchor, []).append(edge)
+        source_anchor_slots.setdefault(edge.source, {}).setdefault(
+            edge.source_anchor, []
+        ).append(edge)
+        target_anchor_slots.setdefault(edge.target, {}).setdefault(
+            edge.target_anchor, []
+        ).append(edge)
 
     relationship_info: Dict[str, RelationshipSummary] = {}
     row_max_height: Dict[int, float] = {}
     for node in nodes:
         outgoing = outgoing_edges.get(node.spec.identifier, [])
         incoming = incoming_edges.get(node.spec.identifier, [])
-        field_required = HEADER_BLOCK_HEIGHT + len(node.spec.fields) * FIELD_LINE_SPACING + FIELD_BOTTOM_MARGIN
+        field_required = (
+            HEADER_BLOCK_HEIGHT
+            + len(node.spec.fields) * FIELD_LINE_SPACING
+            + FIELD_BOTTOM_MARGIN
+        )
         base_height = max(BASE_CARD_HEIGHT, field_required)
         extra_height = 0.0
         if outgoing:
-            extra_height += REL_SECTION_MARGIN + REL_HEADER_OFFSET + len(outgoing) * REL_LINE_SPACING + REL_FOOTER_PADDING
+            extra_height += (
+                REL_SECTION_MARGIN
+                + REL_HEADER_OFFSET
+                + len(outgoing) * REL_LINE_SPACING
+                + REL_FOOTER_PADDING
+            )
         if incoming:
             gap = REL_SECTION_MARGIN if not outgoing else REL_SECTION_GAP
-            extra_height += gap + REL_HEADER_OFFSET + len(incoming) * REL_LINE_SPACING + REL_FOOTER_PADDING
+            extra_height += (
+                gap
+                + REL_HEADER_OFFSET
+                + len(incoming) * REL_LINE_SPACING
+                + REL_FOOTER_PADDING
+            )
         node.height = base_height + extra_height
         node.width = BASE_CARD_WIDTH
         relationship_info[node.spec.identifier] = RelationshipSummary(
@@ -388,7 +423,9 @@ def _build_schema_diagram(*, zoom: float, text_color: str) -> tuple[str, int]:
             incoming=tuple(incoming),
             base_height=base_height,
         )
-        row_max_height[node.spec.row] = max(row_max_height.get(node.spec.row, 0.0), node.height)
+        row_max_height[node.spec.row] = max(
+            row_max_height.get(node.spec.row, 0.0), node.height
+        )
 
     row_offsets: Dict[int, float] = {}
     current_y = BASE_MARGIN
@@ -400,7 +437,9 @@ def _build_schema_diagram(*, zoom: float, text_color: str) -> tuple[str, int]:
         node.x = BASE_MARGIN + node.spec.column * (BASE_CARD_WIDTH + BASE_H_GAP)
         node.y = row_offsets.get(node.spec.row, BASE_MARGIN)
 
-    def anchor_point(node_id: str, anchor: Anchor, slot: int, total: int) -> tuple[float, float]:
+    def anchor_point(
+        node_id: str, anchor: Anchor, slot: int, total: int
+    ) -> tuple[float, float]:
         node = node_lookup[node_id]
         x = node.x * scale
         y = node.y * scale
@@ -443,7 +482,9 @@ def _build_schema_diagram(*, zoom: float, text_color: str) -> tuple[str, int]:
         "</defs>",
     ]
 
-    def _curve_path(x1: float, y1: float, x2: float, y2: float, *, orientation: str) -> str:
+    def _curve_path(
+        x1: float, y1: float, x2: float, y2: float, *, orientation: str
+    ) -> str:
         if orientation == "horizontal":
             offset = max(60.0 * scale, abs(x2 - x1) / 2)
             if x2 < x1:
@@ -478,7 +519,6 @@ def _build_schema_diagram(*, zoom: float, text_color: str) -> tuple[str, int]:
         ("INT", "Integer"),
         ("NN", "Not Null"),
         ("PK", "Primary Key"),
-        
     ]
     legend_padding = 10.0 * scale
     legend_line_height = (label_size + 4.0) * scale
@@ -524,15 +564,29 @@ def _build_schema_diagram(*, zoom: float, text_color: str) -> tuple[str, int]:
     # Draw curves without inline labels
     for edges_for_pair in edges_by_pair.values():
         for edge in edges_for_pair:
-            source_slots = source_anchor_slots.get(edge.source, {}).get(edge.source_anchor, [edge])
-            target_slots = target_anchor_slots.get(edge.target, {}).get(edge.target_anchor, [edge])
+            source_slots = source_anchor_slots.get(edge.source, {}).get(
+                edge.source_anchor, [edge]
+            )
+            target_slots = target_anchor_slots.get(edge.target, {}).get(
+                edge.target_anchor, [edge]
+            )
             source_index = source_slots.index(edge)
             target_index = target_slots.index(edge)
-            start_x, start_y = anchor_point(edge.source, edge.source_anchor, source_index, len(source_slots))
-            end_x, end_y = anchor_point(edge.target, edge.target_anchor, target_index, len(target_slots))
-            if edge.source_anchor in {"left", "right"} and edge.target_anchor in {"left", "right"}:
+            start_x, start_y = anchor_point(
+                edge.source, edge.source_anchor, source_index, len(source_slots)
+            )
+            end_x, end_y = anchor_point(
+                edge.target, edge.target_anchor, target_index, len(target_slots)
+            )
+            if edge.source_anchor in {"left", "right"} and edge.target_anchor in {
+                "left",
+                "right",
+            }:
                 orientation = "horizontal"
-            elif edge.source_anchor in {"top", "bottom"} and edge.target_anchor in {"top", "bottom"}:
+            elif edge.source_anchor in {"top", "bottom"} and edge.target_anchor in {
+                "top",
+                "bottom",
+            }:
                 orientation = "vertical"
             else:
                 orientation = "diagonal"
@@ -568,7 +622,11 @@ def _build_schema_diagram(*, zoom: float, text_color: str) -> tuple[str, int]:
             )
         )
         for idx, field in enumerate(node.spec.fields, start=1):
-            line_y = title_y + (HEADER_BLOCK_HEIGHT - 8.0) * scale + (idx - 1) * FIELD_LINE_SPACING * scale
+            line_y = (
+                title_y
+                + (HEADER_BLOCK_HEIGHT - 8.0) * scale
+                + (idx - 1) * FIELD_LINE_SPACING * scale
+            )
             if line_y + 16 * scale > y + height:
                 break
             svg.append(
@@ -610,7 +668,11 @@ def _build_schema_diagram(*, zoom: float, text_color: str) -> tuple[str, int]:
                         "</text>"
                     )
                 )
-            cursor = header_y + len(summary.outgoing) * (REL_LINE_SPACING * scale) + REL_FOOTER_PADDING * scale
+            cursor = (
+                header_y
+                + len(summary.outgoing) * (REL_LINE_SPACING * scale)
+                + REL_FOOTER_PADDING * scale
+            )
 
         if summary.incoming:
             gap = REL_SECTION_GAP if summary.outgoing else REL_SECTION_MARGIN
@@ -636,7 +698,11 @@ def _build_schema_diagram(*, zoom: float, text_color: str) -> tuple[str, int]:
                         "</text>"
                     )
                 )
-            cursor = header_y + len(summary.incoming) * (REL_LINE_SPACING * scale) + REL_FOOTER_PADDING * scale
+            cursor = (
+                header_y
+                + len(summary.incoming) * (REL_LINE_SPACING * scale)
+                + REL_FOOTER_PADDING * scale
+            )
 
     svg.append("</svg></div>")
     return "".join(svg), int(diagram_height + 40)
@@ -647,9 +713,7 @@ def _schema_summary() -> Iterable[dict[str, str]]:
     return [
         {
             "Table": "data_source",
-            "Purpose": (
-                "Provenance details for every ingested document or archive."
-            ),
+            "Purpose": ("Provenance details for every ingested document or archive."),
         },
         {
             "Table": "patient",
@@ -689,8 +753,6 @@ def _schema_summary() -> Iterable[dict[str, str]]:
         },
         {
             "Table": "attachment",
-            "Purpose": (
-                "Supplemental documents linked to data sources and patients."
-            ),
+            "Purpose": ("Supplemental documents linked to data sources and patients."),
         },
     ]

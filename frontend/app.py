@@ -86,9 +86,7 @@ def _offer_lock_button() -> None:
 
 def main() -> None:
     """Entrypoint invoked by Streamlit."""
-    st.set_page_config(
-        page_title=CONFIG["page_title"], layout=CONFIG["layout"]
-    )
+    st.set_page_config(page_title=CONFIG["page_title"], layout=CONFIG["layout"])
     _initialise_session_state()
 
     if st.session_state[PASS_STATE_KEY] is None:
@@ -99,9 +97,7 @@ def main() -> None:
         st.stop()
 
     try:
-        conn = db_utils.get_connection(
-            passphrase=st.session_state[PASS_STATE_KEY]
-        )
+        conn = db_utils.get_connection(passphrase=st.session_state[PASS_STATE_KEY])
     except RuntimeError:
         st.session_state[PASS_STATE_KEY] = None
         st.session_state[ERROR_STATE_KEY] = (

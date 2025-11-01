@@ -36,12 +36,15 @@ def insert_procedures(
     cur = conn.cursor()
     for proc in procedures:
         provider_name = clean_str(proc.get("provider"))
-        provider_id = get_or_create_provider(conn, provider_name) if provider_name else None
+        provider_id = (
+            get_or_create_provider(conn, provider_name) if provider_name else None
+        )
 
         encounter_id = find_encounter_id(
             conn,
             patient_id,
-            encounter_date=clean_str(proc.get("date")) or clean_str(proc.get("author_time")),
+            encounter_date=clean_str(proc.get("date"))
+            or clean_str(proc.get("author_time")),
             provider_name=provider_name,
             provider_id=provider_id,
             source_encounter_id=clean_str(proc.get("encounter_source_id")),

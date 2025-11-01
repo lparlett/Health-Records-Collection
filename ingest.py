@@ -1,27 +1,28 @@
-from __future__ import annotations
-
 # Purpose: Orchestrate ingestion of CCD archives into the project SQLite datastore.
 # Author: Codex + Lauren
 # Date: 2025-10-11
 # Related tests: tests/test_ingest.py
 # AI-assisted: Portions of this file were generated with AI assistance.
-
 """Main ingestion workflow for CCD archives."""
 
+from __future__ import annotations
+
 import argparse
+from collections.abc import Iterable
+from contextlib import closing
+from datetime import datetime, timezone
 import hashlib
 import logging
 import mimetypes
+from pathlib import Path
 import sqlite3
 import zipfile
-import settings
-from contextlib import closing
-from datetime import datetime, timezone
-from pathlib import Path
-from collections.abc import Iterable
-from typing import Any, Dict, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Optional, Sequence
 
-from lxml import etree
+from defusedxml.lxml import parse as safe_parse
+from lxml import etree  # nosec
+
+import settings
 from db.schema import ensure_schema
 from parsers import (
     parse_allergies,
@@ -36,6 +37,7 @@ from parsers import (
     parse_progress_notes,
     parse_vitals,
 )
+from security import encryption
 from services.allergies import insert_allergies
 from services.archives import archive_was_ingested, register_ingested_archive
 from services.attachments import upsert_attachment
@@ -43,15 +45,21 @@ from services.common import clean_str
 from services.conditions import insert_conditions
 from services.data_sources import link_attachment, upsert_data_source
 from services.encounters import insert_encounters
-from services.insurance import upsert_insurance
 from services.immunizations import insert_immunizations
+from services.insurance import upsert_insurance
 from services.labs import insert_labs
 from services.medications import insert_medications
 from services.patient import insert_patient
 from services.procedures import insert_procedures
 from services.progress_notes import insert_progress_notes
 from services.vitals import insert_vitals
-from security import encryption
+
+if TYPE_CHECKING:
+    from lxml.etree import _Element as EtreeElement  # nosec B410 - typing only
+    from lxml.etree import _ElementTree as EtreeElementTree  # nosec B410 - typing only
+else:  # pragma: no cover - runtime-only fallback for typing
+    EtreeElement = Any
+    EtreeElementTree = Any
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +117,7 @@ def init_db() -> sqlite3.Connection:
 
     Raises:
         sqlite3.Error: If the database connection cannot be established.
+        OSError: If the schema file cannot be read.
     """
     paths = settings.load_paths()
     db_path = paths["db_path"]
@@ -129,22 +138,22 @@ def init_db() -> sqlite3.Connection:
 
 
 def _xpath_elements(
-    node: etree._Element | etree._ElementTree,
+    node: EtreeElement | EtreeElementTree,
     expression: str,
     ns: dict[str, str],
-) -> list[etree._Element]:
+) -> list[EtreeElement]:
     """Return a list of element nodes extracted via XPath."""
-    if isinstance(node, etree._ElementTree):
+    if isinstance(node, etree._ElementTree):  # pylint: disable=protected-access
         node = node.getroot()
     if node is None or not hasattr(node, "xpath"):
         return []
     raw = node.xpath(expression, namespaces=ns)
-    elements: list[etree._Element] = []
-    if isinstance(raw, etree._Element):
+    elements: list[EtreeElement] = []
+    if isinstance(raw, etree._Element):  # pylint: disable=protected-access
         elements.append(raw)
     elif isinstance(raw, Iterable) and not isinstance(raw, (str, bytes)):
         for item in raw:
-            if isinstance(item, etree._Element):
+            if isinstance(item, etree._Element):  # pylint: disable=protected-access
                 elements.append(item)
     return elements
 
@@ -184,7 +193,8 @@ def parse_ccd(xml_file: Path) -> ParsedCCD:
         ParsedCCD: A dictionary with parsed patient and clinical sections.
     """
     try:
-        tree = etree.parse(str(xml_file))
+        # Bandit B320: safe_parse from defusedxml mitigates XML entity attacks.
+        tree = safe_parse(str(xml_file))
     except (OSError, etree.XMLSyntaxError) as exc:
         logger.warning("Skipping malformed XML %s: %s", xml_file.name, exc)
         return {}
@@ -227,6 +237,7 @@ def ingest_archive(
     Args:
         conn: Open SQLite connection.
         archive_path: ZIP archive to ingest.
+        archive_sha256: Optional precomputed archive hash to avoid re-hashing.
     """
     if archive_sha256 is None:
         try:
@@ -244,10 +255,16 @@ def ingest_archive(
         )
         return
 
-    app_settings = settings.load_settings()
-    settings.ensure_runtime_paths(app_settings)
-    paths = app_settings["paths"]
-    ingestion_settings = app_settings["ingestion"]
+    paths = settings.load_paths()
+    ingestion_settings: dict[str, Any] = {
+        **getattr(settings, "DEFAULT_SETTINGS", {}).get("ingestion", {})
+    }
+    load_settings_fn = getattr(settings, "load_settings", None)
+    if callable(load_settings_fn):
+        try:
+            ingestion_settings = load_settings_fn().get("ingestion", ingestion_settings)
+        except Exception:  # pragma: no cover - defensive fallback
+            logger.debug("Falling back to default ingestion settings.", exc_info=True)
 
     destination = paths["parsed_dir"] / archive_path.stem
     unzip_raw_files(archive_path, destination)
@@ -280,11 +297,20 @@ def ingest_archive(
         archive_id,
     )
 
+    delete_archive_flag = bool(ingestion_settings.get("delete_uploaded_archives", True))
+    delete_non_xml_flag = bool(ingestion_settings.get("delete_unencrypted_extracted_files", True))
+    if delete_archive_flag:
+        try:
+            if archive_path.resolve().parent != paths["raw_dir"].resolve():
+                delete_archive_flag = False
+        except OSError:
+            delete_archive_flag = False
+
     _finalise_ingestion_artifacts(
         archive_path,
         destination,
-        delete_archive=ingestion_settings["delete_uploaded_archives"],
-        delete_non_xml=ingestion_settings["delete_unencrypted_extracted_files"],
+        delete_archive=delete_archive_flag,
+        delete_non_xml=delete_non_xml_flag,
     )
 
 
@@ -360,6 +386,11 @@ def _ingest_documents_from_archive(
     archive_name: str,
 ) -> list[int]:
     """Process all CCD documents within a prepared archive directory."""
+    logger.debug(
+        "Scanning %s for CCD documents extracted from %s.",
+        destination,
+        archive_path,
+    )
     data_source_ids: set[int] = set()
     for xml_file in destination.rglob("*.xml"):
         if xml_file.name.lower() == "metadata.xml":
@@ -486,7 +517,7 @@ def _load_metadata(root: Path) -> dict[str, dict[str, Any]]:
     ns = {"rim": "urn:oasis:names:tc:ebxml-regrep:xsd:rim:3.0"}
     for metadata_path in root.rglob("METADATA.XML"):
         try:
-            tree = etree.parse(str(metadata_path))
+            tree = safe_parse(str(metadata_path))  # Using defusedxml for secure XML parsing.
         except (OSError, etree.XMLSyntaxError) as exc:
             logger.warning("Unable to parse metadata %s: %s", metadata_path, exc)
             continue
@@ -581,12 +612,12 @@ def _record_attachment(
     manager = encryption.get_encryption_manager()
     try:
         secure_path = manager.encrypt_file(file_path)
-    except Exception as exc:  # pragma: no cover - defensive
+    except (OSError, RuntimeError, ValueError) as exc:  # pragma: no cover - defensive
         logger.warning("Unable to encrypt attachment %s: %s", file_path, exc)
         secure_path = file_path
     try:
         relative_path = _relative_attachment_path(secure_path)
-    except Exception as exc:  # pragma: no cover - defensive
+    except ValueError as exc:  # pragma: no cover - defensive
         logger.warning("Unable to resolve attachment path for %s: %s", secure_path, exc)
         relative_path = secure_path
 

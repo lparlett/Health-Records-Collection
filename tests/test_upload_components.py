@@ -128,7 +128,9 @@ def test_render_upload_page_ingests_archives(monkeypatch, tmp_path):
     stubs = _StreamlitStub(uploads=[stub_file], submit_result=True)
     monkeypatch.setattr(upload_components, "st", stubs)
     monkeypatch.setattr(upload_components, "RAW_ARCHIVE_DIR", tmp_path)
-    monkeypatch.setattr(upload_components, "archive_was_ingested", lambda conn, sha: None)
+    monkeypatch.setattr(
+        upload_components, "archive_was_ingested", lambda conn, sha: None
+    )
 
     ingested_paths: List[Path] = []
     received_hashes: List[str] = []
@@ -183,7 +185,9 @@ def test_render_upload_page_blocks_oversized_archives(monkeypatch, tmp_path):
     stubs = _StreamlitStub(uploads=[stub_file], submit_result=True)
     monkeypatch.setattr(upload_components, "st", stubs)
     monkeypatch.setattr(upload_components, "RAW_ARCHIVE_DIR", tmp_path)
-    monkeypatch.setattr(upload_components, "archive_was_ingested", lambda conn, sha: None)
+    monkeypatch.setattr(
+        upload_components, "archive_was_ingested", lambda conn, sha: None
+    )
 
     ingest_called = False
 
@@ -225,7 +229,9 @@ def test_render_upload_page_rejects_non_zip(monkeypatch, tmp_path):
     stubs = _StreamlitStub(uploads=[stub_file], submit_result=True)
     monkeypatch.setattr(upload_components, "st", stubs)
     monkeypatch.setattr(upload_components, "RAW_ARCHIVE_DIR", tmp_path)
-    monkeypatch.setattr(upload_components, "archive_was_ingested", lambda conn, sha: None)
+    monkeypatch.setattr(
+        upload_components, "archive_was_ingested", lambda conn, sha: None
+    )
 
     ingest_called = False
 

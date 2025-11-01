@@ -58,7 +58,9 @@ def find_encounter_id(
         row = cur.execute(sql, params).fetchone()
         return row[0] if row else None
 
-    def run_query(base_sql: str, base_params: list[Any], order_clause: str) -> Optional[int]:
+    def run_query(
+        base_sql: str, base_params: list[Any], order_clause: str
+    ) -> Optional[int]:
         if provider_id is not None:
             params_with_provider = tuple(base_params + [provider_id])
             sql_with_provider = (
@@ -76,14 +78,12 @@ def find_encounter_id(
     # Look for exact date match first
     if encounter_date:
         params = [patient_id, encounter_date]
-        base_sql = (
-            """
+        base_sql = """
             SELECT id
               FROM encounter
              WHERE patient_id = ?
                AND COALESCE(encounter_date, '') = COALESCE(?, '')
             """
-        )
         match = run_query(base_sql, params, " ORDER BY id DESC LIMIT 1")
         if match is not None:
             return match
@@ -91,14 +91,12 @@ def find_encounter_id(
     # Then try matching just the day portion
     if encounter_day:
         params = [patient_id, encounter_day]
-        base_sql = (
-            """
+        base_sql = """
             SELECT id
               FROM encounter
              WHERE patient_id = ?
                AND substr(COALESCE(encounter_date, ''), 1, 8) = ?
             """
-        )
         match = run_query(
             base_sql,
             params,
@@ -108,14 +106,14 @@ def find_encounter_id(
             return match
 
     if provider_id is not None:
-        base_sql = (
-            """
+        base_sql = """
             SELECT id
               FROM encounter
              WHERE patient_id = ?
             """
+        return run_query(
+            base_sql, [patient_id], " ORDER BY encounter_date DESC, id DESC LIMIT 1"
         )
-        return run_query(base_sql, [patient_id], " ORDER BY encounter_date DESC, id DESC LIMIT 1")
 
     return None
 
@@ -141,7 +139,12 @@ def insert_encounters(
         source_encounter_id = clean_str(enc.get("source_id"))
         provider_name = clean_str(enc.get("provider"))
         provider_id = coerce_int(enc.get("provider_id"))
-        if provider_id is None and provider_name and encounter_date and source_encounter_id:
+        if (
+            provider_id is None
+            and provider_name
+            and encounter_date
+            and source_encounter_id
+        ):
             provider_id = get_or_create_provider(conn, provider_name)
         encounter_type = clean_str(enc.get("type"))
         reason_for_visit = clean_str(enc.get("reason_for_visit"))
@@ -164,7 +167,9 @@ def insert_encounters(
         org_name = enc.get("organization")
         organization_id = None
         if isinstance(org_name, str):
-            organization_id = get_or_create_provider(conn, org_name, entity_type="organization")
+            organization_id = get_or_create_provider(
+                conn, org_name, entity_type="organization"
+            )
 
         existing = cur.execute(
             """

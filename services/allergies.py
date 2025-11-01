@@ -71,7 +71,9 @@ def insert_allergies(
         source_id = clean_str(entry.get("source_allergy_id"))
 
         provider_name = clean_str(entry.get("provider"))
-        provider_id = get_or_create_provider(conn, provider_name) if provider_name else None
+        provider_id = (
+            get_or_create_provider(conn, provider_name) if provider_name else None
+        )
 
         encounter_id = find_encounter_id(
             conn,
@@ -183,7 +185,11 @@ def insert_allergies(
 
             coded_updates = [
                 ("reaction_code", reaction_code, existing_reaction_code),
-                ("reaction_code_system", reaction_code_system, existing_reaction_system),
+                (
+                    "reaction_code_system",
+                    reaction_code_system,
+                    existing_reaction_system,
+                ),
             ]
             for column, new_value, old_value in coded_updates:
                 if new_value and (old_value or "") != new_value:
@@ -238,4 +244,3 @@ def insert_allergies(
 
     conn.commit()
     return (inserted, updated)
-

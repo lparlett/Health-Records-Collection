@@ -74,7 +74,7 @@ def get_or_create_provider(
         org_name = raw_name if is_probable_organization(raw_name) else raw_org
         if not org_name:
             return None
-            
+
         normalized_key = normalize_organization_key(org_name)
         given_name = None
         family_name = None
