@@ -11,9 +11,12 @@ from __future__ import annotations
 import sqlite3
 from typing import Iterable, Mapping, Sequence
 
-from db.utils import insert_records
-from services.common import clean_str, coerce_int
-from services.encounters import find_encounter_id
+from health_records_collection.db.utils import insert_records
+from health_records_collection.services.common import clean_str, coerce_int
+from health_records_collection.services.encounters import (
+    EncounterLookup,
+    find_encounter_id,
+)
 
 __all__ = ["insert_vitals"]
 
@@ -69,24 +72,24 @@ def insert_vitals(
             or clean_str(vital.get("encounter_end"))
         )
         provider_name = clean_str(vital.get("provider"))
-        encounter_source_id = clean_str(vital.get("encounter_source_id"))
-        encounter_id = find_encounter_id(
-            conn,
-            patient_id,
+        
+        lookup = EncounterLookup(
+            patient_id=patient_id,
             encounter_date=measurement_date,
             provider_name=provider_name,
-            source_encounter_id=encounter_source_id,
         )
+        encounter_id = find_encounter_id(conn, lookup)
+        
+        # Try fallback to encounter end date if different
         if encounter_id is None:
             fallback_date = clean_str(vital.get("encounter_end"))
             if fallback_date and fallback_date != measurement_date:
-                encounter_id = find_encounter_id(
-                    conn,
-                    patient_id,
+                lookup = EncounterLookup(
+                    patient_id=patient_id,
                     encounter_date=fallback_date,
                     provider_name=provider_name,
-                    source_encounter_id=encounter_source_id,
                 )
+                encounter_id = find_encounter_id(conn, lookup)
 
         ds_id = coerce_int(vital.get("data_source_id"))
 

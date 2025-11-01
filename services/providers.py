@@ -10,13 +10,13 @@ from __future__ import annotations
 import sqlite3
 from typing import Optional
 
-from parsers.providers import (
+from health_records_collection.parsers.providers import (
     is_probable_organization,
     normalize_organization_key,
     normalize_person_key,
     parse_person_name,
 )
-from services.common import clean_str
+from health_records_collection.services.common import clean_str
 
 ProviderKey = str
 _PROVIDER_CACHE: dict[ProviderKey, int] = {}
@@ -134,9 +134,8 @@ def get_or_create_provider(
         ),
     )
     conn.commit()
-    provider_id = cur.lastrowid
-    if provider_id is None:
+    if cur.lastrowid is None:
         raise sqlite3.DatabaseError("Failed to insert provider; lastrowid is None.")
-    provider_id = int(provider_id)
+    provider_id = int(cur.lastrowid)
     _PROVIDER_CACHE[cache_key] = provider_id
     return provider_id

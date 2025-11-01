@@ -10,9 +10,9 @@ from __future__ import annotations
 import logging
 from copy import deepcopy
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Union
 
-import yaml
+import yaml  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +61,9 @@ def load_settings() -> Dict[str, Dict[str, Any]]:
     settings_bundle = deepcopy(DEFAULT_SETTINGS)
     if SETTINGS_FILE.exists():
         try:
-            user_settings = yaml.safe_load(SETTINGS_FILE.read_text(encoding="utf-8")) or {}
+            user_settings = (
+                yaml.safe_load(SETTINGS_FILE.read_text(encoding="utf-8")) or {}
+            )
             if isinstance(user_settings, dict):
                 settings_bundle = _merge_dicts(settings_bundle, user_settings)
             else:
@@ -100,10 +102,12 @@ def load_paths() -> Dict[str, Path]:
     return settings_bundle["paths"]
 
 
-def _serialise_settings(data: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+def _serialise_settings(
+    settings_data: Dict[str, Dict[str, Any]]
+    ) -> Dict[str, Dict[str, Union[str, Any]]]:
     """Convert paths to strings while preserving other scalar values."""
     serialised: Dict[str, Dict[str, Any]] = {}
-    for section, values in data.items():
+    for section, values in settings_data.items():
         if section == "paths":
             serialised[section] = {
                 key: str(Path(value).expanduser())
@@ -123,7 +127,5 @@ def save_settings(updates: Dict[str, Dict[str, Any]]) -> None:
     merged = _merge_dicts(serialisable_current, serialisable_updates)
 
     SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    SETTINGS_FILE.write_text(
-        yaml.safe_dump(merged, sort_keys=True), encoding="utf-8"
-    )
+    SETTINGS_FILE.write_text(yaml.safe_dump(merged, sort_keys=True), encoding="utf-8")
     logger.debug("User settings saved to %s", SETTINGS_FILE)

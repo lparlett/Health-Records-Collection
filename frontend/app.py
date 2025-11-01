@@ -8,13 +8,15 @@
 from __future__ import annotations
 
 import logging
+from functools import lru_cache
 from pathlib import Path
+from typing import Any, Final, Literal, Mapping, cast
 
-import streamlit as st
-import yaml
+import streamlit as st  # type: ignore
+import yaml  # type: ignore
 
-from frontend import db_utils, views
-from security import sqlcipher_support
+from health_records_collection.frontend import db_utils, views
+from health_records_collection.security import sqlcipher_support
 
 # Configure logging
 logging.basicConfig(
@@ -23,13 +25,32 @@ logging.basicConfig(
     handlers=[logging.StreamHandler()],
 )
 
-PASS_STATE_KEY = "db_passphrase"
-ERROR_STATE_KEY = "db_passphrase_error"
+DEFAULT_CONFIG: Final[Mapping[str, str]] = {
+    "page_title": "Health Records Dashboard",
+    "layout": "wide",
+}
+SECRET_STATE_KEY: Final[str] = "session_secret"
+ERROR_STATE_KEY: Final[str] = "credential_error"
 
-# Load config
 CONFIG_PATH = Path(__file__).parent / "config.yaml"
-with open(CONFIG_PATH, "r", encoding="utf-8") as config_file:
-    CONFIG = yaml.safe_load(config_file)
+
+
+@lru_cache(maxsize=1)
+def _load_config() -> Mapping[str, Any]:
+    """Return Streamlit configuration merged with defaults."""
+    config: Mapping[str, Any] = DEFAULT_CONFIG
+    if CONFIG_PATH.exists():
+        try:
+            with CONFIG_PATH.open("r", encoding="utf-8") as handle:
+                loaded = yaml.safe_load(handle)
+        except (OSError, yaml.YAMLError) as exc:  # type: ignore[attr-defined]
+            logging.warning("Failed to read %s: %s", CONFIG_PATH, exc)
+        else:
+            if isinstance(loaded, dict):
+                config = {**DEFAULT_CONFIG, **loaded}
+            else:
+                logging.warning("Config at %s is not a mapping; using defaults.", CONFIG_PATH)
+    return config
 
 
 def _divider() -> None:
@@ -42,8 +63,8 @@ def _divider() -> None:
 
 def _initialise_session_state() -> None:
     """Ensure required Streamlit session keys exist."""
-    if PASS_STATE_KEY not in st.session_state:
-        st.session_state[PASS_STATE_KEY] = None
+    if SECRET_STATE_KEY not in st.session_state:
+        st.session_state[SECRET_STATE_KEY] = None
     if ERROR_STATE_KEY not in st.session_state:
         st.session_state[ERROR_STATE_KEY] = ""
 
@@ -70,7 +91,7 @@ def _render_unlock_form() -> None:
             )
         else:
             conn.close()
-            st.session_state[PASS_STATE_KEY] = passphrase
+            st.session_state[SECRET_STATE_KEY] = passphrase
             st.session_state[ERROR_STATE_KEY] = ""
             st.rerun()
 
@@ -78,7 +99,7 @@ def _render_unlock_form() -> None:
 def _offer_lock_button() -> None:
     """Provide a control for clearing the cached passphrase."""
     if st.sidebar.button("Lock database", use_container_width=True):
-        st.session_state[PASS_STATE_KEY] = None
+        st.session_state[SECRET_STATE_KEY] = None
         st.session_state[ERROR_STATE_KEY] = ""
         sqlcipher_support.clear_cached_passphrase()
         st.rerun()
@@ -86,28 +107,34 @@ def _offer_lock_button() -> None:
 
 def main() -> None:
     """Entrypoint invoked by Streamlit."""
-    st.set_page_config(page_title=CONFIG["page_title"], layout=CONFIG["layout"])
+    config = _load_config()
+    page_title = str(config.get("page_title", DEFAULT_CONFIG["page_title"]))
+    layout_setting = str(config.get("layout", DEFAULT_CONFIG["layout"])).lower()
+    layout: Literal["centered", "wide"] = "wide"
+    if layout_setting in {"centered", "wide"}:
+        layout = cast(Literal["centered", "wide"], layout_setting)
+
+    st.set_page_config(page_title=page_title, layout=layout)
     _initialise_session_state()
 
-    if st.session_state[PASS_STATE_KEY] is None:
-        st.title(CONFIG["page_title"])
+    if st.session_state[SECRET_STATE_KEY] is None:
+        st.title(page_title)
         _render_unlock_form()
         if st.session_state[ERROR_STATE_KEY]:
             st.error(st.session_state[ERROR_STATE_KEY])
         st.stop()
 
+    conn: Any | None = None
     try:
-        conn = db_utils.get_connection(passphrase=st.session_state[PASS_STATE_KEY])
+        conn = db_utils.get_connection(passphrase=st.session_state[SECRET_STATE_KEY])
     except RuntimeError:
-        st.session_state[PASS_STATE_KEY] = None
+        st.session_state[SECRET_STATE_KEY] = None
         st.session_state[ERROR_STATE_KEY] = (
             "Stored passphrase is no longer valid. Please re-enter it."
         )
         st.rerun()
-        st.stop()
-
-    try:
-        st.title(CONFIG["page_title"])
+    else:
+        st.title(page_title)
         _offer_lock_button()
         show_overview = views.render_patient_encounter_experience(conn)
         if show_overview:
@@ -116,7 +143,8 @@ def main() -> None:
             _divider()
             views.show_query(conn)
     finally:
-        conn.close()
+        if conn is not None:
+            conn.close()
 
 
 if __name__ == "__main__":

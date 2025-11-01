@@ -11,9 +11,12 @@ from __future__ import annotations
 import sqlite3
 from typing import Any, Mapping, Sequence, Tuple
 
-from services.common import clean_str, coerce_int
-from services.encounters import find_encounter_id
-from services.providers import get_or_create_provider
+from health_records_collection.services.common import clean_str, coerce_int
+from health_records_collection.services.encounters import (
+    EncounterLookup,
+    find_encounter_id,
+)
+from health_records_collection.services.providers import get_or_create_provider
 
 __all__ = ["insert_labs"]
 
@@ -30,20 +33,6 @@ def insert_labs(
         patient_id: Identifier for the patient owning the results.
         labs: Sequence of parsed lab observations.
     """
-    columns = [
-        "patient_id",
-        "encounter_id",
-        "loinc_code",
-        "test_name",
-        "result_value",
-        "unit",
-        "reference_range",
-        "abnormal_flag",
-        "date",
-        "ordering_provider_id",
-        "performing_org_id",
-        "data_source_id",
-    ]
 
     def build_row(result: Mapping[str, object]) -> Tuple[Any, ...]:
         ordering_provider_name = clean_str(result.get("ordering_provider"))
@@ -60,25 +49,28 @@ def insert_labs(
             if performing_org_name
             else None
         )
-        encounter_id = find_encounter_id(
-            conn,
-            patient_id,
-            encounter_date=clean_str(result.get("encounter_start"))
-            or clean_str(result.get("date")),
+        # Try with ordering provider and start date
+        lookup = EncounterLookup(
+            patient_id=patient_id,
+            encounter_date=clean_str(
+                result.get("encounter_start")
+                ) or clean_str(result.get("date")),
             provider_name=ordering_provider_name,
             provider_id=ordering_provider_id,
-            source_encounter_id=clean_str(result.get("encounter_source_id")),
         )
+        encounter_id = find_encounter_id(conn, lookup)
+        
+        # Fall back to performing org and end date
         if encounter_id is None:
-            encounter_id = find_encounter_id(
-                conn,
-                patient_id,
-                encounter_date=clean_str(result.get("encounter_end"))
-                or clean_str(result.get("date")),
+            lookup = EncounterLookup(
+                patient_id=patient_id,
+                encounter_date=clean_str(
+                    result.get("encounter_end")
+                    ) or clean_str(result.get("date")),
                 provider_name=performing_org_name,
                 provider_id=performing_org_id,
-                source_encounter_id=clean_str(result.get("encounter_source_id")),
             )
+            encounter_id = find_encounter_id(conn, lookup)
         ds_id = coerce_int(result.get("data_source_id"))
         return (
             patient_id,
@@ -126,8 +118,24 @@ def insert_labs(
     if not rows_to_insert:
         return
 
-    placeholders = ", ".join(["?"] * len(columns))
-    sql = f"INSERT INTO lab_result ({', '.join(columns)}) VALUES ({placeholders})"
+    # Use a static INSERT query with fixed column order
+    INSERT_QUERY = """
+        INSERT INTO lab_result (
+            patient_id,
+            encounter_id,
+            loinc_code,
+            test_name,
+            result_value,
+            unit,
+            reference_range,
+            abnormal_flag,
+            date,
+            ordering_provider_id,
+            performing_org_id,
+            data_source_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """
+
     cur = conn.cursor()
-    cur.executemany(sql, rows_to_insert)
+    cur.executemany(INSERT_QUERY, rows_to_insert)
     conn.commit()

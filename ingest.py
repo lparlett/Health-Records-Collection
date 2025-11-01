@@ -19,12 +19,15 @@ import sqlite3
 import zipfile
 from typing import TYPE_CHECKING, Any, Optional, Sequence
 
-from defusedxml.lxml import parse as safe_parse
-from lxml import etree  # nosec
+import yaml  # type: ignore
+from defusedxml.lxml import parse as safe_parse  # type: ignore
+from defusedxml.common import DefusedXmlException as XMLSyntaxError
+from lxml import etree  # type: ignore # nosec
 
-import settings
-from db.schema import ensure_schema
-from parsers import (
+
+from health_records_collection import settings
+from health_records_collection.db.schema import ensure_schema
+from health_records_collection.parsers import (
     parse_allergies,
     parse_conditions,
     parse_encounters,
@@ -37,25 +40,31 @@ from parsers import (
     parse_progress_notes,
     parse_vitals,
 )
-from security import encryption
-from services.allergies import insert_allergies
-from services.archives import archive_was_ingested, register_ingested_archive
-from services.attachments import upsert_attachment
-from services.common import clean_str
-from services.conditions import insert_conditions
-from services.data_sources import link_attachment, upsert_data_source
-from services.encounters import insert_encounters
-from services.immunizations import insert_immunizations
-from services.insurance import upsert_insurance
-from services.labs import insert_labs
-from services.medications import insert_medications
-from services.patient import insert_patient
-from services.procedures import insert_procedures
-from services.progress_notes import insert_progress_notes
-from services.vitals import insert_vitals
+from health_records_collection.security import encryption
+from health_records_collection.services.allergies import insert_allergies
+from health_records_collection.services.archives import (
+    archive_was_ingested,
+    register_ingested_archive
+)
+from health_records_collection.services.attachments import upsert_attachment
+from health_records_collection.services.common import clean_str
+from health_records_collection.services.conditions import insert_conditions
+from health_records_collection.services.data_sources import (
+    link_attachment,
+    upsert_data_source
+)
+from health_records_collection.services.encounters import insert_encounters
+from health_records_collection.services.immunizations import insert_immunizations
+from health_records_collection.services.insurance import upsert_insurance
+from health_records_collection.services.labs import insert_labs
+from health_records_collection.services.medications import insert_medications
+from health_records_collection.services.patient import insert_patient
+from health_records_collection.services.procedures import insert_procedures
+from health_records_collection.services.progress_notes import insert_progress_notes
+from health_records_collection.services.vitals import insert_vitals
 
 if TYPE_CHECKING:
-    from lxml.etree import _Element as EtreeElement  # nosec B410 - typing only
+    from lxml.etree import _Element as EtreeElement  # type: ignore # nosec B410 - typing only
     from lxml.etree import _ElementTree as EtreeElementTree  # nosec B410 - typing only
 else:  # pragma: no cover - runtime-only fallback for typing
     EtreeElement = Any
@@ -143,17 +152,17 @@ def _xpath_elements(
     ns: dict[str, str],
 ) -> list[EtreeElement]:
     """Return a list of element nodes extracted via XPath."""
-    if isinstance(node, etree._ElementTree):  # pylint: disable=protected-access
+    if isinstance(node, EtreeElementTree):  # pylint: disable=protected-access
         node = node.getroot()
     if node is None or not hasattr(node, "xpath"):
         return []
     raw = node.xpath(expression, namespaces=ns)
     elements: list[EtreeElement] = []
-    if isinstance(raw, etree._Element):  # pylint: disable=protected-access
+    if isinstance(raw, EtreeElement):  # pylint: disable=protected-access
         elements.append(raw)
     elif isinstance(raw, Iterable) and not isinstance(raw, (str, bytes)):
         for item in raw:
-            if isinstance(item, etree._Element):  # pylint: disable=protected-access
+            if isinstance(item, EtreeElement):  # pylint: disable=protected-access
                 elements.append(item)
     return elements
 
@@ -193,9 +202,8 @@ def parse_ccd(xml_file: Path) -> ParsedCCD:
         ParsedCCD: A dictionary with parsed patient and clinical sections.
     """
     try:
-        # Bandit B320: safe_parse from defusedxml mitigates XML entity attacks.
-        tree = safe_parse(str(xml_file))
-    except (OSError, etree.XMLSyntaxError) as exc:
+        tree = safe_parse(str(xml_file))  # Bandit B320: safe_parse mitigates XML entity attacks.
+    except (OSError, XMLSyntaxError) as exc:
         logger.warning("Skipping malformed XML %s: %s", xml_file.name, exc)
         return {}
 
@@ -251,7 +259,8 @@ def ingest_archive(
         logger.info(
             "Skipping %s; previously ingested on %s.",
             archive_path.name,
-            existing_archive.get("last_ingested_at") or existing_archive.get("first_ingested_at"),
+            existing_archive.get("last_ingested_at")
+            or existing_archive.get("first_ingested_at"),
         )
         return
 
@@ -262,8 +271,10 @@ def ingest_archive(
     load_settings_fn = getattr(settings, "load_settings", None)
     if callable(load_settings_fn):
         try:
-            ingestion_settings = load_settings_fn().get("ingestion", ingestion_settings)
-        except Exception:  # pragma: no cover - defensive fallback
+            loaded_settings = load_settings_fn()
+            if isinstance(loaded_settings, dict) and "ingestion" in loaded_settings:
+                ingestion_settings = loaded_settings["ingestion"]
+        except (IOError, yaml.YAMLError):  # pragma: no cover - defensive fallback
             logger.debug("Falling back to default ingestion settings.", exc_info=True)
 
     destination = paths["parsed_dir"] / archive_path.stem
@@ -298,7 +309,9 @@ def ingest_archive(
     )
 
     delete_archive_flag = bool(ingestion_settings.get("delete_uploaded_archives", True))
-    delete_non_xml_flag = bool(ingestion_settings.get("delete_unencrypted_extracted_files", True))
+    delete_non_xml_flag = bool(
+        ingestion_settings.get("delete_unencrypted_extracted_files", True)
+    )
     if delete_archive_flag:
         try:
             if archive_path.resolve().parent != paths["raw_dir"].resolve():
@@ -408,7 +421,9 @@ def _ingest_documents_from_archive(
         given = clean_str(patient_data.get("given"))
         family = clean_str(patient_data.get("family"))
         if not (given or family):
-            logger.warning("Skipping %s due to incomplete patient identity.", xml_file.name)
+            logger.warning(
+                "Skipping %s due to incomplete patient identity.", xml_file.name
+            )
             continue
 
         try:
@@ -454,27 +469,37 @@ def _ingest_documents_from_archive(
         insert_encounters(
             conn,
             pid,
-            _annotate_records(_as_record_list(parsed.get("encounters")), record_metadata),
+            _annotate_records(
+                _as_record_list(parsed.get("encounters")), record_metadata
+            ),
         )
         insert_conditions(
             conn,
             pid,
-            _annotate_records(_as_record_list(parsed.get("conditions")), record_metadata),
+            _annotate_records(
+                _as_record_list(parsed.get("conditions")), record_metadata
+            ),
         )
         insert_allergies(
             conn,
             pid,
-            _annotate_records(_as_record_list(parsed.get("allergies")), record_metadata),
+            _annotate_records(
+                _as_record_list(parsed.get("allergies")), record_metadata
+            ),
         )
         insert_procedures(
             conn,
             pid,
-            _annotate_records(_as_record_list(parsed.get("procedures")), record_metadata),
+            _annotate_records(
+                _as_record_list(parsed.get("procedures")), record_metadata
+            ),
         )
         insert_medications(
             conn,
             pid,
-            _annotate_records(_as_record_list(parsed.get("medications")), record_metadata),
+            _annotate_records(
+                _as_record_list(parsed.get("medications")), record_metadata
+            ),
         )
         insert_labs(
             conn,
@@ -489,17 +514,23 @@ def _ingest_documents_from_archive(
         insert_immunizations(
             conn,
             pid,
-            _annotate_records(_as_record_list(parsed.get("immunizations")), record_metadata),
+            _annotate_records(
+                _as_record_list(parsed.get("immunizations")), record_metadata
+            ),
         )
         insert_progress_notes(
             conn,
             pid,
-            _annotate_records(_as_record_list(parsed.get("progress_notes")), record_metadata),
+            _annotate_records(
+                _as_record_list(parsed.get("progress_notes")), record_metadata
+            ),
         )
         upsert_insurance(
             conn,
             pid,
-            _annotate_records(_as_record_list(parsed.get("insurance")), record_metadata),
+            _annotate_records(
+                _as_record_list(parsed.get("insurance")), record_metadata
+            ),
         )
         conn.commit()
         logger.info("Ingested %s.", xml_file.name)
@@ -511,14 +542,17 @@ def _ingest_documents_from_archive(
         )
     return list(data_source_ids)
 
+
 def _load_metadata(root: Path) -> dict[str, dict[str, Any]]:
     """Return a mapping of document path -> metadata extracted from METADATA.XML."""
     metadata: dict[str, dict[str, Any]] = {}
     ns = {"rim": "urn:oasis:names:tc:ebxml-regrep:xsd:rim:3.0"}
     for metadata_path in root.rglob("METADATA.XML"):
         try:
-            tree = safe_parse(str(metadata_path))  # Using defusedxml for secure XML parsing.
-        except (OSError, etree.XMLSyntaxError) as exc:
+            tree = safe_parse(
+                str(metadata_path)
+            )  # Using defusedxml for secure XML parsing.
+        except (OSError, XMLSyntaxError) as exc:
             logger.warning("Unable to parse metadata %s: %s", metadata_path, exc)
             continue
         base_dir = metadata_path.parent.resolve()
@@ -529,7 +563,9 @@ def _load_metadata(root: Path) -> dict[str, dict[str, Any]]:
                 continue
 
             meta_payload = {
-                "document_created": _normalise_creation_time(_first(slots.get("creationTime"))),
+                "document_created": _normalise_creation_time(
+                    _first(slots.get("creationTime"))
+                ),
                 "repository_unique_id": _first(slots.get("repositoryUniqueId")),
                 "document_hash": _first(slots.get("hash")),
                 "document_size": _to_int(_first(slots.get("size"))),
@@ -540,12 +576,16 @@ def _load_metadata(root: Path) -> dict[str, dict[str, Any]]:
                 doc_path = (base_dir / uri).resolve()
                 # copy to avoid sharing between documents
                 metadata[str(doc_path).lower()] = {
-                    key: value for key, value in meta_payload.items() if value is not None
+                    key: value
+                    for key, value in meta_payload.items()
+                    if value is not None
                 }
     return metadata
 
 
-def _extract_slot_values(node: etree._Element, ns: dict[str, str]) -> dict[str, list[str]]:
+def _extract_slot_values(
+    node: etree._Element, ns: dict[str, str]
+) -> dict[str, list[str]]:
     values: dict[str, list[str]] = {}
     for slot in _xpath_elements(node, "rim:Slot", ns):
         name = slot.get("name")
@@ -561,7 +601,9 @@ def _extract_slot_values(node: etree._Element, ns: dict[str, str]) -> dict[str, 
     return values
 
 
-def _extract_author_institution(node: etree._Element, ns: dict[str, str]) -> Optional[str]:
+def _extract_author_institution(
+    node: etree._Element, ns: dict[str, str]
+) -> Optional[str]:
     for classification in _xpath_elements(node, "rim:Classification", ns):
         for slot in _xpath_elements(classification, "rim:Slot", ns):
             if slot.get("name") != "authorInstitution":
@@ -637,6 +679,7 @@ def _record_attachment(
         logger.warning("Failed to record attachment for %s: %s", secure_path, exc)
         return None
     return attachment_id
+
 
 def _relative_attachment_path(file_path: Path) -> Path:
     """Return a path suitable for storage (relative to repo root when possible)."""

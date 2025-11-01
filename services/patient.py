@@ -10,7 +10,7 @@ from __future__ import annotations
 import sqlite3
 from typing import Mapping
 
-from services.common import clean_str, coerce_int
+from health_records_collection.services.common import clean_str, coerce_int
 
 __all__ = ["insert_patient"]
 
@@ -58,11 +58,35 @@ def insert_patient(
             updates.append("data_source_id = ?")
             params.append(ds_id)
         if updates:
-            params.append(patient_id)
-            cur.execute(
-                f"UPDATE patient SET {', '.join(updates)} WHERE id = ?",
-                params,
-            )
+            # Use specific UPDATE statements for each case to avoid SQL injection risks
+            if len(updates) == 2:  # Both gender and data_source_id need updating
+                cur.execute(
+                    """
+                    UPDATE patient 
+                    SET gender = ?,
+                        data_source_id = ?
+                    WHERE id = ?
+                    """,
+                    params,
+                )
+            elif "gender = ?" in updates:
+                cur.execute(
+                    """
+                    UPDATE patient 
+                    SET gender = ?
+                    WHERE id = ?
+                    """,
+                    [params[0], params[-1]],
+                )
+            else:  # data_source_id needs updating
+                cur.execute(
+                    """
+                    UPDATE patient 
+                    SET data_source_id = ?
+                    WHERE id = ?
+                    """,
+                    [params[0], params[-1]],
+                )
             conn.commit()
         return patient_id
 

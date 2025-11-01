@@ -1,13 +1,48 @@
-"""XML transformation utilities for CDA documents."""
+"""XML transformation utilities for CDA documents with secure XML processing.
 
+This module implements a secure XML processing pipeline using defusedxml for initial
+parsing of untrusted content and a restricted lxml configuration for XSLT processing.
+
+Security measures:
+1. All untrusted XML is first parsed using defusedxml to prevent common XML attacks
+2. XSLT processing uses a restricted lxml parser that:
+   - Disables entity resolution
+   - Disables network access
+   - Disables DTD loading
+   - Strips comments and processing instructions
+3. Stylesheet validation ensures namespace compliance
+4. All content is validated before processing
+"""
+
+import os
 from pathlib import Path
 import tempfile
 import logging
 import datetime
-import lxml.etree as ET
-from typing import Optional
-from . import static_resources
-from security import encryption
+from typing import Optional, Any
+from defusedxml.lxml import parse, fromstring
+# We need lxml for XSLT processing which defusedxml doesn't support.
+# Security is handled through RESTRICTED_PARSER settings.
+from lxml import etree as unsafe_etree  # nosec B410
+
+from health_records_collection.frontend import static_resources
+from health_records_collection.security import encryption
+
+# Configure restricted parser for XSLT processing with security controls
+# Note: We use lxml for XSLT as there's no pure-Python alternative,
+# but we restrict it heavily to prevent XML attacks
+RESTRICTED_PARSER = unsafe_etree.XMLParser(
+    resolve_entities=False,  # Prevent XXE attacks
+    no_network=True,        # Prevent network-based attacks
+    remove_blank_text=True, # Normalize whitespace
+    remove_comments=True,   # Remove potentially dangerous content
+    remove_pis=True,       # Remove processing instructions
+    load_dtd=False,        # Prevent DTD-based attacks
+    collect_ids=False      # Prevent memory attacks
+)
+
+# Namespace for XSLT documents
+XSLT_NS = "http://www.w3.org/1999/XSL/Transform"
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -38,16 +73,20 @@ def validate_stylesheet(file_path: Path) -> bool:
             print(f"Stylesheet lacks XML declaration: {file_path}")
             return False
 
-        # Try parsing as XML
-        parser = ET.XMLParser(remove_blank_text=True)
-        tree = ET.fromstring(content.encode("utf-8"), parser)
+        # Try parsing as XML using defusedxml
+        tree = fromstring(content.encode("utf-8"))
 
-        # Verify it's an XSL stylesheet
+        # Get tree attributes safely
+        if getattr(tree, 'nsmap', {}).get(None) != XSLT_NS:
+            print(f"Not a valid XSLT file (wrong namespace): {file_path}")
+            return False
+
+        tree_tag = getattr(tree, 'tag', '')
         if not (
-            tree.tag == "{http://www.w3.org/1999/XSL/Transform}stylesheet"
-            or tree.tag == "{http://www.w3.org/1999/XSL/Transform}transform"
+            tree_tag.endswith('stylesheet') or 
+            tree_tag.endswith('transform')
         ):
-            print(f"Not a valid XSLT file (root is {tree.tag}): {file_path}")
+            print(f"Not a valid XSLT file (root is {tree_tag}): {file_path}")
             return False
 
         return True
@@ -115,23 +154,37 @@ def transform_cda_to_html(xml_path: str) -> Optional[str]:
         # Log XML content size for debugging
         logger.debug(f"XML content size: {len(xml_content)} bytes")
 
-        # Parse XML and XSL
-        parser = ET.XMLParser(remove_blank_text=True)
-        xml_doc = ET.fromstring(xml_content.encode("utf-8"), parser)
-        xsl_doc = ET.parse(str(xsl_path))
-
-        # Create transformer and transform with error handling
-        logger.debug("Creating XSLT transformer")
-        transform = ET.XSLT(xsl_doc)
-
-        # Log XSL document details
-        logger.debug(f"XSL document root tag: {xsl_doc.getroot().tag}")
-        logger.debug(f"XSL document size: {len(ET.tostring(xsl_doc))}")
-
-        # Transform and capture any errors
+        # Parse XML using defusedxml for security
+        xml_doc = fromstring(xml_content.encode("utf-8"))
+        
+        # For XSLT processing we need lxml but with strict security settings
+        xsl_text = Path(xsl_path).read_text(encoding="utf-8")
+        
+        # Create safe transformation pipeline
         try:
+            logger.debug("Creating XSLT transformer")
+            
+            # Parse stylesheet with restricted settings
+            # Safe since we use RESTRICTED_PARSER with all security options enabled
+            xsl_doc = unsafe_etree.fromstring(  # nosec B320
+                xsl_text.encode("utf-8"), 
+                parser=RESTRICTED_PARSER
+            )
+            transform = unsafe_etree.XSLT(xsl_doc)
+            
+            # Log XSL document details safely
+            tag = getattr(xsl_doc, 'tag', 'unknown')
+            logger.debug(f"XSL document root tag: {tag}")
+            logger.debug(f"XSL document size: {len(xsl_text)} bytes")
+
+            # Convert XML to string and back through restricted parser
+            # Safe since we use RESTRICTED_PARSER with all security options enabled
+            xml_str = unsafe_etree.tostring(xml_doc)
+            safe_doc = unsafe_etree.fromstring(xml_str, parser=RESTRICTED_PARSER)  # nosec B320
+            
+            # Perform transformation
             logger.debug("Performing XSLT transformation")
-            html = transform(xml_doc)
+            html = transform(safe_doc)
 
             # Log transformation result details
             result_str = str(html)
@@ -142,7 +195,7 @@ def transform_cda_to_html(xml_path: str) -> Optional[str]:
                 logger.error("Transformation produced empty result")
                 return None
 
-        except ET.XSLTError as e:
+        except unsafe_etree.XSLTError as e:
             logger.error(f"XSLT transformation failed: {str(e)}")
             return None
         except Exception as e:

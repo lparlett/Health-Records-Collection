@@ -11,9 +11,17 @@ from __future__ import annotations
 import sqlite3
 from typing import Any, Mapping, Sequence
 
-from services.common import clean_str, coerce_int, ensure_mapping_sequence
-from services.encounters import find_encounter_id
-from services.providers import get_or_create_provider
+from health_records_collection.db.utils import update_single_field
+from health_records_collection.services.common import (
+    clean_str,
+    coerce_int,
+    ensure_mapping_sequence,
+)
+from health_records_collection.services.encounters import (
+    EncounterLookup,
+    find_encounter_id,
+)
+from health_records_collection.services.providers import get_or_create_provider
 
 __all__ = ["insert_procedures"]
 
@@ -40,15 +48,15 @@ def insert_procedures(
             get_or_create_provider(conn, provider_name) if provider_name else None
         )
 
-        encounter_id = find_encounter_id(
-            conn,
-            patient_id,
-            encounter_date=clean_str(proc.get("date"))
-            or clean_str(proc.get("author_time")),
+        lookup = EncounterLookup(
+            patient_id=patient_id,
+            encounter_date=clean_str(
+                proc.get("date")
+            ) or clean_str(proc.get("author_time")),
             provider_name=provider_name,
             provider_id=provider_id,
-            source_encounter_id=clean_str(proc.get("encounter_source_id")),
         )
+        encounter_id = find_encounter_id(conn, lookup)
 
         raw_codes = proc.get("codes")
         codes: list[Mapping[str, object]] = []
@@ -107,11 +115,24 @@ def insert_procedures(
                 updates.append("data_source_id = ?")
                 params.append(ds_id)
             if updates:
-                params.append(procedure_id)
-                cur.execute(
-                    f"UPDATE procedure SET {', '.join(updates)} WHERE id = ?",
-                    params,
-                )
+                # Single field update
+                if len(updates) == 1:
+                    update_field = updates[0].split()[0]  
+                    update_single_field(
+                        cur,
+                        "procedure",
+                        update_field,
+                        params[0],
+                        procedure_id
+                    )
+                # Multiple fields update
+                else:
+                    # pylint: disable=line-too-long
+                    # fmt: off
+                    query = f"UPDATE procedure SET {', '.join(updates)} WHERE id = ?" # nosec B608
+                    # fmt: on
+                    # pylint: enable=line-too-long
+                    cur.execute(query, params + [procedure_id])
         else:
             cur.execute(
                 """
@@ -153,7 +174,12 @@ def insert_procedures(
             display_val = clean_str(code.get("display"))
             cur.execute(
                 """
-                INSERT OR IGNORE INTO procedure_code (procedure_id, code, code_system, display_name)
+                INSERT OR IGNORE INTO procedure_code (
+                    procedure_id,
+                    code,
+                    code_system,
+                    display_name
+                )
                 VALUES (?, ?, ?, ?)
                 """,
                 (

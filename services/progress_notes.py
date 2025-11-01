@@ -12,16 +12,19 @@ import hashlib
 import sqlite3
 from typing import Mapping, Sequence, Tuple
 
-from services.common import clean_str, coerce_int
-from services.encounters import find_encounter_id
-from services.providers import get_or_create_provider
+from health_records_collection.services.common import clean_str, coerce_int
+from health_records_collection.services.encounters import (
+    EncounterLookup,
+    find_encounter_id,
+)
+from health_records_collection.services.providers import get_or_create_provider
 
 __all__ = ["insert_progress_notes"]
 
 
 def _hash_text(value: str) -> str:
     """Return a SHA1 hash for duplicate detection."""
-    return hashlib.sha1(value.encode("utf-8")).hexdigest()
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
 def insert_progress_notes(
@@ -60,14 +63,14 @@ def insert_progress_notes(
         encounter_hint = clean_str(note.get("encounter_date")) or clean_str(
             note.get("note_datetime")
         )
-        encounter_id = find_encounter_id(
-            conn,
-            patient_id,
+        # Create EncounterLookup instance for the search
+        lookup = EncounterLookup(
+            patient_id=patient_id,
             encounter_date=encounter_hint,
             provider_name=provider_name,
             provider_id=provider_id,
-            source_encounter_id=clean_str(note.get("encounter_source_id")),
         )
+        encounter_id = find_encounter_id(conn, lookup)
 
         title = clean_str(note.get("title"))
         note_datetime = clean_str(note.get("note_datetime"))

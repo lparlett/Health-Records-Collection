@@ -10,20 +10,29 @@ from __future__ import annotations
 import logging
 import sqlite3
 from pathlib import Path
+from typing import Any, TypeAlias, cast, TYPE_CHECKING
 
-import pandas as pd
-from sqlcipher3 import dbapi2 as sqlcipher
-import yaml
+import pandas as pd  # type: ignore
+import sqlcipher3.dbapi2 as sqlcipher  # type: ignore
+import yaml  # type: ignore
 
-from db.schema import ensure_schema
-import settings
-from security import sqlcipher_support
+from health_records_collection.db.schema import ensure_schema
+from health_records_collection import settings
+from health_records_collection.security import sqlcipher_support
+
+if TYPE_CHECKING:
+    # This block is only used for type checking
+    from sqlite3 import Connection as SQLite3Connection
+    SQLCipherConnection = SQLite3Connection
+else:
+    # Runtime definition
+    SQLCipherConnection: TypeAlias = sqlite3.Connection
 
 logger = logging.getLogger(__name__)
 
 # Load config
 CONFIG_PATH = Path(__file__).parent / "config.yaml"
-with open(CONFIG_PATH, "r") as f:
+with open(CONFIG_PATH, "r", encoding="utf-8") as f:
     CONFIG = yaml.safe_load(f)
 
 DEFAULT_DB_PATH = Path(CONFIG["db_path"]).expanduser()
@@ -34,11 +43,14 @@ def _resolve_db_path() -> Path:
     try:
         paths = settings.load_paths()
         return paths["db_path"]
-    except Exception:  # pragma: no cover - defensive fallback
+    except (KeyError, FileNotFoundError, yaml.YAMLError):  # pragma: defensive fallback
+        # KeyError: Missing db_path in settings
+        # FileNotFoundError: Settings file not found
+        # YAMLError: Invalid YAML format
         return DEFAULT_DB_PATH
 
 
-def _database_has_patient_table(conn: sqlite3.Connection) -> bool:
+def _database_has_patient_table(conn: Any) -> bool:
     query = (
         "SELECT 1 FROM sqlite_master "
         "WHERE type = 'table' AND name = 'patient' LIMIT 1"
@@ -46,7 +58,7 @@ def _database_has_patient_table(conn: sqlite3.Connection) -> bool:
     return conn.execute(query).fetchone() is not None
 
 
-def _ensure_database_ready(conn: sqlite3.Connection) -> None:
+def _ensure_database_ready(conn: Any) -> None:
     """Create base schema when the database file is empty."""
     # AI-assisted change: bootstrap schema for fresh database files.
     if _database_has_patient_table(conn):
@@ -67,16 +79,16 @@ def _ensure_database_ready(conn: sqlite3.Connection) -> None:
 
 def _open_encrypted_connection(
     db_path: Path, *, passphrase: str
-) -> sqlcipher.Connection:
+) -> SQLCipherConnection:
     """Return an SQLCipher connection initialised with hardening pragmas."""
-    conn = sqlcipher.connect(str(db_path))
+    conn = cast(SQLCipherConnection, sqlcipher.connect(str(db_path)))  # pylint: disable=no-member
     sqlcipher_support.configure_connection(conn, passphrase)
     return conn
 
 
 def get_connection(
     db_path: Path | str | None = None, *, passphrase: str | None = None
-) -> sqlcipher.Connection:
+) -> Any:
     """
     Return an SQLCipher-encrypted database connection, ensuring schema exists.
 
@@ -102,7 +114,7 @@ def get_connection(
         key = sqlcipher_support.get_passphrase()
     try:
         conn = _open_encrypted_connection(db_path, passphrase=key)
-    except sqlcipher.DatabaseError as exc:  # pragma: no cover - defensive
+    except sqlite3.DatabaseError as exc:  # pragma: no cover - defensive
         logger.error("Unable to unlock encrypted database %s: %s", db_path, exc)
         raise RuntimeError("Invalid SQLCipher passphrase supplied.") from exc
 
@@ -111,18 +123,48 @@ def get_connection(
 
 
 def list_tables(conn):
+    """List all table names in the database."""
     query = "SELECT name FROM sqlite_master WHERE type='table';"
     return [row[0] for row in conn.execute(query).fetchall()]
 
 
-def get_table_preview(conn, table_name, limit=None):
-    if limit is None:
-        limit = CONFIG["default_row_limit"]
-    query = f"SELECT * FROM {table_name} LIMIT {limit};"
-    return pd.read_sql(query, conn)
+def get_table_preview(
+    conn: SQLCipherConnection, table_name: str, limit: int | None = None
+    ) -> pd.DataFrame:
+    """Get a preview of table contents with SQL injection protection.
+    
+    Args:
+        conn: Database connection
+        table_name: Name of the table to preview (must be a valid SQL identifier)
+        limit: Maximum number of rows to return, defaults to CONFIG["default_row_limit"]
+    
+    Returns:
+        DataFrame containing the table preview
+        
+    Raises:
+        ValueError: If table_name is not a valid SQL identifier
+    """
+    # Validate table name is a safe identifier
+    if not (table_name.isidentifier() and table_name.isascii()):
+        raise ValueError("Invalid table name")
 
+    # Check if table exists to prevent SQL injection
+    table_names = [row[0] for row in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
+    if table_name not in table_names:
+        raise ValueError(f"Table '{table_name}' does not exist")
+
+    # Ensure we have a valid integer limit
+    row_limit = CONFIG["default_row_limit"] if limit is None else limit
+    if not isinstance(row_limit, int) or row_limit < 1:
+        raise ValueError("Limit must be a positive integer")
+
+    # Table name is now verified to exist and be safe
+    query = f"SELECT * FROM {table_name} LIMIT ?"  # nosec B608
+    return pd.read_sql(query, conn, params=(row_limit,))
 
 def run_query(conn, sql):
+    """Run an arbitrary SQL query and return the results as a DataFrame."""
     return pd.read_sql(sql, conn)
 
 
@@ -417,10 +459,10 @@ def get_encounter_detail(conn, encounter_id):
 
 # AI-assisted change: Implemented with help from gpt-5-codex.
 def get_patient_vitals_timeseries(
-    conn,
-    patient_id,
-    vital_type=None,
-):
+    conn: SQLCipherConnection,
+    patient_id: int,
+    vital_type: str | None = None,
+) -> pd.DataFrame:
     """Return a patient-level vital sign time series as a DataFrame."""
 
     query = """
@@ -464,12 +506,12 @@ def get_patient_vitals_timeseries(
 
 # AI-assisted change: Implemented with help from gpt-5-codex.
 def get_patient_lab_timeseries(
-    conn,
-    patient_id,
+    conn: SQLCipherConnection,
+    patient_id: int,
     *,
-    loinc_code=None,
-    test_name=None,
-):
+    loinc_code: str | None = None,
+    test_name: str | None = None,
+) -> pd.DataFrame:
     """Return lab result time series for a patient as a DataFrame."""
 
     query = """

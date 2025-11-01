@@ -11,7 +11,7 @@ from __future__ import annotations
 import sqlite3
 from typing import Iterable, Mapping, Optional, Sequence, Tuple
 
-from services.common import clean_str, coerce_int
+from health_records_collection.services.common import clean_str, coerce_int
 
 __all__ = ["insert_immunizations"]
 

@@ -11,7 +11,12 @@ from __future__ import annotations
 import sqlite3
 from typing import Mapping, Sequence, Tuple
 
-from services.common import clean_str, coerce_int, ensure_mapping_sequence
+from health_records_collection.db.utils import update_single_field
+from health_records_collection.services.common import (
+    clean_str,
+    coerce_int,
+    ensure_mapping_sequence,
+)
 
 __all__ = ["upsert_insurance"]
 
@@ -135,11 +140,25 @@ def upsert_insurance(
                 params.append(ds_id)
 
             if updates:
-                params.append(policy_id)
-                cur.execute(
-                    f"UPDATE insurance SET {', '.join(updates)} WHERE id = ?",
-                    params,
-                )
+
+                # Single field update
+                if len(updates) == 1:
+                    update_field = updates[0].split()[0]
+                    update_single_field(
+                        cur, 
+                        "insurance", 
+                        update_field, 
+                        params[0], 
+                        policy_id
+                    )
+                # Multiple fields update
+                else:
+                    # pylint: disable=line-too-long
+                    # fmt: off
+                    query = f"UPDATE insurance SET {', '.join(updates)} WHERE id = ?" # nosec B608
+                    # fmt: on
+                    # pylint: enable=line-too-long
+                    cur.execute(query, params + [policy_id])
                 updated += 1
             continue
 

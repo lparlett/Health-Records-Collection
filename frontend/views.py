@@ -1,10 +1,10 @@
-from __future__ import annotations
-
 # Purpose: Streamlit views for patient encounter overview, detail, and trends.
 # Author: Codex + Lauren
 # Date: 2025-10-12
 # Tests: Manual Streamlit verification; frontend pytest coverage pending.
 # AI-assisted: Portions of this module were updated with AI assistance.
+"""Streamlit views for patient encounter overview, detail, and trends."""
+from __future__ import annotations
 
 from datetime import datetime
 import sqlite3
@@ -15,14 +15,14 @@ import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 
-import db_utils
-import ui_components
-import settings
-from . import xml_utils
-from .note_components import render_progress_notes
-from .schema_components import render_schema_documentation
-from .trend_components import render_patient_trends
-from .upload_components import render_upload_page
+from health_records_collection.frontend import db_utils
+from health_records_collection.frontend import ui_components
+from health_records_collection import settings
+from health_records_collection.frontend import xml_utils
+from health_records_collection.frontend.note_components import render_progress_notes
+from health_records_collection.frontend.schema_components import render_schema_documentation
+from health_records_collection.frontend.trend_components import render_patient_trends
+from health_records_collection.frontend.upload_components import render_upload_page
 
 
 def _ensure_state() -> None:
@@ -331,7 +331,7 @@ def _show_settings_page() -> None:
             continue
         try:
             resolved = Path(trimmed).expanduser()
-        except Exception as exc:  # pragma: no cover - defensive
+        except (ValueError, OSError) as exc: # pragma: no cover - defensive
             errors.append(f"Invalid path for {key.replace('_', ' ')}: {exc}")
             continue
         if key != "db_path" and resolved.suffix:
@@ -357,7 +357,7 @@ def _show_settings_page() -> None:
             }
         )
         settings.ensure_runtime_paths({"paths": resolved_paths})
-    except Exception as exc:  # pragma: no cover - defensive
+    except RuntimeError as exc:  # pragma: no cover - defensive
         st.error(f"Failed to persist settings: {exc}")
         return
 
@@ -483,7 +483,10 @@ def _show_encounter_detail(conn: sqlite3.Connection) -> None:
             st.markdown(f"**Document:** {ds.get('original_filename') or '-'}")
             if ds.get("document_created"):
                 st.markdown(
-                    f"**Document Created:** {_format_datetime(ds.get('document_created'), show_time=True)}"
+                    f"**Document Created:** {
+                        _format_datetime(ds.get('document_created'),
+                        show_time=True)
+                    }"
                 )
             if ds.get("repository_unique_id"):
                 st.markdown(f"**Repository ID:** {ds.get('repository_unique_id')}")
@@ -532,6 +535,7 @@ def _show_encounter_detail(conn: sqlite3.Connection) -> None:
 
 
 def show_tables(conn):
+    """Render a view to explore database tables."""
     tables = db_utils.list_tables(conn)
     selected_tables = ui_components.sidebar_table_selector(tables)
 
@@ -545,11 +549,12 @@ def show_tables(conn):
 
 
 def show_query(conn):
+    """Render a view to run arbitrary SQL queries."""
     sql = ui_components.query_box()
     if sql.strip():
         try:
             df = db_utils.run_query(conn, sql)
             st.subheader("Query Results")
             st.dataframe(df, use_container_width=True)
-        except Exception as e:
+        except RuntimeError as e:
             st.error(f"Error: {e}")

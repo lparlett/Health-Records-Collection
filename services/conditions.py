@@ -11,9 +11,17 @@ from __future__ import annotations
 import sqlite3
 from typing import Any, Mapping, Sequence
 
-from services.common import clean_str, coerce_int, ensure_mapping_sequence
-from services.encounters import find_encounter_id
-from services.providers import get_or_create_provider
+from health_records_collection.db.utils import update_single_field
+from health_records_collection.services.common import (
+    clean_str,
+    coerce_int,
+    ensure_mapping_sequence,
+)
+from health_records_collection.services.encounters import (
+    EncounterLookup,
+    find_encounter_id,
+)
+from health_records_collection.services.providers import get_or_create_provider
 
 __all__ = ["insert_conditions"]
 
@@ -40,26 +48,25 @@ def insert_conditions(
             get_or_create_provider(conn, provider_name) if provider_name else None
         )
 
-        encounter_id = find_encounter_id(
-            conn,
-            patient_id,
+        lookup = EncounterLookup(
+            patient_id=patient_id,
             encounter_date=clean_str(cond.get("encounter_start"))
             or clean_str(cond.get("start"))
             or clean_str(cond.get("author_time")),
             provider_name=provider_name,
             provider_id=provider_id,
-            source_encounter_id=clean_str(cond.get("encounter_source_id")),
         )
 
+        encounter_id = find_encounter_id(conn, lookup)
+
         if encounter_id is None and cond.get("encounter_end"):
-            encounter_id = find_encounter_id(
-                conn,
-                patient_id,
+            lookup = EncounterLookup(
+                patient_id=patient_id,
                 encounter_date=clean_str(cond.get("encounter_end")),
                 provider_name=provider_name,
                 provider_id=provider_id,
-                source_encounter_id=clean_str(cond.get("encounter_source_id")),
             )
+            encounter_id = find_encounter_id(conn, lookup)
 
         raw_codes = cond.get("codes")
         codes: list[Mapping[str, object]] = []
@@ -120,10 +127,24 @@ def insert_conditions(
                 params.append(ds_id)
             if updates:
                 params.append(condition_id)
-                cur.execute(
-                    f"UPDATE condition SET {', '.join(updates)} WHERE id = ?",
-                    params,
-                )
+
+                # Single field update
+                if len(updates) == 1:
+                    update_field = updates[0].split()[
+                        0
+                    ]  # Extract field name from "field = ?"
+                    update_single_field(
+                        cur, "condition", update_field, params[0], condition_id
+                    )
+                # Multiple fields update
+                else:
+                    # Field names come from our code and values are parameterized
+                    # pylint: disable=line-too-long
+                    # fmt: off
+                    query = f"UPDATE condition SET {', '.join(updates)} WHERE id = ?" # nosec B608
+                    # fmt: on
+                    # pylint: enable=line-too-long
+                    cur.execute(query, params)
         else:
             cur.execute(
                 """
@@ -156,7 +177,13 @@ def insert_conditions(
                 ),
             )
             condition_id = cur.lastrowid
+            if condition_id is None:
+                raise sqlite3.DatabaseError(
+                    "Failed to insert condition; lastrowid is None."
+                )
+            condition_id = int(condition_id)  # Convert to int before use
 
+        # Process additional codes for the condition
         for code in codes:
             code_val = clean_str(code.get("code"))
             if not code_val:
@@ -165,11 +192,16 @@ def insert_conditions(
             display_val = clean_str(code.get("display"))
             cur.execute(
                 """
-                INSERT OR IGNORE INTO condition_code (condition_id, code, code_system, display_name)
+                INSERT OR IGNORE INTO condition_code (
+                    condition_id, 
+                    code, 
+                    code_system, 
+                    display_name
+                    )
                 VALUES (?, ?, ?, ?)
                 """,
                 (
-                    condition_id,
+                    condition_id,  # Using the already converted int
                     code_val,
                     code_system_val,
                     display_val,

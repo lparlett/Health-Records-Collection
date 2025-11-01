@@ -9,21 +9,34 @@
 from __future__ import annotations
 
 import sqlite3
+from types import ModuleType
 from typing import Mapping, Sequence, Tuple
 
-from services.common import clean_str, coerce_int
-from services.encounters import find_encounter_id
+from health_records_collection.services.common import clean_str, coerce_int
+from health_records_collection.services.encounters import (
+    EncounterLookup,
+    find_encounter_id,
+)
+
+# Initialize module level variables
+sqlcipher_module: None | ModuleType = None
 
 try:  # pragma: no cover - depends on optional SQLCipher driver
-    from sqlcipher3 import dbapi2 as sqlcipher
-except ImportError:  # pragma: no cover - fallback for plain sqlite
-    sqlcipher = None
+    from sqlcipher3 import dbapi2
 
-INTEGRITY_ERRORS: Tuple[type[Exception], ...]
-if sqlcipher:
-    INTEGRITY_ERRORS = (sqlite3.IntegrityError, sqlcipher.IntegrityError)
-else:
-    INTEGRITY_ERRORS = (sqlite3.IntegrityError,)
+    sqlcipher_module = dbapi2
+except ImportError:  # pragma: no cover - fallback for plain sqlite
+    pass
+
+# Define integrity error types to catch based on available database modules
+INTEGRITY_ERRORS: Tuple[type[Exception], ...] = (
+    (
+        sqlite3.IntegrityError,
+        sqlite3.IntegrityError,
+    )  # sqlcipher uses sqlite3 exceptions
+    if sqlcipher_module is not None
+    else (sqlite3.IntegrityError,)
+)
 
 __all__ = ["insert_medications"]
 
@@ -46,21 +59,22 @@ def insert_medications(
     if not meds:
         return 0
 
-    columns = [
-        "patient_id",
-        "encounter_id",
-        "name",
-        "dose",
-        "route",
-        "frequency",
-        "start_date",
-        "end_date",
-        "status",
-        "notes",
-        "data_source_id",
-    ]
-    placeholders = ", ".join(["?"] * len(columns))
-    sql = f"INSERT INTO medication ({', '.join(columns)}) VALUES ({placeholders})"
+    # Static SQL query with fixed column list
+    INSERT_MEDICATION_SQL = """
+        INSERT INTO medication (
+            patient_id,
+            encounter_id,
+            name,
+            dose,
+            route,
+            frequency,
+            start_date,
+            end_date,
+            status,
+            notes,
+            data_source_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """
 
     cur = conn.cursor()
     duplicates = 0
@@ -79,12 +93,13 @@ def insert_medications(
             or clean_str(med.get("author_time"))
         )
         provider_name = clean_str(med.get("provider"))
-        encounter_id = find_encounter_id(
-            conn,
-            patient_id,
+        
+        lookup = EncounterLookup(
+            patient_id=patient_id,
             encounter_date=encounter_date,
             provider_name=provider_name,
         )
+        encounter_id = find_encounter_id(conn, lookup)
 
         name = clean_str(med.get("name"))
         dose = clean_str(med.get("dose"))
@@ -109,7 +124,7 @@ def insert_medications(
             ds_id,
         )
         try:
-            cur.execute(sql, row)
+            cur.execute(INSERT_MEDICATION_SQL, row)
         except INTEGRITY_ERRORS:
             duplicates += 1
             if ds_id is not None:

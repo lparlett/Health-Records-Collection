@@ -30,14 +30,27 @@ see the full [AI disclosure](AI_disclosure.md) for details.
 
 ### :scroll: Setup
 
+#### Option A – Poetry (recommended)
+
 ```bash
 git clone <repo-url>
-cd Health-Records-Collection
+cd health-records-collection
+
+poetry install
+# optional if you prefer an activated shell:
+poetry shell
+```
+
+#### Option B – `pip` + virtual environment
+
+```bash
+git clone <repo-url>
+cd health-records-collection
 
 python -m venv .venv
-.venv\Scripts\Activate.ps1   # Windows PowerShell
-# or: source .venv/bin/activate   # macOS/Linux
-
+source .venv/bin/activate          # macOS/Linux
+# or, on Windows PowerShell:
+# .venv\Scripts\Activate.ps1
 pip install --upgrade pip
 pip install -r requirements.txt
 ```
@@ -47,7 +60,9 @@ pip install -r requirements.txt
 1. Start the Streamlit dashboard:
 
    ```bash
-   streamlit run frontend/app.py
+   poetry run streamlit run frontend/app.py
+   # or, if you used pip:
+   # streamlit run frontend/app.py
    ```
 
    The app opens at [http://localhost:8501](http://localhost:8501).
@@ -61,7 +76,8 @@ pip install -r requirements.txt
    behaviour under *Settings* if you prefer to retain them.
 4. Browse encounters, run ad-hoc SQL queries, and review schema notes without
    leaving the dashboard. Command-line ingestion remains available via
-   `python ingest.py` for automation, but the Streamlit workflow covers the
+   `poetry run python -m ingest` (or `python -m ingest`
+   if you installed with pip) for automation, but the Streamlit workflow covers the
    standard path.
 
 ---
@@ -153,7 +169,9 @@ tests/              Pytest suite covering parsers, services,
 user/               User-specific settings
 ingest.py           Command-line ingestion workflow
 schema.sql          Canonical database definition
-requirements.txt    Locked Python dependencies
+pyproject.toml      Project metadata and dependency declarations for Poetry
+poetry.lock         Resolved dependency lockfile (`poetry install` consumes this)
+requirements.txt    Pip-compatible export for environments without Poetry
 ```
 
 ---
@@ -169,7 +187,8 @@ requirements.txt    Locked Python dependencies
 - Modify or append tables by editing `schema.sql` and enhancing `db/schema.py`
   to enforce migrations.
 - Regenerate the database at any time by deleting `db/health_records.db` and
-  rerunning `python ingest.py`.
+  rerunning `poetry run python -m ingest`
+  (or `python -m ingest` in a pip-based environment).
 - Control ingestion verbosity per run with `--log-level {error,warning,info,debug}`
   and optionally persist output via `--log-file path/to/logs.txt`.
 - Use the Settings view to toggle post-ingest cleanup (archive deletion and
@@ -188,11 +207,14 @@ requirements.txt    Locked Python dependencies
 - Run the automated tests with:
 
   ```bash
-  pytest
+  poetry run pytest
+  # or, if you used pip:
+  # pytest
   ```
 
-- The project targets Python 3.12; please keep new dependencies pinned in
-  `requirements.txt`.
+- The project targets Python 3.12; add new dependencies with `poetry add` (or
+  `poetry add --group dev …` for development-only packages) so they land in
+  `pyproject.toml`.
 - Follow the contributor guidelines in `CONTRIBUTING.md` and report security
   concerns per `SECURITY.md`.
 

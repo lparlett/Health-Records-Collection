@@ -22,8 +22,8 @@ import streamlit as st
 from streamlit.runtime.uploaded_file_manager import UploadedFile
 import zipfile
 
-from ingest import ingest_archive
-from services.archives import archive_was_ingested
+from health_records_collection.ingest import ingest_archive
+from health_records_collection.services.archives import archive_was_ingested
 
 logger = logging.getLogger(__name__)
 

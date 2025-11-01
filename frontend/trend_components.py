@@ -14,7 +14,7 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from . import db_utils
+from health_records_collection.frontend import db_utils
 
 
 def _parse_reference_range(raw_value: Any) -> Tuple[Optional[float], Optional[float]]:
@@ -186,7 +186,8 @@ def render_patient_trends(
                     reference_mask,
                     ["measurement_time", "reference_low", "reference_high"],
                 ].dropna()
-                reference_band_df = reference_band_df.copy()
+                if reference_band_df is not None:
+                    reference_band_df = reference_band_df.copy()
 
     st.caption(f"Selected series: {display_name}")
 
@@ -195,7 +196,7 @@ def render_patient_trends(
     )
     if len(units) > 1:
         st.warning(
-            "Multiple units detected for this series; values may not be " "comparable."
+            "Multiple units detected for this series; values may not be comparable."
         )
     elif not units:
         st.info("No unit information recorded for this series.")
@@ -242,6 +243,7 @@ def render_patient_trends(
         chart = chart.interactive()
         st.altair_chart(chart, use_container_width=True)
     else:
-        st.info("Not enough numeric data points with valid dates to render a " "chart.")
+        st.info("Not enough numeric data points with valid dates to render a " 
+                "chart.")
 
     st.dataframe(series_df[table_columns], use_container_width=True)

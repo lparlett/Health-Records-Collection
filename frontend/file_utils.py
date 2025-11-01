@@ -13,9 +13,8 @@ from pathlib import Path
 from typing import Optional, Union
 import webbrowser
 
-from security import encryption
-
-from . import static_resources, xml_utils
+from health_records_collection.security import encryption
+from health_records_collection.frontend import static_resources, xml_utils
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent

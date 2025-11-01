@@ -1,4 +1,5 @@
 """Database schema helpers."""
+
 from __future__ import annotations
 
 import hashlib
@@ -93,15 +94,13 @@ def ensure_provider_schema(conn: sqlite3.Connection) -> None:
         conn.execute(dedent(statement))
 
 
-
-
-
 def ensure_encounter_schema(conn: sqlite3.Connection) -> None:
     cur = conn.cursor()
     cur.execute("PRAGMA table_info(encounter)")
     columns = {row[1] for row in cur.fetchall()}
     if "reason_for_visit" not in columns:
         conn.execute("ALTER TABLE encounter ADD COLUMN reason_for_visit TEXT")
+
 
 def ensure_medication_constraints(conn: sqlite3.Connection) -> None:
     conn.execute(
@@ -275,7 +274,9 @@ def ensure_data_source_columns(conn: sqlite3.Connection) -> None:
     _add_column_if_missing(conn, "data_source", "document_hash", "TEXT")
     _add_column_if_missing(conn, "data_source", "document_size", "INTEGER")
     _add_column_if_missing(conn, "data_source", "author_institution", "TEXT")
-    _add_column_if_missing(conn, "data_source", "attachment_id", "INTEGER REFERENCES attachment(id)")
+    _add_column_if_missing(
+        conn, "data_source", "attachment_id", "INTEGER REFERENCES attachment(id)"
+    )
     column_ddl = "data_source_id INTEGER REFERENCES data_source(id)"
     for table in (
         "patient",
@@ -307,9 +308,9 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
     ensure_data_source_columns(conn)
 
 
-
 def ensure_immunization_constraints(conn: sqlite3.Connection) -> None:
-    conn.execute("""
+    conn.execute(
+        """
         DELETE FROM immunization
               WHERE rowid NOT IN (
                     SELECT MIN(rowid)
@@ -318,20 +319,24 @@ def ensure_immunization_constraints(conn: sqlite3.Connection) -> None:
                               COALESCE(date_administered, ''),
                               COALESCE(cvx_code, '')
               )
-        """)
-    conn.execute("""
+        """
+    )
+    conn.execute(
+        """
         CREATE UNIQUE INDEX IF NOT EXISTS idx_immunization_unique
             ON immunization (
                 patient_id,
                 COALESCE(date_administered, ''),
                 COALESCE(cvx_code, '')
             )
-        """)
+        """
+    )
 
 
 def ensure_lab_constraints(conn: sqlite3.Connection) -> None:
     """Enforce uniqueness of lab results by patient, LOINC, and date."""
-    conn.execute("""
+    conn.execute(
+        """
         DELETE FROM lab_result
               WHERE rowid NOT IN (
                     SELECT MIN(rowid)
@@ -340,15 +345,18 @@ def ensure_lab_constraints(conn: sqlite3.Connection) -> None:
                               COALESCE(loinc_code, ''),
                               COALESCE(date, '')
               )
-    """)
-    conn.execute("""
+    """
+    )
+    conn.execute(
+        """
         CREATE UNIQUE INDEX IF NOT EXISTS idx_lab_unique_patient_loinc_date
             ON lab_result (
                 patient_id,
                 COALESCE(loinc_code, ''),
                 COALESCE(date, '')
             )
-    """)
+    """
+    )
 
 
 def ensure_data_source_archive_reference(conn: sqlite3.Connection) -> None:
@@ -451,7 +459,11 @@ def ensure_data_source_archive_reference(conn: sqlite3.Connection) -> None:
 
     conn.execute("DROP TABLE data_source__legacy")
     conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_data_source_ingested_at ON data_source(ingested_at)"
+        """
+        CREATE INDEX IF NOT EXISTS
+        idx_data_source_ingested_at 
+        ON data_source(ingested_at)
+        """
     )
     conn.commit()
     if fk_state:
@@ -496,12 +508,15 @@ def _ensure_archive_entry(
         (archive_name, archive_hash, timestamp, timestamp),
     )
     conn.commit()
+    if cur.lastrowid is None:
+        raise ValueError("cur.lastrowid is None, cannot convert to int")
     return int(cur.lastrowid)
 
 
 def ensure_archive_registry(conn: sqlite3.Connection) -> None:
     """Ensure the ingested_archive registry table exists."""
-    conn.execute("""
+    conn.execute(
+        """
         CREATE TABLE IF NOT EXISTS ingested_archive (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             archive_name TEXT NOT NULL,
@@ -510,9 +525,11 @@ def ensure_archive_registry(conn: sqlite3.Connection) -> None:
             last_ingested_at TEXT NOT NULL,
             ingest_count INTEGER NOT NULL DEFAULT 1
         )
-    """)
-    conn.execute("""
+    """
+    )
+    conn.execute(
+        """
         CREATE UNIQUE INDEX IF NOT EXISTS idx_ingested_archive_hash
             ON ingested_archive(archive_sha256)
-    """)
-
+    """
+    )

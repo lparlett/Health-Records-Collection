@@ -11,9 +11,17 @@ from __future__ import annotations
 import sqlite3
 from typing import Mapping, Sequence, Tuple
 
-from services.common import clean_str, coerce_int, ensure_mapping_sequence
-from services.encounters import find_encounter_id
-from services.providers import get_or_create_provider
+from health_records_collection.db.utils import update_single_field
+from health_records_collection.services.common import (
+    clean_str,
+    coerce_int,
+    ensure_mapping_sequence,
+)
+from health_records_collection.services.encounters import (
+    EncounterLookup,
+    find_encounter_id,
+)
+from health_records_collection.services.providers import get_or_create_provider
 
 __all__ = ["insert_allergies"]
 
@@ -75,23 +83,24 @@ def insert_allergies(
             get_or_create_provider(conn, provider_name) if provider_name else None
         )
 
-        encounter_id = find_encounter_id(
-            conn,
-            patient_id,
+        # Try encounter start date or onset date
+        lookup = EncounterLookup(
+            patient_id=patient_id,
             encounter_date=clean_str(entry.get("encounter_start")) or onset_date,
             provider_name=provider_name,
             provider_id=provider_id,
-            source_encounter_id=clean_str(entry.get("encounter_source_id")),
         )
+        encounter_id = find_encounter_id(conn, lookup)
+
+        # Fall back to encounter end date if needed
         if encounter_id is None and clean_str(entry.get("encounter_end")):
-            encounter_id = find_encounter_id(
-                conn,
-                patient_id,
+            lookup = EncounterLookup(
+                patient_id=patient_id,
                 encounter_date=clean_str(entry.get("encounter_end")),
                 provider_name=provider_name,
                 provider_id=provider_id,
-                source_encounter_id=clean_str(entry.get("encounter_source_id")),
             )
+            encounter_id = find_encounter_id(conn, lookup)
 
         ds_id = coerce_int(entry.get("data_source_id"))
         substance_system = clean_str(entry.get("substance_code_system"))
@@ -208,10 +217,26 @@ def insert_allergies(
 
             if updates:
                 params.append(allergy_id)
-                cur.execute(
-                    f"UPDATE allergy SET {', '.join(updates)} WHERE id = ?",
-                    params,
-                )
+
+                # Single field update
+                if len(updates) == 1:
+                    update_field = updates[0].split()[0]  
+                    update_single_field(
+                        cur,
+                        "allergy",
+                        update_field,
+                        params[0],
+                        allergy_id
+                    )
+                # Multiple fields update
+                else:
+                    # pylint: disable=line-too-long
+                    # fmt: off
+                    query = f"UPDATE allergy SET {', '.join(updates)} WHERE id = ?" # nosec B608
+                    # fmt: on
+                    # pylint: enable=line-too-long
+                    cur.execute(query, params + [allergy_id])
+
                 updated += 1
             continue
 

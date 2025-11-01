@@ -22,7 +22,7 @@ Goals: reproducibility, privacy, and clarity.
 
 ## Environment
 
-* Python 3.12 (virtual env `.venv/`)
+* Python 3.12 (Poetry-managed virtual environment)
 * SQLite database (`sqlite3`)
 * Key libraries: `lxml`, `pandas`, `sqlite-utils`, `pytest`
 * Do not assume root/sudo access or system-level writes.
@@ -92,7 +92,7 @@ Source: [StackHawk](https://www.stackhawk.com/blog/4-best-practices-for-ai-code-
 * Prefer packages with strong security track records
 * Flag any dependencies that haven't been updated in 12+ months
 * Always check for known vulnerabilities before suggesting packages
-* Before commits, check that the `requirements.txt` file is updated
+* Before commits, ensure `pyproject.toml` and `poetry.lock` reflect any dependency changes (`poetry lock` / `poetry update`)
 
 ### Code Review Requirements
 

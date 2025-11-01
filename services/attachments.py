@@ -11,7 +11,8 @@ import sqlite3
 from pathlib import Path
 from typing import Optional
 
-from services.common import clean_str
+from health_records_collection.db.utils import update_single_field
+from health_records_collection.services.common import clean_str
 
 __all__ = ["upsert_attachment"]
 
@@ -69,10 +70,23 @@ def upsert_attachment(
             params.append(normalized_desc)
         if updates:
             params.append(attachment_id)
-            cur.execute(
-                f"UPDATE attachment SET {', '.join(updates)} WHERE id = ?",
-                params,
-            )
+            if len(updates) == 1:
+                update_field = updates[0].split()[0] 
+                update_single_field(
+                    cur,
+                    "attachment",
+                    update_field,
+                    params[0],
+                    attachment_id
+                )
+            else:
+                # For multiple fields, construct dynamic update query
+                # pylint: disable=line-too-long
+                # fmt: off
+                query = f"UPDATE attachment SET {', '.join(updates)} WHERE id = ?" # nosec B608
+                # fmt: on
+                # pylint: enable=line-too-long
+                cur.execute(query, params)
         conn.commit()
         return int(attachment_id)
 
