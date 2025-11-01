@@ -52,21 +52,19 @@ def insert_labs(
         # Try with ordering provider and start date
         lookup = EncounterLookup(
             patient_id=patient_id,
-            encounter_date=clean_str(
-                result.get("encounter_start")
-                ) or clean_str(result.get("date")),
+            encounter_date=clean_str(result.get("encounter_start"))
+            or clean_str(result.get("date")),
             provider_name=ordering_provider_name,
             provider_id=ordering_provider_id,
         )
         encounter_id = find_encounter_id(conn, lookup)
-        
+
         # Fall back to performing org and end date
         if encounter_id is None:
             lookup = EncounterLookup(
                 patient_id=patient_id,
-                encounter_date=clean_str(
-                    result.get("encounter_end")
-                    ) or clean_str(result.get("date")),
+                encounter_date=clean_str(result.get("encounter_end"))
+                or clean_str(result.get("date")),
                 provider_name=performing_org_name,
                 provider_id=performing_org_id,
             )

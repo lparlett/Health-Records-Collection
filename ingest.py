@@ -44,14 +44,14 @@ from health_records_collection.security import encryption
 from health_records_collection.services.allergies import insert_allergies
 from health_records_collection.services.archives import (
     archive_was_ingested,
-    register_ingested_archive
+    register_ingested_archive,
 )
 from health_records_collection.services.attachments import upsert_attachment
 from health_records_collection.services.common import clean_str
 from health_records_collection.services.conditions import insert_conditions
 from health_records_collection.services.data_sources import (
     link_attachment,
-    upsert_data_source
+    upsert_data_source,
 )
 from health_records_collection.services.encounters import insert_encounters
 from health_records_collection.services.immunizations import insert_immunizations
@@ -202,7 +202,9 @@ def parse_ccd(xml_file: Path) -> ParsedCCD:
         ParsedCCD: A dictionary with parsed patient and clinical sections.
     """
     try:
-        tree = safe_parse(str(xml_file))  # Bandit B320: safe_parse mitigates XML entity attacks.
+        tree = safe_parse(
+            str(xml_file)
+        )  # Bandit B320: safe_parse mitigates XML entity attacks.
     except (OSError, XMLSyntaxError) as exc:
         logger.warning("Skipping malformed XML %s: %s", xml_file.name, exc)
         return {}

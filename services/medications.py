@@ -93,7 +93,7 @@ def insert_medications(
             or clean_str(med.get("author_time"))
         )
         provider_name = clean_str(med.get("provider"))
-        
+
         lookup = EncounterLookup(
             patient_id=patient_id,
             encounter_date=encounter_date,

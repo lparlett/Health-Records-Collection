@@ -145,11 +145,7 @@ def upsert_insurance(
                 if len(updates) == 1:
                     update_field = updates[0].split()[0]
                     update_single_field(
-                        cur, 
-                        "insurance", 
-                        update_field, 
-                        params[0], 
-                        policy_id
+                        cur, "insurance", update_field, params[0], policy_id
                     )
                 # Multiple fields update
                 else:

@@ -49,7 +49,9 @@ def _load_config() -> Mapping[str, Any]:
             if isinstance(loaded, dict):
                 config = {**DEFAULT_CONFIG, **loaded}
             else:
-                logging.warning("Config at %s is not a mapping; using defaults.", CONFIG_PATH)
+                logging.warning(
+                    "Config at %s is not a mapping; using defaults.", CONFIG_PATH
+                )
     return config
 
 

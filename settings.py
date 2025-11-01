@@ -103,8 +103,8 @@ def load_paths() -> Dict[str, Path]:
 
 
 def _serialise_settings(
-    settings_data: Dict[str, Dict[str, Any]]
-    ) -> Dict[str, Dict[str, Union[str, Any]]]:
+    settings_data: Dict[str, Dict[str, Any]],
+) -> Dict[str, Dict[str, Union[str, Any]]]:
     """Convert paths to strings while preserving other scalar values."""
     serialised: Dict[str, Dict[str, Any]] = {}
     for section, values in settings_data.items():

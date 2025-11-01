@@ -71,13 +71,9 @@ def upsert_attachment(
         if updates:
             params.append(attachment_id)
             if len(updates) == 1:
-                update_field = updates[0].split()[0] 
+                update_field = updates[0].split()[0]
                 update_single_field(
-                    cur,
-                    "attachment",
-                    update_field,
-                    params[0],
-                    attachment_id
+                    cur, "attachment", update_field, params[0], attachment_id
                 )
             else:
                 # For multiple fields, construct dynamic update query

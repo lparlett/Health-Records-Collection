@@ -56,5 +56,5 @@ def update_single_field(
     if not (set(table) <= valid_chars and set(field) <= valid_chars):
         raise ValueError("Invalid table or field name")
 
-    sql = f"UPDATE {table} SET {field} = ? WHERE id = ?" # nosec B608
+    sql = f"UPDATE {table} SET {field} = ? WHERE id = ?"  # nosec B608
     cur.execute(sql, [value, record_id])

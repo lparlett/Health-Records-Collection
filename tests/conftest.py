@@ -66,7 +66,7 @@ def clear_provider_cache() -> None:
 
 def _get_test_modules() -> tuple[Any, Any, Any]:
     """Get the modules needed for test isolation.
-    
+
     Returns:
         tuple: Settings, encryption, and sqlcipher support modules
     """
@@ -79,8 +79,7 @@ def _get_test_modules() -> tuple[Any, Any, Any]:
 
 @pytest.fixture(autouse=True)
 def isolate_user_settings(
-    monkeypatch: pytest.MonkeyPatch, 
-    tmp_path_factory: pytest.TempPathFactory
+    monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory
 ) -> None:
     """Ensure user settings and encryption artifacts use a temp directory for tests."""
     settings_mod, encryption_mod, sqlcipher_mod = _get_test_modules()
@@ -93,10 +92,8 @@ def isolate_user_settings(
     monkeypatch.setattr(settings_mod, "USER_SETTINGS_DIR", settings_dir)
     monkeypatch.setattr(settings_mod, "SETTINGS_FILE", settings_dir / "settings.yaml")
     monkeypatch.setattr(
-        settings_mod, 
-        "USER_KEY_PATH", 
-        encryption_dir / "encryption.key"
-        )
+        settings_mod, "USER_KEY_PATH", encryption_dir / "encryption.key"
+    )
 
     # Reset encryption manager state
     # pylint: disable=protected-access

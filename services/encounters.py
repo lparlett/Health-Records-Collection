@@ -154,6 +154,7 @@ def find_encounter_id(
 @dataclass
 class EncounterData:
     """Container for parsed encounter data."""
+
     patient_id: int
     encounter_date: Optional[str] = None
     source_encounter_id: Optional[str] = None
@@ -243,17 +244,17 @@ def insert_encounters(
         if not encounter:
             continue
         existing = _find_existing_encounter(cur, encounter)
-        
+
         if existing:
             _update_encounter(cur, encounter, existing)
         else:
             _insert_encounter(cur, encounter)
-            
+
     conn.commit()
 
 
 def _find_existing_encounter(
-    cur: sqlite3.Cursor, 
+    cur: sqlite3.Cursor,
     encounter: EncounterData,
 ) -> Optional[tuple[Any, ...]]:
     """Find existing encounter record if any."""
@@ -289,39 +290,47 @@ def _update_encounter(
         existing_provider,
         existing_org,
     ) = existing
-    
+
     # Build update params
     updates: list[str] = []
     params: list[Any] = []
-    
+
     if encounter.encounter_type and (existing_type or "") != encounter.encounter_type:
         updates.append("encounter_type = ?")
         params.append(encounter.encounter_type)
-        
+
     if encounter.notes and (existing_notes or "") != encounter.notes:
         updates.append("notes = ?")
         params.append(encounter.notes)
-        
-    if (encounter.reason_for_visit and 
-        (existing_reason or "") != encounter.reason_for_visit):
+
+    if (
+        encounter.reason_for_visit
+        and (existing_reason or "") != encounter.reason_for_visit
+    ):
         updates.append("reason_for_visit = ?")
         params.append(encounter.reason_for_visit)
-        
-    if (encounter.data_source_id is not None and 
-        (existing_data_source or 0) != encounter.data_source_id):
+
+    if (
+        encounter.data_source_id is not None
+        and (existing_data_source or 0) != encounter.data_source_id
+    ):
         updates.append("data_source_id = ?")
         params.append(encounter.data_source_id)
-        
-    if (encounter.provider_id is not None and 
-        (existing_provider or 0) != encounter.provider_id):
+
+    if (
+        encounter.provider_id is not None
+        and (existing_provider or 0) != encounter.provider_id
+    ):
         updates.append("provider_id = ?")
         params.append(encounter.provider_id)
-        
-    if (encounter.organization_id is not None and 
-        (existing_org or 0) != encounter.organization_id):
+
+    if (
+        encounter.organization_id is not None
+        and (existing_org or 0) != encounter.organization_id
+    ):
         updates.append("organization_id = ?")
         params.append(encounter.organization_id)
-        
+
     if updates:
         params.append(encounter_db_id)
         _execute_update(cur, updates, params)
@@ -337,7 +346,7 @@ def _execute_update(
         update_field = updates[0].split()[0]  # Extract field name from "field = ?"
         update_single_field(cur, "encounter", update_field, params[0], params[-1])
     else:
-        query = f"UPDATE encounter SET {', '.join(updates)} WHERE id = ?" #nosec B608
+        query = f"UPDATE encounter SET {', '.join(updates)} WHERE id = ?"  # nosec B608
         cur.execute(query, params)
 
 

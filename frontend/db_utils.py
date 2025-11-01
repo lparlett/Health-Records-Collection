@@ -23,6 +23,7 @@ from health_records_collection.security import sqlcipher_support
 if TYPE_CHECKING:
     # This block is only used for type checking
     from sqlite3 import Connection as SQLite3Connection
+
     SQLCipherConnection = SQLite3Connection
 else:
     # Runtime definition
@@ -81,7 +82,9 @@ def _open_encrypted_connection(
     db_path: Path, *, passphrase: str
 ) -> SQLCipherConnection:
     """Return an SQLCipher connection initialised with hardening pragmas."""
-    conn = cast(SQLCipherConnection, sqlcipher.connect(str(db_path)))  # pylint: disable=no-member
+    conn = cast(
+        SQLCipherConnection, sqlcipher.connect(str(db_path))
+    )  # pylint: disable=no-member
     sqlcipher_support.configure_connection(conn, passphrase)
     return conn
 
@@ -130,17 +133,17 @@ def list_tables(conn):
 
 def get_table_preview(
     conn: SQLCipherConnection, table_name: str, limit: int | None = None
-    ) -> pd.DataFrame:
+) -> pd.DataFrame:
     """Get a preview of table contents with SQL injection protection.
-    
+
     Args:
         conn: Database connection
         table_name: Name of the table to preview (must be a valid SQL identifier)
         limit: Maximum number of rows to return, defaults to CONFIG["default_row_limit"]
-    
+
     Returns:
         DataFrame containing the table preview
-        
+
     Raises:
         ValueError: If table_name is not a valid SQL identifier
     """
@@ -149,8 +152,12 @@ def get_table_preview(
         raise ValueError("Invalid table name")
 
     # Check if table exists to prevent SQL injection
-    table_names = [row[0] for row in conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
+    table_names = [
+        row[0]
+        for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()
+    ]
     if table_name not in table_names:
         raise ValueError(f"Table '{table_name}' does not exist")
 
@@ -162,6 +169,7 @@ def get_table_preview(
     # Table name is now verified to exist and be safe
     query = f"SELECT * FROM {table_name} LIMIT ?"  # nosec B608
     return pd.read_sql(query, conn, params=(row_limit,))
+
 
 def run_query(conn, sql):
     """Run an arbitrary SQL query and return the results as a DataFrame."""

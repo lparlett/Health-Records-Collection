@@ -18,6 +18,7 @@ from health_records_collection import settings
 
 class TestSettings(unittest.TestCase):
     """Unit tests for settings module."""
+
     def setUp(self):
         # Create a temporary directory for each test
         self.temp_dir = tempfile.mkdtemp()

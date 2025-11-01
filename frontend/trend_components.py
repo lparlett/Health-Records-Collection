@@ -243,7 +243,6 @@ def render_patient_trends(
         chart = chart.interactive()
         st.altair_chart(chart, use_container_width=True)
     else:
-        st.info("Not enough numeric data points with valid dates to render a " 
-                "chart.")
+        st.info("Not enough numeric data points with valid dates to render a " "chart.")
 
     st.dataframe(series_df[table_columns], use_container_width=True)

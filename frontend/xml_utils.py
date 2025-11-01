@@ -21,6 +21,7 @@ import logging
 import datetime
 from typing import Optional, Any
 from defusedxml.lxml import parse, fromstring
+
 # We need lxml for XSLT processing which defusedxml doesn't support.
 # Security is handled through RESTRICTED_PARSER settings.
 from lxml import etree as unsafe_etree  # nosec B410
@@ -33,12 +34,12 @@ from health_records_collection.security import encryption
 # but we restrict it heavily to prevent XML attacks
 RESTRICTED_PARSER = unsafe_etree.XMLParser(
     resolve_entities=False,  # Prevent XXE attacks
-    no_network=True,        # Prevent network-based attacks
-    remove_blank_text=True, # Normalize whitespace
-    remove_comments=True,   # Remove potentially dangerous content
-    remove_pis=True,       # Remove processing instructions
-    load_dtd=False,        # Prevent DTD-based attacks
-    collect_ids=False      # Prevent memory attacks
+    no_network=True,  # Prevent network-based attacks
+    remove_blank_text=True,  # Normalize whitespace
+    remove_comments=True,  # Remove potentially dangerous content
+    remove_pis=True,  # Remove processing instructions
+    load_dtd=False,  # Prevent DTD-based attacks
+    collect_ids=False,  # Prevent memory attacks
 )
 
 # Namespace for XSLT documents
@@ -77,15 +78,12 @@ def validate_stylesheet(file_path: Path) -> bool:
         tree = fromstring(content.encode("utf-8"))
 
         # Get tree attributes safely
-        if getattr(tree, 'nsmap', {}).get(None) != XSLT_NS:
+        if getattr(tree, "nsmap", {}).get(None) != XSLT_NS:
             print(f"Not a valid XSLT file (wrong namespace): {file_path}")
             return False
 
-        tree_tag = getattr(tree, 'tag', '')
-        if not (
-            tree_tag.endswith('stylesheet') or 
-            tree_tag.endswith('transform')
-        ):
+        tree_tag = getattr(tree, "tag", "")
+        if not (tree_tag.endswith("stylesheet") or tree_tag.endswith("transform")):
             print(f"Not a valid XSLT file (root is {tree_tag}): {file_path}")
             return False
 
@@ -156,32 +154,33 @@ def transform_cda_to_html(xml_path: str) -> Optional[str]:
 
         # Parse XML using defusedxml for security
         xml_doc = fromstring(xml_content.encode("utf-8"))
-        
+
         # For XSLT processing we need lxml but with strict security settings
         xsl_text = Path(xsl_path).read_text(encoding="utf-8")
-        
+
         # Create safe transformation pipeline
         try:
             logger.debug("Creating XSLT transformer")
-            
+
             # Parse stylesheet with restricted settings
             # Safe since we use RESTRICTED_PARSER with all security options enabled
             xsl_doc = unsafe_etree.fromstring(  # nosec B320
-                xsl_text.encode("utf-8"), 
-                parser=RESTRICTED_PARSER
+                xsl_text.encode("utf-8"), parser=RESTRICTED_PARSER
             )
             transform = unsafe_etree.XSLT(xsl_doc)
-            
+
             # Log XSL document details safely
-            tag = getattr(xsl_doc, 'tag', 'unknown')
+            tag = getattr(xsl_doc, "tag", "unknown")
             logger.debug(f"XSL document root tag: {tag}")
             logger.debug(f"XSL document size: {len(xsl_text)} bytes")
 
             # Convert XML to string and back through restricted parser
             # Safe since we use RESTRICTED_PARSER with all security options enabled
             xml_str = unsafe_etree.tostring(xml_doc)
-            safe_doc = unsafe_etree.fromstring(xml_str, parser=RESTRICTED_PARSER)  # nosec B320
-            
+            safe_doc = unsafe_etree.fromstring(
+                xml_str, parser=RESTRICTED_PARSER
+            )  # nosec B320
+
             # Perform transformation
             logger.debug("Performing XSLT transformation")
             html = transform(safe_doc)

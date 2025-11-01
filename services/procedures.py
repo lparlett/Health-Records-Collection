@@ -50,9 +50,8 @@ def insert_procedures(
 
         lookup = EncounterLookup(
             patient_id=patient_id,
-            encounter_date=clean_str(
-                proc.get("date")
-            ) or clean_str(proc.get("author_time")),
+            encounter_date=clean_str(proc.get("date"))
+            or clean_str(proc.get("author_time")),
             provider_name=provider_name,
             provider_id=provider_id,
         )
@@ -117,13 +116,9 @@ def insert_procedures(
             if updates:
                 # Single field update
                 if len(updates) == 1:
-                    update_field = updates[0].split()[0]  
+                    update_field = updates[0].split()[0]
                     update_single_field(
-                        cur,
-                        "procedure",
-                        update_field,
-                        params[0],
-                        procedure_id
+                        cur, "procedure", update_field, params[0], procedure_id
                     )
                 # Multiple fields update
                 else:

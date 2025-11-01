@@ -220,13 +220,9 @@ def insert_allergies(
 
                 # Single field update
                 if len(updates) == 1:
-                    update_field = updates[0].split()[0]  
+                    update_field = updates[0].split()[0]
                     update_single_field(
-                        cur,
-                        "allergy",
-                        update_field,
-                        params[0],
-                        allergy_id
+                        cur, "allergy", update_field, params[0], allergy_id
                     )
                 # Multiple fields update
                 else:

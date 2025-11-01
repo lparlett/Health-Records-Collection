@@ -72,14 +72,14 @@ def insert_vitals(
             or clean_str(vital.get("encounter_end"))
         )
         provider_name = clean_str(vital.get("provider"))
-        
+
         lookup = EncounterLookup(
             patient_id=patient_id,
             encounter_date=measurement_date,
             provider_name=provider_name,
         )
         encounter_id = find_encounter_id(conn, lookup)
-        
+
         # Try fallback to encounter end date if different
         if encounter_id is None:
             fallback_date = clean_str(vital.get("encounter_end"))

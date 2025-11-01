@@ -20,7 +20,9 @@ from health_records_collection.frontend import ui_components
 from health_records_collection import settings
 from health_records_collection.frontend import xml_utils
 from health_records_collection.frontend.note_components import render_progress_notes
-from health_records_collection.frontend.schema_components import render_schema_documentation
+from health_records_collection.frontend.schema_components import (
+    render_schema_documentation,
+)
 from health_records_collection.frontend.trend_components import render_patient_trends
 from health_records_collection.frontend.upload_components import render_upload_page
 
@@ -331,7 +333,7 @@ def _show_settings_page() -> None:
             continue
         try:
             resolved = Path(trimmed).expanduser()
-        except (ValueError, OSError) as exc: # pragma: no cover - defensive
+        except (ValueError, OSError) as exc:  # pragma: no cover - defensive
             errors.append(f"Invalid path for {key.replace('_', ' ')}: {exc}")
             continue
         if key != "db_path" and resolved.suffix:
