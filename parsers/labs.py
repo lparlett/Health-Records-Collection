@@ -21,6 +21,7 @@ from .common import (
     first_non_empty,
     iter_elements,
     normalize_whitespace,
+    safe_xpath_text,
 )
 from .xml_types import ElementType, ElementTreeType
 
@@ -152,9 +153,10 @@ def _extract_reference_range(
     ns: dict[str, str],
 ) -> Optional[str]:
     """Return the reference range text if provided."""
-    ref_text = observation.findtext(
+    ref_text = safe_xpath_text(
+        observation,
         ".//hl7:referenceRange//hl7:observationRange//hl7:text",
-        namespaces=ns,
+        ns,
     )
     return normalize_whitespace(ref_text)
 

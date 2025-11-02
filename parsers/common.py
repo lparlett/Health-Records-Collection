@@ -34,6 +34,8 @@ __all__ = [
     "extract_status_code",
     "extract_encounter_id",
     "extract_encounter_details",
+    "safe_xpath_text",
+    "safe_xpath_attr",
 ]
 
 
@@ -331,3 +333,60 @@ def extract_encounter_details(
         ns,
     )
     return source_id, start, end
+
+
+def safe_xpath_text(
+    element: ElementType, path: str, ns: dict[str, str]
+) -> str | None:
+    """Safely extract text using xpath, with namespace fallback.
+
+    Handles documents where namespace prefixes may not be declared
+    by falling back to unprefixed XPath queries.
+
+    Args:
+        element: XML element to query.
+        path: XPath expression (may include hl7: prefix).
+        ns: Namespace dictionary mapping prefixes to URIs.
+
+    Returns:
+        First matching text content or None.
+    """
+    try:
+        results = element.xpath(f"{path}/text()", namespaces=ns)
+        return results[0] if results else None
+    except (KeyError, AttributeError):  # Namespace not found or xpath failed
+        try:
+            simple_path = path.replace("hl7:", "").replace("//", "/")
+            results = element.xpath(f".//{simple_path}/text()")
+            return results[0] if results else None
+        except (KeyError, AttributeError):
+            return None
+
+
+def safe_xpath_attr(
+    element: ElementType, path: str, attr: str, ns: dict[str, str]
+) -> str | None:
+    """Safely extract attribute using xpath, with namespace fallback.
+
+    Handles documents where namespace prefixes may not be declared
+    by falling back to unprefixed XPath queries.
+
+    Args:
+        element: XML element to query.
+        path: XPath expression (may include hl7: prefix).
+        attr: Attribute name to extract.
+        ns: Namespace dictionary mapping prefixes to URIs.
+
+    Returns:
+        Attribute value or None.
+    """
+    try:
+        results = element.xpath(f"{path}/@{attr}", namespaces=ns)
+        return results[0] if results else None
+    except (KeyError, AttributeError):  # Namespace not found or xpath failed
+        try:
+            simple_path = path.replace("hl7:", "").replace("//", "/")
+            results = element.xpath(f".//{simple_path}/@{attr}")
+            return results[0] if results else None
+        except (KeyError, AttributeError):
+            return None

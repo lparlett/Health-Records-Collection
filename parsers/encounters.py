@@ -19,6 +19,7 @@ from .common import (
     get_text_by_id,
     iter_elements,
     normalize_whitespace,
+    safe_xpath_text,
 )
 from .xml_types import ElementType, ElementTreeType
 
@@ -55,9 +56,11 @@ def _normalize_reason_text(value: Optional[str]) -> Optional[str]:
 
 def _join_clean(parts: Iterable[Optional[str]]) -> Optional[str]:
     """Join non-empty strings with a delimiter after trimming whitespace."""
-    cleaned_parts = [
-        normalize_whitespace(part) for part in parts if normalize_whitespace(part)
-    ]
+    cleaned_parts: list[str] = []
+    for part in parts:
+        normalized = normalize_whitespace(part)
+        if normalized:
+            cleaned_parts.append(normalized)
     if not cleaned_parts:
         return None
     return " | ".join(cleaned_parts)
@@ -83,7 +86,7 @@ def _reason_sections(tree: ElementTreeType, ns: dict[str, str]) -> list[ElementT
     for section in iter_elements(tree.xpath(".//hl7:section", namespaces=ns)):
         code_el = section.find("hl7:code", namespaces=ns)
         code_value = clean_text(code_el.get("code") if code_el is not None else None)
-        title_text = normalize_whitespace(section.findtext("hl7:title", namespaces=ns))
+        title_text = normalize_whitespace(safe_xpath_text(section, ".//hl7:title", ns))
         title_lower = (title_text or "").lower()
         if code_value in REASON_FOR_VISIT_CODES or (
             "reason" in title_lower
@@ -101,7 +104,10 @@ def _reason_for_visit(tree: ElementTreeType, ns: dict[str, str]) -> Optional[str
     seen: set[str] = set()
     for section in _reason_sections(tree, ns):
         text_nodes = section.xpath(
-            ".//hl7:act/hl7:text | .//hl7:observation/hl7:text | .//hl7:paragraph | .//hl7:list/hl7:item",
+            ".//hl7:act/hl7:text | "
+            ".//hl7:observation/hl7:text | "
+            ".//hl7:paragraph | "
+            ".//hl7:list/hl7:item",
             namespaces=ns,
         )
         for node in iter_elements(text_nodes):
@@ -132,8 +138,14 @@ def _document_context(tree: ElementTreeType, ns: dict[str, str]) -> DocumentCont
     if encompassing is not None:
         provider_person, provider_org = extract_provider_info(
             encompassing,
-            "hl7:encounterParticipant/hl7:assignedEntity/hl7:assignedPerson/hl7:name",
-            "hl7:encounterParticipant/hl7:assignedEntity/hl7:representedOrganization/hl7:name",
+            (
+            "hl7:encounterParticipant/hl7:assignedEntity/"
+            "hl7:assignedPerson/hl7:name"
+            ),
+            (
+            "hl7:encounterParticipant/hl7:assignedEntity/"
+            "hl7:representedOrganization/hl7:organizationName"
+            ),
             ns,
         )
     global_start, global_end = extract_effective_time(
@@ -214,7 +226,8 @@ def _encounter_status(encounter: ElementType, ns: dict[str, str]) -> Optional[st
 def _encounter_location(encounter: ElementType, ns: dict[str, str]) -> Optional[str]:
     """Return encounter location name."""
     location_el = encounter.find(
-        "hl7:participant[@typeCode='LOC']/hl7:participantRole/hl7:playingEntity/hl7:name",
+        "hl7:participant[@typeCode='LOC']/hl7:participantRole/"
+        "hl7:playingEntity/hl7:name",
         namespaces=ns,
     )
     if location_el is None:
@@ -231,8 +244,14 @@ def _encounter_provider(
     """Return encounter provider name with organisation fallback."""
     provider_name, attending_org = extract_provider_info(
         encounter,
-        "hl7:participant[@typeCode='ATND']/hl7:assignedEntity/hl7:assignedPerson/hl7:name",
-        "hl7:participant[@typeCode='ATND']/hl7:assignedEntity/hl7:representedOrganization/hl7:name",
+        (
+            "hl7:participant[@typeCode='ATND']/hl7:assignedEntity/"
+            "hl7:assignedPerson/hl7:name"
+        ),
+        (
+            "hl7:participant[@typeCode='ATND']/hl7:assignedEntity/"
+            "hl7:representedOrganization/hl7:name"
+        ),
         ns,
     )
     if not provider_name:

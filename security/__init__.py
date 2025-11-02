@@ -1,6 +1,10 @@
 """Security utilities package."""
 
-from .encryption import decrypt_to_temp
+from .encryption import (
+    DecryptionError,
+    EncryptionError,
+    decrypt_to_temp,
+)
 from .sqlcipher_support import (
     configure_connection,
     get_passphrase,
@@ -8,6 +12,8 @@ from .sqlcipher_support import (
 )
 
 __all__ = [
+    "DecryptionError",
+    "EncryptionError",
     "decrypt_to_temp",
     "configure_connection",
     "get_passphrase",

@@ -1,0 +1,466 @@
+"""SVG diagram generation for database schema ER diagrams.
+
+Purpose: Extract diagram building and SVG rendering logic from schema_components.py.
+Author: Lauren Parlett
+Date: 2025-11-01
+Tests: Manual Streamlit validation; automated frontend coverage pending.
+AI-assisted: Module generated with AI assistance.
+"""
+
+import html
+from dataclasses import dataclass
+from typing import Dict
+
+from health_records_collection.frontend.common_types import Anchor, EdgeSpec
+
+
+@dataclass(frozen=True)
+class PositionedNode:
+    """Node with computed coordinates and dimensions (flattened for rendering)."""
+
+    identifier: str
+    title: str
+    fields: tuple[str, ...]
+    x: float
+    y: float
+    width: float
+    height: float
+
+
+class DiagramBuilder:
+    """Generate SVG markup for database schema ER diagram."""
+
+    # Layout constants
+    BASE_CARD_WIDTH = 250.0
+    BASE_CARD_HEIGHT = 250.0
+    BASE_H_GAP = 80.0
+    BASE_V_GAP = 60.0
+    BASE_MARGIN = 60.0
+    REL_SECTION_MARGIN = 8.0
+    REL_HEADER_OFFSET = 0.0
+    REL_LINE_SPACING = 12.0
+    REL_FOOTER_PADDING = 8.0
+    HEADER_BLOCK_HEIGHT = 36.0
+    FIELD_LINE_SPACING = 16.0
+    FIELD_BOTTOM_MARGIN = 12.0
+    REL_SECTION_GAP = 12.0
+
+    def __init__(
+        self,
+        nodes: list[PositionedNode],
+        edges: list[EdgeSpec],
+        *,
+        zoom: float = 1.0,
+        text_color: str = "#202124",
+    ) -> None:
+        """Initialize builder with positioned nodes and edges.
+
+        Args:
+            nodes: List of positioned node specs with coordinates.
+            edges: List of edge specs defining relationships.
+            zoom: Zoom factor (0.75-3.0). Defaults to 1.0.
+            text_color: Hex color for text. Defaults to "#202124".
+        """
+        self.nodes = nodes
+        self.edges = edges
+        self.scale = max(0.75, min(3.0, zoom))
+        self.text_color = text_color
+
+        # Computed style properties
+        self.title_size = 18 * self.scale
+        self.field_size = 13 * self.scale
+        self.label_size = 11 * self.scale
+        self.edge_color = "#5c7080"
+        self.card_fill = "#f5f7fb"
+        self.card_border = "#c3ccd6"
+
+    def build(self) -> tuple[str, int]:
+        """Generate SVG markup and recommended container height.
+
+        Returns:
+            Tuple of (html_wrapped_svg, recommended_height_px).
+        """
+        svg_lines = self._build_svg_header()
+        svg_lines.extend(self._build_legend())
+        svg_lines.extend(self._build_edges())
+        svg_lines.extend(self._build_nodes())
+        svg_lines.append("</svg></div>")
+
+        svg_markup = "".join(svg_lines)
+        diagram_height = self._compute_diagram_height()
+
+        return svg_markup, int(diagram_height + 40)
+
+    def _build_svg_header(self) -> list[str]:
+        """Generate SVG header with defs and styling."""
+        extent_x = (
+            max((node.x + node.width) for node in self.nodes) if self.nodes else 0.0
+        )
+        extent_y = (
+            max((node.y + node.height) for node in self.nodes) if self.nodes else 0.0
+        )
+        diagram_width = int((extent_x + self.BASE_MARGIN) * self.scale)
+        diagram_height = int((extent_y + self.BASE_MARGIN) * self.scale)
+
+        return [
+            (
+                f'<div style="width:100%; overflow:auto; background-color:#ffffff;">'
+                f'<svg width="{diagram_width}" height="{diagram_height}" '
+                f'viewBox="0 0 {diagram_width} {diagram_height}" '
+                'xmlns="http://www.w3.org/2000/svg" role="img" '
+                'aria-label="Health Records schema diagram">'
+            ),
+            "<defs>",
+            (
+                f'<marker id="arrowhead" markerWidth="{10 * self.scale}" '
+                f'markerHeight="{10 * self.scale}" '
+                f'refX="{10 * self.scale}" refY="{5 * self.scale}" orient="auto">'
+                f'<path d="M0,0 L0,{10 * self.scale} '
+                f'L{10 * self.scale},{5 * self.scale} Z" '
+                f'fill="{self.edge_color}" />'
+                "</marker>"
+            ),
+            "</defs>",
+        ]
+
+    def _build_legend(self) -> list[str]:
+        """Generate legend box for column attribute abbreviations."""
+        legend_entries = [
+            ("AUTO", "Auto-incrementing"),
+            ("DEF", "Default value"),
+            ("INT", "Integer"),
+            ("NN", "Not Null"),
+            ("PK", "Primary Key"),
+        ]
+
+        legend_padding = 10.0 * self.scale
+        legend_line_height = (self.label_size + 4.0) * self.scale
+        legend_header_height = (self.label_size + 6.0) * self.scale
+        legend_width = 220.0 * self.scale
+        legend_height = (
+            legend_padding * 2
+            + legend_header_height
+            + len(legend_entries) * legend_line_height
+        )
+        legend_x = 16.0 * self.scale
+        legend_y = 16.0 * self.scale
+
+        svg_lines = [
+            (
+                f'<rect x="{legend_x:.1f}" y="{legend_y:.1f}" '
+                f'width="{legend_width:.1f}" height="{legend_height:.1f}" '
+                'rx="12" ry="12" fill="rgba(255,255,255,0.86)" '
+                'stroke="#c3ccd6" stroke-width="1.0" />'
+            ),
+        ]
+
+        legend_header_y = legend_y + legend_padding + legend_header_height * 0.8
+        svg_lines.append(
+            (
+                f'<text x="{legend_x + legend_width / 2:.1f}" '
+                f'y="{legend_header_y:.1f}" '
+                f'fill="{self.edge_color}" font-size="{self.label_size:.1f}" '
+                'font-family="Helvetica" text-anchor="middle" font-weight="600">'
+                "Legend"
+                "</text>"
+            )
+        )
+
+        for idx, (abbr, meaning) in enumerate(legend_entries, start=1):
+            entry_y = legend_header_y + idx * legend_line_height
+            svg_lines.append(
+                (
+                    f'<text x="{legend_x + legend_padding:.1f}" y="{entry_y:.1f}" '
+                    f'fill="{self.edge_color}" font-size="{self.label_size:.1f}" '
+                    'font-family="Helvetica" text-anchor="start">'
+                    f"{html.escape(abbr)} = {html.escape(meaning)}"
+                    "</text>"
+                )
+            )
+
+        return svg_lines
+
+    def _build_edges(self) -> list[str]:
+        """Generate SVG paths for relationship edges."""
+        svg_lines: list[str] = []
+        node_lookup: Dict[str, PositionedNode] = {
+            node.identifier: node for node in self.nodes
+        }
+
+        # Group edges by (source, target) pair for multi-edge handling
+        edges_by_pair: Dict[tuple[str, str], list[EdgeSpec]] = {}
+        for edge in self.edges:
+            pair = (edge.source, edge.target)
+            if pair not in edges_by_pair:
+                edges_by_pair[pair] = []
+            edges_by_pair[pair].append(edge)
+
+        # Build anchor slot mappings for parallel edges
+        source_anchor_slots: Dict[str, Dict[Anchor, list[EdgeSpec]]] = {}
+        target_anchor_slots: Dict[str, Dict[Anchor, list[EdgeSpec]]] = {}
+        for edge in self.edges:
+            source_anchor_slots.setdefault(edge.source, {}).setdefault(
+                edge.source_anchor, []
+            ).append(edge)
+            target_anchor_slots.setdefault(edge.target, {}).setdefault(
+                edge.target_anchor, []
+            ).append(edge)
+
+        for edges_for_pair in edges_by_pair.values():
+            for edge in edges_for_pair:
+                source_slots = source_anchor_slots.get(edge.source, {}).get(
+                    edge.source_anchor, [edge]
+                )
+                target_slots = target_anchor_slots.get(edge.target, {}).get(
+                    edge.target_anchor, [edge]
+                )
+                source_index = source_slots.index(edge)
+                target_index = target_slots.index(edge)
+
+                start_x, start_y = self._anchor_point(
+                    node_lookup,
+                    edge.source,
+                    edge.source_anchor,
+                    source_index,
+                    total=len(source_slots),
+                )
+                end_x, end_y = self._anchor_point(
+                    node_lookup,
+                    edge.target,
+                    edge.target_anchor,
+                    target_index,
+                    total=len(target_slots),
+                )
+
+                # Determine orientation for curve routing
+                if edge.source_anchor in {"left", "right"} and edge.target_anchor in {
+                    "left",
+                    "right",
+                }:
+                    orientation = "horizontal"
+                elif edge.source_anchor in {"top", "bottom"} and edge.target_anchor in {
+                    "top",
+                    "bottom",
+                }:
+                    orientation = "vertical"
+                else:
+                    orientation = "diagonal"
+
+                path = self._curve_path(
+                    start_x, start_y, end_x, end_y, orientation=orientation
+                )
+                svg_lines.append(
+                    (
+                        f'<path d="{path}" '
+                        f'stroke="{self.edge_color}" '
+                        f'stroke-width="{1.2 * self.scale:.2f}" '
+                        'fill="none" marker-end="url(#arrowhead)" />'
+                    )
+                )
+
+        return svg_lines
+
+    def _build_nodes(self) -> list[str]:
+        """Generate SVG rectangles and text for all nodes."""
+        svg_lines: list[str] = []
+
+        # Build relationship info for each node
+        outgoing_edges: Dict[str, list[EdgeSpec]] = {}
+        incoming_edges: Dict[str, list[EdgeSpec]] = {}
+        for edge in self.edges:
+            outgoing_edges.setdefault(edge.source, []).append(edge)
+            incoming_edges.setdefault(edge.target, []).append(edge)
+
+        for node in self.nodes:
+            x = node.x * self.scale
+            y = node.y * self.scale
+            width = node.width * self.scale
+            height = node.height * self.scale
+
+            # Card background
+            svg_lines.append(
+                (
+                    f'<rect x="{x:.1f}" y="{y:.1f}" width="{width:.1f}" '
+                    f'height="{height:.1f}" '
+                    f'rx="{12 * self.scale:.1f}" ry="{12 * self.scale:.1f}" '
+                    f'fill="{self.card_fill}" stroke="{self.card_border}" '
+                    f'stroke-width="{1.2 * self.scale:.2f}" />'
+                )
+            )
+
+            # Title
+            title_y = y + 28 * self.scale
+            svg_lines.append(
+                (
+                    f'<text x="{x + width / 2:.1f}" y="{title_y:.1f}" '
+                    f'fill="{self.text_color}" font-size="{self.title_size:.1f}" '
+                    'font-family="Helvetica" font-weight="600" text-anchor="middle">'
+                    f"{html.escape(node.title)}"
+                    "</text>"
+                )
+            )
+
+            # Field list
+            for idx, field in enumerate(node.fields, start=1):
+                line_y = (
+                    title_y
+                    + (self.HEADER_BLOCK_HEIGHT - 8.0) * self.scale
+                    + (idx - 1) * self.FIELD_LINE_SPACING * self.scale
+                )
+                if line_y + 16 * self.scale > y + height:
+                    break
+                svg_lines.append(
+                    (
+                        f'<text x="{x + width / 2:.1f}" y="{line_y:.1f}" '
+                        f'fill="{self.text_color}" font-size="{self.field_size:.1f}" '
+                        'font-family="Helvetica" text-anchor="middle">'
+                        f"{html.escape(field)}"
+                        "</text>"
+                    )
+                )
+
+            # Relationship sections
+            base_height = (
+                self.HEADER_BLOCK_HEIGHT + len(node.fields) * self.FIELD_LINE_SPACING
+            )
+            cursor = y + base_height * self.scale
+            outgoing = outgoing_edges.get(node.identifier, [])
+            incoming = incoming_edges.get(node.identifier, [])
+
+            if outgoing:
+                cursor += self.REL_SECTION_MARGIN * self.scale
+                header_y = cursor + self.REL_HEADER_OFFSET * self.scale
+                svg_lines.append(
+                    (
+                        f'<text x="{x + width / 2:.1f}" y="{header_y:.1f}" '
+                        f'fill="{self.edge_color}" font-size="{self.label_size:.1f}" '
+                        'font-family="Helvetica" text-anchor="middle" '
+                        'font-weight="600">'
+                        "References"
+                        "</text>"
+                    )
+                )
+                for rel_idx, edge in enumerate(outgoing, start=1):
+                    rel_y = header_y + rel_idx * (self.REL_LINE_SPACING * self.scale)
+                    svg_lines.append(
+                        (
+                            f'<text x="{x + 12 * self.scale:.1f}" y="{rel_y:.1f}" '
+                            f'fill="{self.edge_color}" '
+                            f'font-size="{self.label_size:.1f}" '
+                            'font-family="Helvetica" text-anchor="start">'
+                            f"- {html.escape(edge.label)} → {html.escape(edge.target)}"
+                            "</text>"
+                        )
+                    )
+                cursor = (
+                    header_y
+                    + len(outgoing) * (self.REL_LINE_SPACING * self.scale)
+                    + self.REL_FOOTER_PADDING * self.scale
+                )
+
+            if incoming:
+                gap = self.REL_SECTION_GAP if outgoing else self.REL_SECTION_MARGIN
+                cursor += gap * self.scale
+                header_y = cursor + self.REL_HEADER_OFFSET * self.scale
+                svg_lines.append(
+                    (
+                        f'<text x="{x + width / 2:.1f}" y="{header_y:.1f}" '
+                        f'fill="{self.edge_color}" font-size="{self.label_size:.1f}" '
+                        'font-family="Helvetica" text-anchor="middle" '
+                        'font-weight="600">'
+                        "Referenced by"
+                        "</text>"
+                    )
+                )
+                for rel_idx, edge in enumerate(incoming, start=1):
+                    rel_y = header_y + rel_idx * (self.REL_LINE_SPACING * self.scale)
+                    svg_lines.append(
+                        (
+                            f'<text x="{x + 12 * self.scale:.1f}" y="{rel_y:.1f}" '
+                            f'fill="{self.edge_color}" '
+                            f'font-size="{self.label_size:.1f}" '
+                            'font-family="Helvetica" text-anchor="start">'
+                            f"- {html.escape(edge.source)} ← {html.escape(edge.label)}"
+                            "</text>"
+                        )
+                    )
+
+        return svg_lines
+
+    def _anchor_point(
+        self,
+        node_lookup: Dict[str, PositionedNode],
+        node_id: str,
+        anchor: Anchor,
+        slot: int,
+        *,
+        total: int,
+    ) -> tuple[float, float]:
+        """Compute anchor point coordinates on node edge."""
+        node = node_lookup[node_id]
+        x = node.x * self.scale
+        y = node.y * self.scale
+        width = node.width * self.scale
+        height = node.height * self.scale
+        total = max(total, 1)
+        offset = slot + 1
+
+        if anchor == "left":
+            step = height / (total + 1)
+            return x, y + step * offset
+        if anchor == "right":
+            step = height / (total + 1)
+            return x + width, y + step * offset
+        if anchor == "top":
+            step = width / (total + 1)
+            return x + step * offset, y
+        if anchor == "bottom":
+            step = width / (total + 1)
+            return x + step * offset, y + height
+
+        return x + width / 2, y + height / 2
+
+    def _curve_path(
+        self, x1: float, y1: float, x2: float, y2: float, *, orientation: str
+    ) -> str:
+        """Generate SVG Bézier curve path for edge routing."""
+        if orientation == "horizontal":
+            offset = max(60.0 * self.scale, abs(x2 - x1) / 2)
+            if x2 < x1:
+                offset = -offset
+            return (
+                f"M{x1:.1f},{y1:.1f} "
+                f"C{x1 + offset:.1f},{y1:.1f} {x2 - offset:.1f},"
+                f"{y2:.1f} {x2:.1f},{y2:.1f}"
+            )
+
+        if orientation == "vertical":
+            offset = max(40.0 * self.scale, abs(y2 - y1) / 2)
+            if y2 < y1:
+                offset = -offset
+            return (
+                f"M{x1:.1f},{y1:.1f} "
+                f"C{x1:.1f},{y1 + offset:.1f} {x2:.1f},"
+                f"{y2 - offset:.1f} {x2:.1f},{y2:.1f}"
+            )
+
+        # Diagonal or mixed orientation
+        h_offset = max(40.0 * self.scale, abs(x2 - x1) / 2)
+        v_offset = max(40.0 * self.scale, abs(y2 - y1) / 2)
+        if x2 < x1:
+            h_offset = -h_offset
+        if y2 < y1:
+            v_offset = -v_offset
+        return (
+            f"M{x1:.1f},{y1:.1f} "
+            f"C{x1 + h_offset:.1f},{y1:.1f} {x2:.1f},"
+            f"{y2 - v_offset:.1f} {x2:.1f},{y2:.1f}"
+        )
+
+    def _compute_diagram_height(self) -> float:
+        """Compute the total SVG diagram height based on nodes."""
+        if not self.nodes:
+            return self.BASE_MARGIN * 2
+
+        extent_y = max((node.y + node.height) for node in self.nodes)
+        return (extent_y + self.BASE_MARGIN) * self.scale

@@ -23,6 +23,7 @@ import yaml  # type: ignore
 from defusedxml.lxml import parse as safe_parse  # type: ignore
 from defusedxml.common import DefusedXmlException as XMLSyntaxError
 from lxml import etree  # type: ignore # nosec
+from lxml.etree import _Element, _ElementTree  # type: ignore # nosec B410
 
 
 from health_records_collection import settings
@@ -64,11 +65,12 @@ from health_records_collection.services.progress_notes import insert_progress_no
 from health_records_collection.services.vitals import insert_vitals
 
 if TYPE_CHECKING:
-    from lxml.etree import _Element as EtreeElement  # type: ignore # nosec B410 - typing only
-    from lxml.etree import _ElementTree as EtreeElementTree  # nosec B410 - typing only
+    # Use cleaner type aliases for type hints
+    EtreeElement = _Element  # type: ignore
+    EtreeElementTree = _ElementTree  # type: ignore
 else:  # pragma: no cover - runtime-only fallback for typing
-    EtreeElement = Any
-    EtreeElementTree = Any
+    EtreeElement = _Element  # type: ignore
+    EtreeElementTree = _ElementTree  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -152,17 +154,17 @@ def _xpath_elements(
     ns: dict[str, str],
 ) -> list[EtreeElement]:
     """Return a list of element nodes extracted via XPath."""
-    if isinstance(node, EtreeElementTree):  # pylint: disable=protected-access
+    if isinstance(node, EtreeElementTree): 
         node = node.getroot()
     if node is None or not hasattr(node, "xpath"):
         return []
     raw = node.xpath(expression, namespaces=ns)
     elements: list[EtreeElement] = []
-    if isinstance(raw, EtreeElement):  # pylint: disable=protected-access
+    if isinstance(raw, EtreeElement):  
         elements.append(raw)
     elif isinstance(raw, Iterable) and not isinstance(raw, (str, bytes)):
         for item in raw:
-            if isinstance(item, EtreeElement):  # pylint: disable=protected-access
+            if isinstance(item, EtreeElement):  
                 elements.append(item)
     return elements
 
@@ -209,17 +211,30 @@ def parse_ccd(xml_file: Path) -> ParsedCCD:
         logger.warning("Skipping malformed XML %s: %s", xml_file.name, exc)
         return {}
 
-    patient = parse_patient(tree, CCD_NAMESPACE)
-    encounters = parse_encounters(tree, CCD_NAMESPACE)
-    allergies = parse_allergies(tree, CCD_NAMESPACE)
-    medications = parse_medications(tree, CCD_NAMESPACE)
-    labs = parse_labs(tree, CCD_NAMESPACE)
-    conditions = parse_conditions(tree, CCD_NAMESPACE)
-    procedures = parse_procedures(tree, CCD_NAMESPACE)
-    progress_notes = parse_progress_notes(tree, CCD_NAMESPACE)
-    vitals = parse_vitals(tree, CCD_NAMESPACE)
-    immunizations = parse_immunizations(tree, CCD_NAMESPACE)
-    insurance = parse_insurance(tree, CCD_NAMESPACE)
+    # Get root element from ElementTree for proper namespace handling
+    root = tree.getroot()
+
+    try:
+        patient = parse_patient(root, CCD_NAMESPACE)
+        encounters = parse_encounters(root, CCD_NAMESPACE)
+        allergies = parse_allergies(root, CCD_NAMESPACE)
+        medications = parse_medications(root, CCD_NAMESPACE)
+        labs = parse_labs(root, CCD_NAMESPACE)
+        conditions = parse_conditions(root, CCD_NAMESPACE)
+        procedures = parse_procedures(root, CCD_NAMESPACE)
+        progress_notes = parse_progress_notes(root, CCD_NAMESPACE)
+        vitals = parse_vitals(root, CCD_NAMESPACE)
+        immunizations = parse_immunizations(root, CCD_NAMESPACE)
+        insurance = parse_insurance(root, CCD_NAMESPACE)
+    except RuntimeError as exc:
+        logger.error(
+            "Error parsing CCD sections from %s: %s. "
+            "Document may have missing or malformed sections.",
+            xml_file.name,
+            exc,
+        )
+        return {}
+
 
     return {
         "patient": patient,
@@ -292,7 +307,7 @@ def ingest_archive(
             metadata_lookup,
             archive_name=archive_path.name,
         )
-    except Exception:
+    except (OSError, sqlite3.Error, XMLSyntaxError, etree.XMLSyntaxError):
         logger.exception("Ingestion failed for archive %s.", archive_path.name)
         raise
 

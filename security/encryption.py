@@ -56,6 +56,80 @@ except ModuleNotFoundError:  # pragma: no cover - depends on optional dependency
 logger = logging.getLogger(__name__)
 
 
+class EncryptionError(Exception):
+    """Raised when an encryption operation fails.
+    
+    Attributes:
+        message (str): Explanation of the encryption failure.
+        original_error (Exception, optional): The underlying exception that 
+                                                caused this error.
+        file_path (Path, optional): Path to the file being encrypted, if applicable.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        original_error: Exception | None = None,
+        file_path: Path | None = None,
+    ) -> None:
+        """Initialize EncryptionError with context information.
+        
+        Args:
+            message: Description of what went wrong.
+            original_error: The underlying exception that triggered this error.
+            file_path: The file path being encrypted when the error occurred.
+        """
+        self.message = message
+        self.original_error = original_error
+        self.file_path = file_path
+        
+        # Build comprehensive error message
+        full_message = message
+        if file_path:
+            full_message += f" (file: {file_path})"
+        if original_error:
+            full_message += f" - {type(original_error).__name__}: {original_error}"
+        
+        super().__init__(full_message)
+
+
+class DecryptionError(Exception):
+    """Raised when a decryption operation fails.
+    
+    Attributes:
+        message (str): Explanation of the decryption failure.
+        original_error (Exception, optional): The underlying exception that 
+                                                caused this error.
+        file_path (Path, optional): Path to the file being decrypted, if applicable.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        original_error: Exception | None = None,
+        file_path: Path | None = None,
+    ) -> None:
+        """Initialize DecryptionError with context information.
+        
+        Args:
+            message: Description of what went wrong.
+            original_error: The underlying exception that triggered this error.
+            file_path: The encrypted file path when the error occurred.
+        """
+        self.message = message
+        self.original_error = original_error
+        self.file_path = file_path
+        
+        # Build comprehensive error message
+        full_message = message
+        if file_path:
+            full_message += f" (file: {file_path})"
+        if original_error:
+            full_message += f" - {type(original_error).__name__}: {original_error}"
+        
+        super().__init__(full_message)
+
+
 class EncryptionManager:
     """Singleton encryption manager for file encryption/decryption."""
 

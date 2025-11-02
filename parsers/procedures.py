@@ -19,6 +19,7 @@ from .common import (
     get_text_by_id,
     iter_elements,
     normalize_whitespace,
+    safe_xpath_text,
 )
 from .xml_types import ElementType, ElementTreeType
 
@@ -75,7 +76,7 @@ def _procedure_sections(tree: ElementTreeType, ns: dict[str, str]) -> list[Eleme
         section_code = normalize_whitespace(
             code_el.get("code") if code_el is not None else None
         )
-        title_text = normalize_whitespace(section.findtext("hl7:title", namespaces=ns))
+        title_text = normalize_whitespace(safe_xpath_text(section, ".//hl7:title", ns))
         if (section_code and section_code in PROCEDURE_SECTION_CODES) or (
             title_text and "procedure" in title_text.lower()
         ):

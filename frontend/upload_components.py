@@ -15,12 +15,13 @@ import re
 import shutil
 import sqlite3
 import unicodedata
+import zipfile
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
 import streamlit as st
 from streamlit.runtime.uploaded_file_manager import UploadedFile
-import zipfile
+
 
 from health_records_collection.ingest import ingest_archive
 from health_records_collection.services.archives import archive_was_ingested
@@ -92,7 +93,7 @@ def render_upload_page(
             except ValueError as exc:
                 errors.append(str(exc))
                 logger.warning("Validation failed for %s: %s", archive.name, exc)
-            except Exception as exc:  # pragma: no cover - defensive
+            except (OSError, sqlite3.Error) as exc:  # pragma: no cover - defensive
                 errors.append(f"Ingestion failed for {archive.name}: {exc}")
                 logger.exception(
                     "Unexpected error during ingestion for %s", archive.name

@@ -23,6 +23,7 @@ from .common import (
     extract_provider_name,
     get_text_by_id,
     normalize_whitespace,
+    safe_xpath_text,
 )
 from .xml_types import ElementType, ElementTreeType
 
@@ -342,7 +343,7 @@ def _extract_frequency(med: ElementType, ns: dict[str, str]) -> str | None:
                 return f"Every {period_unit}"
             if period_value:
                 return f"Every {period_value}"
-        freq_text = eff.findtext("hl7:originalText", namespaces=ns)
+        freq_text = safe_xpath_text(eff, ".//hl7:originalText", ns)
         candidate = clean_text(freq_text)
         if candidate:
             return candidate
@@ -362,7 +363,7 @@ def _extract_medication_dose(
             route_el.get("code")
         )
         if route is None:
-            route = clean_text(route_el.findtext("hl7:originalText", namespaces=ns))
+            route = clean_text(safe_xpath_text(route_el, ".//hl7:originalText", ns))
 
     dose = None
     dose_el = med.find("hl7:doseQuantity", namespaces=ns)
@@ -389,7 +390,7 @@ def _extract_medication_status(
 ) -> str | None:
     """Return the normalised medication status label."""
     raw_status_nodes = med.xpath(
-        "hl7:entryRelationship/hl7:observation" "[hl7:code[@code='33999-4']]/hl7:value",
+        "hl7:entryRelationship/hl7:observation[hl7:code[@code='33999-4']]/hl7:value",
         namespaces=ns,
     )
     status_value = None

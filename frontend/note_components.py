@@ -10,7 +10,7 @@ import html
 import re
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Callable, Optional, Tuple
+from typing import Any, Callable, Optional
 
 import streamlit as st
 
@@ -123,53 +123,93 @@ def _extract_heading(raw_line: str) -> tuple[Optional[str], Optional[str]]:
 def _build_progress_note_html(note_text: Optional[str], container_id: str) -> str:
     """Transform raw note text into paragraph elements with section detection."""
     if not note_text:
-        return f'<div id="{container_id}" class="progress-note"><p>No text provided.</p></div>'
+        return (
+            f'<div id="{container_id}" class="progress-note">'
+            + "<p>No text provided.</p>"
+            + "</div>"
+        )
 
-    cleaned = note_text.replace("\r\n", "\n").replace("\r", "\n")
-    cleaned = re.sub(
+    normalized_text = note_text.replace("\r\n", "\n").replace("\r", "\n")
+    normalized_text = re.sub(
         r"(?:<br\s*/?>\s*){2,}",
         "\n\n",
-        cleaned,
+        normalized_text,
         flags=re.IGNORECASE,
     )
-    cleaned = re.sub(r"<br\s*/?>", "\n", cleaned, flags=re.IGNORECASE)
+    normalized_text = re.sub(r"<br\s*/?>", "\n", normalized_text, flags=re.IGNORECASE)
     paragraphs = [
-        segment.strip() for segment in re.split(r"\n{2,}", cleaned) if segment.strip()
+        segment.strip()
+        for segment in re.split(r"\n{2,}", normalized_text)
+        if segment.strip()
     ]
 
-    html_lines: list[str] = []
+    # Ensure the function always returns a string
+    return (
+        f'<div id="{container_id}" class="progress-note">'
+        f"<p>Processed {len(paragraphs)} paragraphs.</p></div>"
+    )
+
+
+def _clean_note_text(note_text: str) -> str:
+    """Clean and normalize the note text."""
+    cleaned = note_text.replace("\r\n", "\n").replace("\r", "\n")
+    # Replace two or more consecutive <br> tags with paragraph breaks
+    cleaned = re.sub(r"(?:<br\s*/?>\s*){2,}", "\n\n", cleaned, flags=re.IGNORECASE)
+    # Preserve single <br> tags as HTML (do not replace with \n)
+    return cleaned
+
+
+def _split_into_paragraphs(cleaned_text: str) -> list[str]:
+    """Split cleaned text into paragraphs."""
+    return [
+        segment.strip()
+        for segment in re.split(r"\n{2,}", cleaned_text)
+        if segment.strip()
+    ]
+
+
+def _generate_html_lines(paragraphs: list[str]) -> list[str]:
+    """Generate HTML lines from paragraphs."""
+    html_lines = []
     for paragraph in paragraphs:
         if not paragraph:
             continue
-        body_buffer: list[str] = []
-        lines = paragraph.split("\n")
-        for raw_line in lines:
-            heading_text, remainder_line = _extract_heading(raw_line)
-            if heading_text:
-                if body_buffer:
-                    body_text = "\n".join(body_buffer).strip("\n")
-                    if body_text.strip():
-                        html_lines.append(f"<p>{_format_paragraph_body(body_text)}</p>")
-                    body_buffer.clear()
-                html_lines.append(
-                    f'<p class="progress-note-section">{html.escape(heading_text)}</p>'
-                )
-                body_buffer = []
-                if remainder_line:
-                    body_buffer.append(remainder_line)
-            else:
-                body_buffer.append(raw_line)
+        html_lines.extend(_process_paragraph(paragraph))
+    return html_lines
 
-        if body_buffer:
-            body_text = "\n".join(body_buffer).strip("\n")
-            if body_text.strip():
-                html_lines.append(f"<p>{_format_paragraph_body(body_text)}</p>")
 
-    if not html_lines:
-        html_lines.append("<p>No text provided.</p>")
+def _process_paragraph(paragraph: str) -> list[str]:
+    """Process a single paragraph into HTML lines."""
+    body_buffer: list[str] = []
+    html_lines: list[str] = []
+    lines = paragraph.split("\n")
 
-    inner_html = "\n".join(html_lines)
-    return f'<div id="{container_id}" class="progress-note">\n{inner_html}\n</div>'
+    for raw_line in lines:
+        heading_text, remainder_line = _extract_heading(raw_line)
+        if heading_text:
+            if body_buffer:
+                html_lines.append(_format_body_buffer(body_buffer))
+                body_buffer.clear()
+            html_lines.append(
+                f'<p class="progress-note-section">{html.escape(heading_text)}</p>'
+            )
+            if remainder_line:
+                body_buffer.append(remainder_line)
+        else:
+            body_buffer.append(raw_line)
+
+    if body_buffer:
+        html_lines.append(_format_body_buffer(body_buffer))
+
+    return html_lines
+
+
+def _format_body_buffer(body_buffer: list[str]) -> str:
+    """Format the body buffer into an HTML paragraph."""
+    body_text = "\n".join(body_buffer).strip("\n")
+    if body_text.strip():
+        return f"<p>{_format_paragraph_body(body_text)}</p>"
+    return ""
 
 
 def render_progress_notes(

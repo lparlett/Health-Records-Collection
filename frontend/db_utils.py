@@ -83,8 +83,9 @@ def _open_encrypted_connection(
 ) -> SQLCipherConnection:
     """Return an SQLCipher connection initialised with hardening pragmas."""
     conn = cast(
-        SQLCipherConnection, sqlcipher.connect(str(db_path))
-    )  # pylint: disable=no-member
+        SQLCipherConnection,
+        sqlcipher.Connection(str(db_path)),  # pylint: disable=no-member
+    )
     sqlcipher_support.configure_connection(conn, passphrase)
     return conn
 

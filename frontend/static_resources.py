@@ -1,7 +1,8 @@
 # Purpose: Manage CDA stylesheet and localization assets for XML previews.
 # Author: Codex + Lauren
 # Date: 2025-10-13
-# Tests: Manual download via update_static_files; exercised through xml_utils.transform_cda_to_html.
+# Tests: Manual download via update_static_files; exercised through
+#           xml_utils.transform_cda_to_html.
 # AI-assisted: Portions of this module were updated with AI assistance.
 """Utilities for resolving CDA static assets used during XML transformations."""
 
@@ -17,6 +18,7 @@ import requests
 LOGGER = logging.getLogger(__name__)
 
 CDA_CORE_VERSION = "v4.0.1"
+# pylint: disable=line-too-long
 RESOURCE_CATALOG: Tuple[Tuple[str, str], ...] = (
     (
         "CDA.xsl",
@@ -39,7 +41,7 @@ RESOURCE_CATALOG: Tuple[Tuple[str, str], ...] = (
         "https://raw.githubusercontent.com/HL7/CDA-core-xsl/master/cda_narrativeblock.xml",
     ),
 )
-
+# pylint: enable=line-too-long
 MINIMUM_RESOURCE_SIZE: Dict[str, int] = {
     "CDA.xsl": 10_000,
     "cda_l10n.xml": 50_000,

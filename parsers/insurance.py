@@ -20,6 +20,7 @@ from .common import (
     get_text_by_id,
     iter_elements,
     normalize_whitespace,
+    safe_xpath_text,
 )
 from .xml_types import ElementType, ElementTreeType
 
@@ -372,7 +373,7 @@ def _prepare_defaults(
                 break
     defaults["subscriber_id"] = subscriber_id
     defaults["subscriber_name"] = normalize_whitespace(
-        subscriber_role.findtext("hl7:playingEntity/hl7:name", namespaces=ns)
+        safe_xpath_text(subscriber_role, "hl7:playingEntity/hl7:name", ns)
         if subscriber_role is not None
         else None
     )

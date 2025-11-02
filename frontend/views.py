@@ -6,7 +6,6 @@
 """Streamlit views for patient encounter overview, detail, and trends."""
 from __future__ import annotations
 
-from datetime import datetime
 import sqlite3
 from pathlib import Path
 from typing import Any, Iterable, Optional
@@ -17,7 +16,6 @@ import streamlit.components.v1 as components
 
 from health_records_collection.frontend import db_utils
 from health_records_collection.frontend import ui_components
-from health_records_collection import settings
 from health_records_collection.frontend import xml_utils
 from health_records_collection.frontend.note_components import render_progress_notes
 from health_records_collection.frontend.schema_components import (
@@ -25,6 +23,13 @@ from health_records_collection.frontend.schema_components import (
 )
 from health_records_collection.frontend.trend_components import render_patient_trends
 from health_records_collection.frontend.upload_components import render_upload_page
+from health_records_collection.frontend.encounter_display import (
+    format_datetime,
+    render_encounter_card,
+    build_patient_subtitle,
+    render_encounter_metadata_columns,
+)
+from health_records_collection.frontend.settings_form import render_settings_form
 
 
 def _ensure_state() -> None:
@@ -75,29 +80,6 @@ def render_patient_encounter_experience(conn) -> bool:
         return False
     _show_encounter_overview(conn)
     return True
-
-
-def _format_datetime(raw_value: Any, *, show_time: bool = False) -> str:
-    if not raw_value:
-        return "Unknown"
-    value = str(raw_value).strip()
-    if not value:
-        return "Unknown"
-    for fmt in ("%Y%m%d%H%M%S%z", "%Y%m%d%H%M%S", "%Y%m%d"):
-        try:
-            dt = datetime.strptime(value, fmt)
-            if show_time and fmt != "%Y%m%d":
-                return dt.strftime("%b %d, %Y %H:%M")
-            return dt.strftime("%b %d, %Y")
-        except ValueError:
-            continue
-    if len(value) >= 8:
-        try:
-            dt = datetime.strptime(value[:8], "%Y%m%d")
-            return dt.strftime("%b %d, %Y")
-        except ValueError:
-            pass
-    return value
 
 
 def _sidebar_divider() -> None:
@@ -188,14 +170,8 @@ def _show_encounter_overview(conn) -> None:
         return
 
     state = st.session_state
-    patient_label = state.get("selected_patient_label") or patient_row.get(
-        "display_name"
-    )
-    subtitle_parts = [f"Patient: {patient_label}"]
-    birth_date = patient_row.get("birth_date")
-    if birth_date:
-        subtitle_parts.append(f"DOB: {birth_date}")
-    st.caption(" | ".join(subtitle_parts))
+    selected_label = state.get("selected_patient_label")
+    st.caption(build_patient_subtitle(patient_row, selected_label))
 
     encounters = db_utils.get_patient_encounters(conn, patient_id)
     if encounters.empty:
@@ -206,23 +182,15 @@ def _show_encounter_overview(conn) -> None:
 
     for _, row in encounters.iterrows():
         encounter_id = int(row["encounter_id"])
-        encounter_date = _format_datetime(row.get("encounter_date"))
-        encounter_type = (
-            row.get("encounter_type") or "Encounter"
-        ).strip() or "Encounter"
-        provider = row.get("provider_display_name") or "Unknown provider"
-        notes = (row.get("notes") or "").strip()
 
-        with st.container():
-            st.markdown(f"### {encounter_date}")
-            st.caption(f"{encounter_type} | {provider}")
-            if notes:
-                st.markdown(notes)
-            if st.button("View details", key=f"encounter-detail-{encounter_id}"):
-                state["selected_encounter_id"] = encounter_id
-                state["detail_return_view"] = state.get("nav_view", "overview")
-                state["app_view"] = "detail"
-                _rerun()
+        def handle_detail_click(enc_id: int) -> None:
+            state = st.session_state
+            state["selected_encounter_id"] = enc_id
+            state["detail_return_view"] = state.get("nav_view", "overview")
+            state["app_view"] = "detail"
+            _rerun()
+
+        render_encounter_card(row, encounter_id, handle_detail_click)
 
 
 def _show_patient_trends_page(conn) -> None:
@@ -239,14 +207,8 @@ def _show_patient_trends_page(conn) -> None:
         return
 
     state = st.session_state
-    patient_label = state.get("selected_patient_label") or patient_row.get(
-        "display_name"
-    )
-    subtitle_parts = [f"Patient: {patient_label}"]
-    birth_date = patient_row.get("birth_date")
-    if birth_date:
-        subtitle_parts.append(f"DOB: {birth_date}")
-    st.caption(" | ".join(subtitle_parts))
+    selected_label = state.get("selected_patient_label")
+    st.caption(build_patient_subtitle(patient_row, selected_label))
 
     render_patient_trends(conn, patient_id, show_section_header=False)
 
@@ -271,100 +233,7 @@ def _show_upload_page(conn: sqlite3.Connection) -> None:
 
 def _show_settings_page() -> None:
     """Render application configuration controls."""
-    st.header("Application Settings")
-    st.subheader("Storage Locations")
-
-    current = settings.load_settings()
-    paths = current["paths"]
-    ingestion_settings = current["ingestion"]
-
-    with st.form("app-settings-form"):
-        raw_dir_input = st.text_input(
-            "Raw data directory",
-            str(paths["raw_dir"]),
-            help="Incoming ZIP archives are stored here before parsing.",
-        )
-        parsed_dir_input = st.text_input(
-            "Parsed data directory",
-            str(paths["parsed_dir"]),
-            help="XML documents extracted from archives are maintained here.",
-        )
-        db_path_input = st.text_input(
-            "Database file",
-            str(paths["db_path"]),
-            help="Path to the SQLite database file used by the application.",
-        )
-
-        st.subheader("Ingestion Cleanup")
-        delete_archives = st.checkbox(
-            "Delete uploaded ZIP archives after ingestion",
-            value=ingestion_settings["delete_uploaded_archives"],
-            help=(
-                "Remove original CCD archives from disk once ingestion completes "
-                "successfully. Disable to retain the source ZIP files."
-            ),
-        )
-        delete_non_xml = st.checkbox(
-            "Delete extracted non-XML files after ingestion",
-            value=ingestion_settings["delete_unencrypted_extracted_files"],
-            help=(
-                "Remove unencrypted artifacts (e.g., PDFs, HTML) generated during "
-                "parsing while keeping XML and encrypted (.enc) files."
-            ),
-        )
-        submitted = st.form_submit_button("Save settings")
-
-    if not submitted:
-        st.caption(f"User-specific overrides are stored at {settings.SETTINGS_FILE}.")
-        return
-
-    candidate_paths = {
-        "raw_dir": raw_dir_input,
-        "parsed_dir": parsed_dir_input,
-        "db_path": db_path_input,
-    }
-    resolved_paths: dict[str, Path] = {}
-    errors: list[str] = []
-
-    for key, value in candidate_paths.items():
-        trimmed = value.strip()
-        if not trimmed:
-            errors.append(f"{key.replace('_', ' ').title()} cannot be empty.")
-            continue
-        try:
-            resolved = Path(trimmed).expanduser()
-        except (ValueError, OSError) as exc:  # pragma: no cover - defensive
-            errors.append(f"Invalid path for {key.replace('_', ' ')}: {exc}")
-            continue
-        if key != "db_path" and resolved.suffix:
-            errors.append(
-                f"{key.replace('_', ' ').title()} should be a directory, not a file."
-            )
-            continue
-        resolved_paths[key] = resolved
-
-    if errors:
-        for error in errors:
-            st.error(error)
-        return
-
-    try:
-        settings.save_settings(
-            {
-                "paths": {key: str(value) for key, value in resolved_paths.items()},
-                "ingestion": {
-                    "delete_uploaded_archives": delete_archives,
-                    "delete_unencrypted_extracted_files": delete_non_xml,
-                },
-            }
-        )
-        settings.ensure_runtime_paths({"paths": resolved_paths})
-    except RuntimeError as exc:  # pragma: no cover - defensive
-        st.error(f"Failed to persist settings: {exc}")
-        return
-
-    st.success("Settings updated. Reloading app...")
-    _rerun()
+    render_settings_form(rerun_callback=_rerun)
 
 
 def _format_records_for_list(
@@ -472,32 +341,7 @@ def _show_encounter_detail(conn: sqlite3.Connection) -> None:
     # Show encounter summary in main container
     with st.container():
         st.subheader("Encounter Metadata")
-        cols = st.columns(2)
-        with cols[0]:
-            st.markdown(
-                f"**Date:** {_format_datetime(metadata.get('encounter_date'), show_time=True)}"
-            )
-            st.markdown(f"**Type:** {metadata.get('encounter_type') or 'Unknown'}")
-            st.markdown(f"**Provider:** {metadata.get('provider_display_name')}")
-        with cols[1]:
-            ds = metadata.get("data_source") or {}
-            st.markdown(f"**Source Archive:** {ds.get('source_archive') or '-'}")
-            st.markdown(f"**Document:** {ds.get('original_filename') or '-'}")
-            if ds.get("document_created"):
-                st.markdown(
-                    f"**Document Created:** {
-                        _format_datetime(ds.get('document_created'),
-                        show_time=True)
-                    }"
-                )
-            if ds.get("repository_unique_id"):
-                st.markdown(f"**Repository ID:** {ds.get('repository_unique_id')}")
-            if ds.get("document_hash"):
-                st.markdown(f"**Document Hash:** `{ds.get('document_hash')}`")
-            if ds.get("document_size"):
-                st.markdown(f"**Document Size:** {ds.get('document_size')} bytes")
-            if ds.get("author_institution"):
-                st.markdown(f"**Author Institution:** {ds.get('author_institution')}")
+        render_encounter_metadata_columns(metadata)
 
         notes = metadata.get("notes")
         if notes:
@@ -509,7 +353,7 @@ def _show_encounter_detail(conn: sqlite3.Connection) -> None:
             _render_attachment_section(attachment)
     render_progress_notes(
         detail["progress_notes"],
-        format_datetime=_format_datetime,
+        format_datetime=format_datetime,
     )
 
     _show_section(
