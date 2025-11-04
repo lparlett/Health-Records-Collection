@@ -1,13 +1,14 @@
 # Purpose: Tests for encryption utilities.
 # Author: Codex + Lauren
 # Date: 2025-10-29
-# Tests: pytest -k test_encryption
+# Tests: python -m unittest test_encryption
 # AI-assisted: This test module was generated with AI assistance.
 """Tests for security.encryption helpers."""
 
 from __future__ import annotations
 
 from pathlib import Path
+import tempfile
 import unittest
 
 from health_records_collection.security import encryption
@@ -16,9 +17,18 @@ from health_records_collection.security import encryption
 class TestEncryption(unittest.TestCase):
     """Test suite for encryption utilities."""
 
-    def test_encrypt_decrypt_roundtrip(self, tmp_path: Path) -> None:
+    def setUp(self) -> None:
+        """Set up temporary directory for encryption testing."""
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.tmp_path = Path(self.temp_dir.name)
+
+    def tearDown(self) -> None:
+        """Clean up temporary directory after testing."""
+        self.temp_dir.cleanup()
+
+    def test_encrypt_decrypt_roundtrip(self) -> None:
         """Test that files can be encrypted and decrypted correctly."""
-        plaintext = tmp_path / "sample.xml"
+        plaintext = self.tmp_path / "sample.xml"
         plaintext.write_text("<xml>test</xml>", encoding="utf-8")
 
         manager = encryption.get_encryption_manager()

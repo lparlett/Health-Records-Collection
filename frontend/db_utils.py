@@ -126,7 +126,7 @@ def get_connection(
     return conn
 
 
-def list_tables(conn):
+def list_tables(conn: SQLCipherConnection) -> list[str]:
     """List all table names in the database."""
     query = "SELECT name FROM sqlite_master WHERE type='table';"
     return [row[0] for row in conn.execute(query).fetchall()]
@@ -172,12 +172,14 @@ def get_table_preview(
     return pd.read_sql(query, conn, params=(row_limit,))
 
 
-def run_query(conn, sql):
+def run_query(conn: SQLCipherConnection, sql: str) -> pd.DataFrame:
     """Run an arbitrary SQL query and return the results as a DataFrame."""
     return pd.read_sql(sql, conn)
 
 
-def _format_person_name(primary, given, family, fallback_label):
+def _format_person_name(
+    primary: str | None, given: str | None, family: str | None, fallback_label: str
+) -> str:
     """Return a human friendly display name with sensible fallbacks."""
     for value in (primary,):
         if isinstance(value, str):
@@ -195,7 +197,7 @@ def _format_person_name(primary, given, family, fallback_label):
     return fallback_label
 
 
-def get_patients(conn):
+def get_patients(conn: SQLCipherConnection) -> pd.DataFrame:
     """Return a DataFrame of patients with a display name column."""
     query = """
         SELECT id, given_name, family_name, birth_date
@@ -221,7 +223,7 @@ def get_patients(conn):
     return df[cols]
 
 
-def get_patient_encounters(conn, patient_id):
+def get_patient_encounters(conn: SQLCipherConnection, patient_id: int) -> pd.DataFrame:
     """Fetch encounter summary data for a patient."""
     encounters_query = """
         SELECT e.id AS encounter_id,
@@ -253,7 +255,9 @@ def get_patient_encounters(conn, patient_id):
     return encounters
 
 
-def _fetch_records(conn, query, params, drop=None):
+def _fetch_records(
+    conn: SQLCipherConnection, query: str, params: tuple, drop: list[str] | None = None
+) -> list[dict]:
     df = pd.read_sql(query, conn, params=params)
     if df.empty:
         return []
@@ -262,7 +266,7 @@ def _fetch_records(conn, query, params, drop=None):
     return df.to_dict("records")
 
 
-def get_encounter_detail(conn, encounter_id):
+def get_encounter_detail(conn: SQLCipherConnection, encounter_id: int) -> dict:
     """Return a dictionary containing the complete encounter detail."""
     meta_query = """
         SELECT e.id AS encounter_id,

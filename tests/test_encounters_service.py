@@ -1,9 +1,10 @@
 from __future__ import annotations
+from pathlib import Path
+import hashlib
 
 import sqlite3
 import unittest
 
-import pytest
 
 from health_records_collection.services.encounters import insert_encounters
 
@@ -25,17 +26,59 @@ def _insert_patient(conn: sqlite3.Connection) -> int:
 class TestEncountersService(unittest.TestCase):
     """Test suite for encounters service."""
 
-    @pytest.mark.usefixtures("schema_conn")
-    def test_insert_encounters_persists_data_source(
-        self,
-        schema_conn: sqlite3.Connection,
-        data_source_id: int,
-    ) -> None:
+    def setUp(self) -> None:
+        """Set up test fixtures."""
+        from health_records_collection.db.schema import ensure_schema
+        
+        # Create schema_conn for database testing
+        self.schema_conn = sqlite3.connect(":memory:")
+        self.schema_conn.execute("PRAGMA foreign_keys = ON;")
+        schema_path = Path(__file__).parent.parent / "schema.sql"
+        schema_sql = schema_path.read_text(encoding="utf-8")
+        self.schema_conn.executescript(schema_sql)
+        ensure_schema(self.schema_conn)
+        
+        # Create a data_source_id for tests
+        archive_hash = hashlib.sha256(b"archive.zip").hexdigest()
+        self.schema_conn.execute(
+            """
+            INSERT INTO ingested_archive (
+                archive_name,
+                archive_sha256,
+                first_ingested_at,
+                last_ingested_at,
+                ingest_count
+            ) VALUES (?, ?, '2025-10-12T00:00:00Z', '2025-10-12T00:00:00Z', 1)
+            """,
+            ("archive.zip", archive_hash),
+        )
+        archive_id = int(self.schema_conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+        
+        self.schema_conn.execute(
+            """
+            INSERT INTO data_source (
+                original_filename,
+                file_sha256,
+                ingested_at,
+                source_archive_id
+            ) VALUES (?, ?, '2025-10-12T00:00:00Z', ?)
+            """,
+            ("test.xml", hashlib.sha256(b"test").hexdigest(), archive_id),
+        )
+        self.data_source_id = int(self.schema_conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+        self.schema_conn.commit()
+
+    def tearDown(self) -> None:
+        """Clean up after testing."""
+        self.schema_conn.close()
+
+    
+    def test_insert_encounters_persists_data_source(self) -> None:
         """Test that insert_encounters persists data_source_id."""
-        patient_id = _insert_patient(schema_conn)
+        patient_id = _insert_patient(self.schema_conn)
 
         insert_encounters(
-            schema_conn,
+            self.schema_conn,
             patient_id,
             [
                 {
@@ -44,47 +87,42 @@ class TestEncountersService(unittest.TestCase):
                     "type": "AMB",
                     "notes": "Initial visit",
                     "provider": "Example Clinic",
-                    "data_source_id": data_source_id,
+                    "data_source_id": self.data_source_id,
                 }
             ],
         )
 
-        row = schema_conn.execute(
+        row = self.schema_conn.execute(
             "SELECT data_source_id FROM encounter WHERE patient_id = ?",
             (patient_id,),
         ).fetchone()
-        self.assertEqual(row, (data_source_id,))
+        self.assertEqual(row, (self.data_source_id,))
 
-    @pytest.mark.usefixtures("schema_conn")
-    def test_insert_encounters_updates_duplicate_provenance(
-        self,
-        schema_conn: sqlite3.Connection,
-        data_source_id: int,
-    ) -> None:
+    def test_insert_encounters_updates_duplicate_provenance(self) -> None:
         """Test that insert_encounters updates duplicate provenance."""
-        patient_id = _insert_patient(schema_conn)
-        new_source = schema_conn.execute(
+        patient_id = _insert_patient(self.schema_conn)
+        new_source = self.schema_conn.execute(
             """
             INSERT INTO data_source (original_filename, ingested_at, file_sha256)
             VALUES (?, ?, ?)
             """,
             ("encounter-2.xml", "2025-10-12T00:00:02Z", "hash-enc-2"),
         ).lastrowid
-        schema_conn.commit()
+        self.schema_conn.commit()
 
         payload = {
             "start": "20240102",
             "source_id": "enc-dup",
             "type": "AMB",
             "provider": "Example Clinic",
-            "data_source_id": data_source_id,
+            "data_source_id": self.data_source_id,
         }
-        insert_encounters(schema_conn, patient_id, [payload])
+        insert_encounters(self.schema_conn, patient_id, [payload])
 
         payload["data_source_id"] = new_source
-        insert_encounters(schema_conn, patient_id, [payload])
+        insert_encounters(self.schema_conn, patient_id, [payload])
 
-        row = schema_conn.execute(
+        row = self.schema_conn.execute(
             """
             SELECT data_source_id
               FROM encounter

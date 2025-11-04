@@ -1,30 +1,43 @@
 from __future__ import annotations
 
 import sqlite3
+import tempfile
 import unittest
 from pathlib import Path
-
-
-def _load_schema(tmp_path: Path) -> sqlite3.Connection:
-    """Helper to load schema into temporary database."""
-    db_file = tmp_path / "schema_test.db"
-    conn = sqlite3.connect(db_file)
-    conn.execute("PRAGMA foreign_keys = ON;")
-    schema_path = Path("schema.sql")
-    conn.executescript(schema_path.read_text(encoding="utf-8"))
-    return conn
 
 
 class TestSchema(unittest.TestCase):
     """Test suite for database schema."""
 
-    def test_schema_creates_expected_tables(self, tmp_path: Path) -> None:
+    def setUp(self) -> None:
+        """Set up temporary database for schema testing."""
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.tmp_path = Path(self.temp_dir.name)
+        self.conn: sqlite3.Connection | None = None
+
+    def tearDown(self) -> None:
+        """Clean up temporary database after testing."""
+        if self.conn:
+            self.conn.close()
+        self.temp_dir.cleanup()
+
+    def _load_schema(self) -> sqlite3.Connection:
+        """Helper to load schema into temporary database."""
+        db_file = self.tmp_path / "schema_test.db"
+        conn = sqlite3.connect(str(db_file))
+        conn.execute("PRAGMA foreign_keys = ON;")
+        # Find schema.sql relative to the project root
+        schema_path = Path(__file__).parent.parent / "schema.sql"
+        conn.executescript(schema_path.read_text(encoding="utf-8"))
+        return conn
+
+    def test_schema_creates_expected_tables(self) -> None:
         """Test that schema creates expected tables."""
-        conn = _load_schema(tmp_path)
+        conn = self._load_schema()
         tables = {
             row[0]
             for row in conn.execute(
-                "SELECT name FROM sqlite_master " "WHERE type='table';"
+                "SELECT name FROM sqlite_master WHERE type='table';"
             )
         }
         expected = {
@@ -43,9 +56,9 @@ class TestSchema(unittest.TestCase):
         self.assertTrue(expected.issubset(tables))
         conn.close()
 
-    def test_schema_includes_data_source_foreign_keys(self, tmp_path: Path) -> None:
+    def test_schema_includes_data_source_foreign_keys(self) -> None:
         """Test that schema includes data_source foreign keys."""
-        conn = _load_schema(tmp_path)
+        conn = self._load_schema()
         cursor = conn.cursor()
         tables_to_check = [
             "patient",

@@ -380,7 +380,7 @@ def _show_encounter_detail(conn: sqlite3.Connection) -> None:
     )
 
 
-def show_tables(conn):
+def show_tables(conn: db_utils.SQLCipherConnection) -> None:
     """Render a view to explore database tables."""
     tables = db_utils.list_tables(conn)
     selected_tables = ui_components.sidebar_table_selector(tables)
@@ -394,7 +394,7 @@ def show_tables(conn):
             st.dataframe(df, use_container_width=True)
 
 
-def show_query(conn):
+def show_query(conn: db_utils.SQLCipherConnection) -> None:
     """Render a view to run arbitrary SQL queries."""
     sql = ui_components.query_box()
     if sql.strip():

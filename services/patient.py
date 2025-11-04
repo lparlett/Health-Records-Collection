@@ -67,7 +67,7 @@ def insert_patient(
                         data_source_id = ?
                     WHERE id = ?
                     """,
-                    params,
+                    params + [patient_id],
                 )
             elif "gender = ?" in updates:
                 cur.execute(
@@ -76,7 +76,7 @@ def insert_patient(
                     SET gender = ?
                     WHERE id = ?
                     """,
-                    [params[0], params[-1]],
+                    params + [patient_id],
                 )
             else:  # data_source_id needs updating
                 cur.execute(
@@ -85,10 +85,10 @@ def insert_patient(
                     SET data_source_id = ?
                     WHERE id = ?
                     """,
-                    [params[0], params[-1]],
+                    params + [patient_id],
                 )
             conn.commit()
-        return patient_id
+        return int(patient_id)
 
     cur.execute(
         """

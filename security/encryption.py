@@ -7,6 +7,7 @@ import hashlib
 import logging
 import os
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from health_records_collection import settings
 
@@ -213,7 +214,7 @@ class EncryptionManager:
         """Decrypt an encrypted file into the user tmp directory."""
         encrypted_path = encrypted_path.resolve()
         plaintext = self.decrypt_bytes(encrypted_path.read_bytes())
-        tmp_dir = Path(f"{settings.USER_SETTINGS_DIR} /tmp")
+        tmp_dir = Path(TemporaryDirectory().name)
         tmp_dir.mkdir(parents=True, exist_ok=True)
         base_name = encrypted_path.stem  # removes only .enc
         suffix = "".join(encrypted_path.suffixes[:-1])

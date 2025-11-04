@@ -84,6 +84,9 @@ def register_ingested_archive(
             """,
             (archive_name, archive_sha256, timestamp, timestamp),
         )
+        if cur.lastrowid is None:
+            msg = "Failed to insert archive row; lastrowid is None."
+            raise sqlite3.DatabaseError(msg)
         archive_id = int(cur.lastrowid)
     else:
         archive_id = int(row[0])

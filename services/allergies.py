@@ -255,13 +255,16 @@ def _build_update_queries(
     if encounter_id and (existing_encounter or 0) != encounter_id:
         updates.append("encounter_id = ?")
         params.append(encounter_id)
-
+    # pylint: disable=R0801
     ds_id = allergy_data.get("ds_id")
     if ds_id is not None and (existing_ds_id or 0) != ds_id:
         updates.append("data_source_id = ?")
         params.append(ds_id)
 
     return updates, params
+
+
+# pylint: enable=R0801
 
 
 def _execute_allergy_update(

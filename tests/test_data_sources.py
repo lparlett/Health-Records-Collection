@@ -4,9 +4,9 @@ import hashlib
 import sqlite3
 import unittest
 from pathlib import Path
+import tempfile
 
-import pytest
-
+from health_records_collection.db.schema import ensure_schema
 from health_records_collection.services.data_sources import (
     link_attachment,
     upsert_data_source,
@@ -65,58 +65,80 @@ def _assert_single_row(conn: sqlite3.Connection, expected_archive: str) -> None:
 class TestDataSourcesService(unittest.TestCase):
     """Test suite for data sources service."""
 
-    @pytest.mark.usefixtures("schema_conn")
-    def test_upsert_data_source_inserts_and_updates(
-        self, tmp_path: Path, schema_conn: sqlite3.Connection
-    ) -> None:
+    def setUp(self) -> None:
+        """Set up test fixtures."""
+        
+        # Create temporary directory for test files
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.tmp_path = Path(self.temp_dir.name)
+        
+        # Initialize data_source_id
+        self.data_source_id: int | None = None
+
+        # Create schema_conn for database testing
+        self.schema_conn = sqlite3.connect(":memory:")
+        self.schema_conn.execute("PRAGMA foreign_keys = ON;")
+        schema_path = Path(__file__).parent.parent / "schema.sql"
+        schema_sql = schema_path.read_text(encoding="utf-8")
+        self.schema_conn.executescript(schema_sql)
+        ensure_schema(self.schema_conn)
+
+    def tearDown(self) -> None:
+        """Clean up after testing."""
+        self.schema_conn.close()
+        self.temp_dir.cleanup()
+
+    
+    def test_upsert_data_source_inserts_and_updates(self) -> None:
         """Test that upsert_data_source inserts and updates."""
-        doc_path = tmp_path / "document.xml"
+        doc_path = self.tmp_path / "document.xml"
         doc_path.write_text("test payload", encoding="utf-8")
 
-        archive_id_1 = _create_archive(schema_conn, "batch-01.zip")
-        first_id = upsert_data_source(schema_conn, doc_path, archive_id=archive_id_1)
+        archive_id_1 = _create_archive(self.schema_conn, "batch-01.zip")
+        first_id = upsert_data_source(
+            self.schema_conn, 
+            doc_path, 
+            archive_id=archive_id_1
+        )
         self.assertIsInstance(first_id, int)
         self.assertGreater(first_id, 0)
-        _assert_single_row(schema_conn, "batch-01.zip")
+        _assert_single_row(self.schema_conn, "batch-01.zip")
 
-        archive_id_2 = _create_archive(schema_conn, "batch-02.zip")
-        second_id = upsert_data_source(schema_conn, doc_path, archive_id=archive_id_2)
+        archive_id_2 = _create_archive(self.schema_conn, "batch-02.zip")
+        second_id = upsert_data_source(
+            self.schema_conn, 
+            doc_path,
+            archive_id=archive_id_2
+        )
         self.assertEqual(second_id, first_id)
-        _assert_single_row(schema_conn, "batch-02.zip")
+        _assert_single_row(self.schema_conn, "batch-02.zip")
 
-    @pytest.mark.usefixtures("schema_conn")
-    def test_upsert_data_source_creates_unique_rows(
-        self, tmp_path: Path, schema_conn: sqlite3.Connection
-    ) -> None:
+    def test_upsert_data_source_creates_unique_rows(self) -> None:
         """Test that upsert_data_source creates unique rows for different files."""
-        doc_a = tmp_path / "a.xml"
+        doc_a = self.tmp_path / "a.xml"
         doc_a.write_text("content-a", encoding="utf-8")
-        doc_b = tmp_path / "b.xml"
+        doc_b = self.tmp_path / "b.xml"
         doc_b.write_text("content-b", encoding="utf-8")
 
-        archive_id = _create_archive(schema_conn, "archive.zip")
-        id_a = upsert_data_source(schema_conn, doc_a, archive_id=archive_id)
-        id_b = upsert_data_source(schema_conn, doc_b, archive_id=archive_id)
+        archive_id = _create_archive(self.schema_conn, "archive.zip")
+        id_a = upsert_data_source(self.schema_conn, doc_a, archive_id=archive_id)
+        id_b = upsert_data_source(self.schema_conn, doc_b, archive_id=archive_id)
 
         self.assertNotEqual(id_a, id_b)
-        count = schema_conn.execute("SELECT COUNT(*) FROM data_source").fetchone()[0]
+        count = self.schema_conn.execute(
+            "SELECT COUNT(*) FROM data_source"
+        ).fetchone()[0]
         self.assertEqual(count, 2)
 
-    @pytest.mark.usefixtures("schema_conn")
-    def test_upsert_data_source_raises_on_missing_file(
-        self, tmp_path: Path, schema_conn: sqlite3.Connection
-    ) -> None:
+    def test_upsert_data_source_raises_on_missing_file(self) -> None:
         """Test that upsert_data_source raises on missing file."""
-        missing_path = tmp_path / "missing.xml"
+        missing_path = self.tmp_path / "missing.xml"
         with self.assertRaises(OSError):
-            upsert_data_source(schema_conn, missing_path)
+            upsert_data_source(self.schema_conn, missing_path)
 
-    @pytest.mark.usefixtures("schema_conn")
-    def test_upsert_data_source_applies_metadata(
-        self, tmp_path: Path, schema_conn: sqlite3.Connection
-    ) -> None:
+    def test_upsert_data_source_applies_metadata(self) -> None:
         """Test that upsert_data_source applies metadata."""
-        doc_path = tmp_path / "document.xml"
+        doc_path = self.tmp_path / "document.xml"
         doc_path.write_text("payload", encoding="utf-8")
 
         metadata = {
@@ -127,16 +149,16 @@ class TestDataSourcesService(unittest.TestCase):
             "author_institution": "Unit Test Clinic",
         }
 
-        archive_id = _create_archive(schema_conn, "archive.zip")
+        archive_id = _create_archive(self.schema_conn, "archive.zip")
 
         upsert_data_source(
-            schema_conn,
+            self.schema_conn,
             doc_path,
             archive_id=archive_id,
             metadata=metadata,
         )
 
-        row = schema_conn.execute(
+        row = self.schema_conn.execute(
             """
             SELECT
                 document_created,
@@ -158,41 +180,44 @@ class TestDataSourcesService(unittest.TestCase):
             ),
         )
 
-    @pytest.mark.usefixtures("schema_conn")
-    def test_link_attachment_updates_data_source(
-        self, tmp_path: Path, schema_conn: sqlite3.Connection
-    ) -> None:
+    def test_link_attachment_updates_data_source(self) -> None:
         """Test that link_attachment updates data_source."""
-        doc_path = tmp_path / "link.xml"
+        doc_path = self.tmp_path / "link.xml"
         doc_path.write_text("link", encoding="utf-8")
-        archive_id = _create_archive(schema_conn, "archive.zip")
-        data_source_id = upsert_data_source(
-            schema_conn, doc_path, archive_id=archive_id
+        archive_id = _create_archive(self.schema_conn, "archive.zip")
+        self.data_source_id = upsert_data_source(
+            self.schema_conn, doc_path, archive_id=archive_id
         )
 
-        schema_conn.execute(
+        self.schema_conn.execute(
             "INSERT INTO patient (given_name, family_name) VALUES (?, ?)",
             ("Link", "Patient"),
         )
         patient_id = int(
-            schema_conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            self.schema_conn.execute("SELECT last_insert_rowid()").fetchone()[0]
         )
-        schema_conn.execute(
+        self.schema_conn.execute(
             """
-            INSERT INTO attachment (patient_id, file_path, mime_type, description, data_source_id)
+            INSERT INTO attachment (
+                patient_id,
+                file_path,
+                mime_type,
+                description,
+                data_source_id
+            )
             VALUES (?, ?, ?, ?, ?)
             """,
-            (patient_id, "link.xml", "text/xml", "Link", data_source_id),
+            (patient_id, "link.xml", "text/xml", "Link", self.data_source_id),
         )
         attachment_id = int(
-            schema_conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            self.schema_conn.execute("SELECT last_insert_rowid()").fetchone()[0]
         )
-        schema_conn.commit()
+        self.schema_conn.commit()
 
-        link_attachment(schema_conn, data_source_id, attachment_id)
+        link_attachment(self.schema_conn, self.data_source_id, attachment_id)
 
-        row = schema_conn.execute(
+        row = self.schema_conn.execute(
             "SELECT attachment_id FROM data_source WHERE id = ?",
-            (data_source_id,),
+            (self.data_source_id,),
         ).fetchone()
         self.assertEqual(row, (attachment_id,))
