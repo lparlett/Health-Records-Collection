@@ -154,17 +154,17 @@ def _xpath_elements(
     ns: dict[str, str],
 ) -> list[EtreeElement]:
     """Return a list of element nodes extracted via XPath."""
-    if isinstance(node, EtreeElementTree): 
+    if isinstance(node, EtreeElementTree):
         node = node.getroot()
     if node is None or not hasattr(node, "xpath"):
         return []
     raw = node.xpath(expression, namespaces=ns)
     elements: list[EtreeElement] = []
-    if isinstance(raw, EtreeElement):  
+    if isinstance(raw, EtreeElement):
         elements.append(raw)
     elif isinstance(raw, Iterable) and not isinstance(raw, (str, bytes)):
         for item in raw:
-            if isinstance(item, EtreeElement):  
+            if isinstance(item, EtreeElement):
                 elements.append(item)
     return elements
 
@@ -231,7 +231,6 @@ def parse_ccd(xml_file: Path) -> ParsedCCD:
             exc,
         )
         return {}
-
 
     return {
         "patient": patient,
