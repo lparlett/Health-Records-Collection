@@ -62,7 +62,7 @@ def insert_immunizations(
     patient_id: int,
     immunizations: Sequence[Mapping[str, object]],
 ) -> None:
-    """Persist immunization data, enforcing uniqueness on CVX code and 
+    """Persist immunization data, enforcing uniqueness on CVX code and
         administration date.
 
     Args:

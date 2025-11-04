@@ -63,8 +63,6 @@ def _normalise_substance(entry: Mapping[str, object]) -> tuple[str | None, str |
     return (substance, substance_code)
 
 
-
-
 def _extract_allergy_fields(entry: Mapping[str, object]) -> AllergyData:
     """Extract and clean all allergy fields from an entry."""
     substance, substance_code = _normalise_substance(entry)
@@ -85,9 +83,7 @@ def _extract_allergy_fields(entry: Mapping[str, object]) -> AllergyData:
         "provider_name": clean_str(entry.get("provider")),
         "ds_id": coerce_int(entry.get("data_source_id")),
         "substance_system": clean_str(entry.get("substance_code_system")),
-        "substance_display": clean_str(
-            entry.get("substance_code_display")
-        ),
+        "substance_display": clean_str(entry.get("substance_code_display")),
     }  # type: ignore
 
 

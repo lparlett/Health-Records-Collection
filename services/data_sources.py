@@ -32,7 +32,7 @@ def upsert_data_source(
         conn: Active SQLite connection with foreign keys enabled.
         file_path: Path to the CCD XML file being persisted.
         archive_id: Optional ingested_archive primary key for the containing archive.
-        metadata: Optional additional metadata dictionary with any of the 
+        metadata: Optional additional metadata dictionary with any of the
             following keys:
             - document_created: str | None
             - repository_unique_id: str | None
@@ -76,9 +76,10 @@ def upsert_data_source(
         document_size = None
     if attachment_metadata_id is not None:
         try:
-            if isinstance(
-                attachment_metadata_id, (str, int)
-            ) and str(attachment_metadata_id).isdigit():
+            if (
+                isinstance(attachment_metadata_id, (str, int))
+                and str(attachment_metadata_id).isdigit()
+            ):
                 attachment_metadata_id = int(attachment_metadata_id)
             else:
                 attachment_metadata_id = None

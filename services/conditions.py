@@ -264,9 +264,7 @@ def _insert_new_condition(
     )
     condition_id = cur.lastrowid
     if condition_id is None:
-        raise sqlite3.DatabaseError(
-            "Failed to insert condition; lastrowid is None."
-        )
+        raise sqlite3.DatabaseError("Failed to insert condition; lastrowid is None.")
     return int(condition_id)
 
 

@@ -39,9 +39,7 @@ def _extract_procedure_fields(
         ProcedureData: Type-safe procedure data dictionary.
     """
     provider_name = clean_str(proc.get("provider"))
-    provider_id = (
-        get_or_create_provider(conn, provider_name) if provider_name else None
-    )
+    provider_id = get_or_create_provider(conn, provider_name) if provider_name else None
 
     # Extract primary code info
     raw_codes = proc.get("codes")
@@ -208,7 +206,7 @@ def _execute_procedure_update(
         update_field = updates[0].split()[0]
         update_single_field(cur, "procedure", update_field, params[0], procedure_id)
     else:
-        query = f"UPDATE procedure SET {', '.join(updates)} WHERE id = ?" # nosec B608
+        query = f"UPDATE procedure SET {', '.join(updates)} WHERE id = ?"  # nosec B608
         cur.execute(query, params + [procedure_id])
 
     return True
@@ -344,9 +342,7 @@ def insert_procedures(
         provider_name = clean_str(proc.get("provider"))
 
         # Resolve encounter ID
-        encounter_id = _resolve_encounter(
-            conn, patient_id, proc_data, provider_name
-        )
+        encounter_id = _resolve_encounter(conn, patient_id, proc_data, provider_name)
         proc_data["encounter_id"] = encounter_id
 
         # Check for existing procedure
