@@ -68,8 +68,9 @@ def _join_clean(parts: Iterable[Optional[str]]) -> Optional[str]:
 
 def _collect_invalid_times(tree: ElementTreeType, ns: dict[str, str]) -> set[str]:
     """Return timestamps that should be ignored when merging encounter times."""
+    root = tree.getroot()
     invalid_times: set[str] = set()
-    birth_el = tree.find(
+    birth_el = root.find(
         "hl7:recordTarget/hl7:patientRole/hl7:patient/hl7:birthTime", namespaces=ns
     )
     birth_time = clean_text(birth_el.get("value") if birth_el is not None else None)
@@ -82,8 +83,9 @@ def _collect_invalid_times(tree: ElementTreeType, ns: dict[str, str]) -> set[str
 
 def _reason_sections(tree: ElementTreeType, ns: dict[str, str]) -> list[ElementType]:
     """Return sections that plausibly describe reason-for-visit narratives."""
+    root = tree.getroot()
     sections = []
-    for section in iter_elements(tree.xpath(".//hl7:section", namespaces=ns)):
+    for section in iter_elements(root.xpath(".//hl7:section", namespaces=ns)):
         code_el = section.find("hl7:code", namespaces=ns)
         code_value = clean_text(code_el.get("code") if code_el is not None else None)
         title_text = normalize_whitespace(safe_xpath_text(section, ".//hl7:title", ns))
@@ -139,12 +141,12 @@ def _document_context(tree: ElementTreeType, ns: dict[str, str]) -> DocumentCont
         provider_person, provider_org = extract_provider_info(
             encompassing,
             (
-            "hl7:encounterParticipant/hl7:assignedEntity/"
-            "hl7:assignedPerson/hl7:name"
+                "hl7:encounterParticipant/hl7:assignedEntity/"
+                "hl7:assignedPerson/hl7:name"
             ),
             (
-            "hl7:encounterParticipant/hl7:assignedEntity/"
-            "hl7:representedOrganization/hl7:organizationName"
+                "hl7:encounterParticipant/hl7:assignedEntity/"
+                "hl7:representedOrganization/hl7:organizationName"
             ),
             ns,
         )
@@ -386,9 +388,10 @@ def _build_encounter_entry(
 
 def parse_encounters(tree: ElementTreeType, ns: dict[str, str]) -> list[EncounterEntry]:
     """Parse encounters documented within a CCD."""
+    root = tree.getroot()
     context = _document_context(tree, ns)
     encounters: list[EncounterEntry] = []
-    encounter_nodes = tree.xpath(".//hl7:encounter", namespaces=ns)
+    encounter_nodes = root.xpath(".//hl7:encounter", namespaces=ns)
     for encounter in iter_elements(encounter_nodes):
         entry = _build_encounter_entry(encounter, tree, ns, context)
         if entry:

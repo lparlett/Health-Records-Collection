@@ -211,21 +211,18 @@ def parse_ccd(xml_file: Path) -> ParsedCCD:
         logger.warning("Skipping malformed XML %s: %s", xml_file.name, exc)
         return {}
 
-    # Get root element from ElementTree for proper namespace handling
-    root = tree.getroot()
-
     try:
-        patient = parse_patient(root, CCD_NAMESPACE)
-        encounters = parse_encounters(root, CCD_NAMESPACE)
-        allergies = parse_allergies(root, CCD_NAMESPACE)
-        medications = parse_medications(root, CCD_NAMESPACE)
-        labs = parse_labs(root, CCD_NAMESPACE)
-        conditions = parse_conditions(root, CCD_NAMESPACE)
-        procedures = parse_procedures(root, CCD_NAMESPACE)
-        progress_notes = parse_progress_notes(root, CCD_NAMESPACE)
-        vitals = parse_vitals(root, CCD_NAMESPACE)
-        immunizations = parse_immunizations(root, CCD_NAMESPACE)
-        insurance = parse_insurance(root, CCD_NAMESPACE)
+        patient = parse_patient(tree, CCD_NAMESPACE)
+        encounters = parse_encounters(tree, CCD_NAMESPACE)
+        allergies = parse_allergies(tree, CCD_NAMESPACE)
+        medications = parse_medications(tree, CCD_NAMESPACE)
+        labs = parse_labs(tree, CCD_NAMESPACE)
+        conditions = parse_conditions(tree, CCD_NAMESPACE)
+        procedures = parse_procedures(tree, CCD_NAMESPACE)
+        progress_notes = parse_progress_notes(tree, CCD_NAMESPACE)
+        vitals = parse_vitals(tree, CCD_NAMESPACE)
+        immunizations = parse_immunizations(tree, CCD_NAMESPACE)
+        insurance = parse_insurance(tree, CCD_NAMESPACE)
     except RuntimeError as exc:
         logger.error(
             "Error parsing CCD sections from %s: %s. "

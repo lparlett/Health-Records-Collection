@@ -8,21 +8,26 @@
 from __future__ import annotations
 
 from pathlib import Path
+import unittest
 
-from security import encryption
+from health_records_collection.security import encryption
 
 
-def test_encrypt_decrypt_roundtrip(tmp_path, monkeypatch):
-    plaintext = tmp_path / "sample.xml"
-    plaintext.write_text("<xml>test</xml>", encoding="utf-8")
+class TestEncryption(unittest.TestCase):
+    """Test suite for encryption utilities."""
 
-    manager = encryption.get_encryption_manager()
-    encrypted_path = manager.encrypt_file(plaintext)
+    def test_encrypt_decrypt_roundtrip(self, tmp_path: Path) -> None:
+        """Test that files can be encrypted and decrypted correctly."""
+        plaintext = tmp_path / "sample.xml"
+        plaintext.write_text("<xml>test</xml>", encoding="utf-8")
 
-    assert encrypted_path.exists()
-    assert encrypted_path.suffix == ".enc"
-    # Original file removed
-    assert not plaintext.exists()
+        manager = encryption.get_encryption_manager()
+        encrypted_path = manager.encrypt_file(plaintext)
 
-    decrypted_path = manager.decrypt_to_temp(encrypted_path)
-    assert decrypted_path.read_text(encoding="utf-8") == "<xml>test</xml>"
+        self.assertTrue(encrypted_path.exists())
+        self.assertEqual(encrypted_path.suffix, ".enc")
+        # Original file removed
+        self.assertFalse(plaintext.exists())
+
+        decrypted_path = manager.decrypt_to_temp(encrypted_path)
+        self.assertEqual(decrypted_path.read_text(encoding="utf-8"), "<xml>test</xml>")

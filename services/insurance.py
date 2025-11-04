@@ -9,7 +9,7 @@
 from __future__ import annotations
 
 import sqlite3
-from typing import Mapping, Sequence, Tuple
+from typing import Mapping, Sequence, Tuple, TypedDict
 
 from health_records_collection.db.utils import update_single_field
 from health_records_collection.services.common import (
@@ -19,6 +19,240 @@ from health_records_collection.services.common import (
 )
 
 __all__ = ["upsert_insurance"]
+
+
+class InsuranceData(TypedDict, total=False):
+    """Type-safe insurance policy field dictionary."""
+
+    payer_name: str | None
+    plan_name: str | None
+    member_id: str | None
+    payer_identifier: str | None
+    group_number: str | None
+    ds_id: int | None
+    coverage_type: str | None
+    policy_type: str | None
+    subscriber_id: str | None
+    subscriber_name: str | None
+    relationship: str | None
+    effective_date: str | None
+    expiration_date: str | None
+    status: str | None
+    source_policy_id: str | None
+    notes: str | None
+    patient_id: int
+
+
+def _extract_insurance_fields(policy: Mapping[str, object]) -> InsuranceData:
+    """Extract and clean all insurance fields from a policy entry."""
+    return {
+        "payer_name": clean_str(policy.get("payer_name")),
+        "plan_name": clean_str(policy.get("plan_name")),
+        "member_id": clean_str(policy.get("member_id")),
+        "payer_identifier": clean_str(policy.get("payer_identifier")),
+        "group_number": clean_str(policy.get("group_number")),
+        "ds_id": coerce_int(policy.get("data_source_id")),
+        "coverage_type": clean_str(policy.get("coverage_type")),
+        "policy_type": clean_str(policy.get("policy_type")),
+        "subscriber_id": clean_str(policy.get("subscriber_id")),
+        "subscriber_name": clean_str(policy.get("subscriber_name")),
+        "relationship": clean_str(policy.get("relationship")),
+        "effective_date": clean_str(policy.get("effective_date")),
+        "expiration_date": clean_str(policy.get("expiration_date")),
+        "status": clean_str(policy.get("status")),
+        "source_policy_id": clean_str(policy.get("source_policy_id")),
+        "notes": clean_str(policy.get("notes")),
+    }  # type: ignore
+
+
+def _find_existing_insurance(
+    cur: sqlite3.Cursor,
+    patient_id: int,
+    insurance_data: InsuranceData,
+) -> tuple | None:
+    """Find existing insurance record in database."""
+    return cur.execute(
+        """
+        SELECT
+            id,
+            coverage_type,
+            policy_type,
+            subscriber_id,
+            subscriber_name,
+            relationship,
+            effective_date,
+            expiration_date,
+            status,
+            payer_identifier,
+            data_source_id,
+            source_policy_id,
+            notes
+          FROM insurance
+         WHERE patient_id = ?
+           AND COALESCE(payer_name, '') = COALESCE(?, '')
+           AND COALESCE(plan_name, '') = COALESCE(?, '')
+           AND COALESCE(member_id, '') = COALESCE(?, '')
+           AND COALESCE(group_number, '') = COALESCE(?, '')
+        """,
+        (
+            patient_id,
+            insurance_data.get("payer_name") or "",
+            insurance_data.get("plan_name") or "",
+            insurance_data.get("member_id") or "",
+            insurance_data.get("group_number") or "",
+        ),
+    ).fetchone()
+
+
+def _build_insurance_update_queries(
+    insurance_data: InsuranceData,
+    existing: tuple,
+) -> tuple[list[str], list[object]]:
+    """Build update SQL and parameters for changed fields."""
+    (
+        _,
+        existing_coverage,
+        existing_policy_type,
+        existing_subscriber_id,
+        existing_subscriber_name,
+        existing_relationship,
+        existing_effective,
+        existing_expiration,
+        existing_status,
+        existing_payer_identifier,
+        existing_ds_id,
+        existing_source_policy_id,
+        existing_notes,
+    ) = existing
+
+    updates: list[str] = []
+    params: list[object] = []
+
+    column_updates = [
+        ("coverage_type", insurance_data.get("coverage_type"), existing_coverage),
+        ("policy_type", insurance_data.get("policy_type"), existing_policy_type),
+        (
+            "subscriber_id",
+            insurance_data.get("subscriber_id"),
+            existing_subscriber_id,
+        ),
+        (
+            "subscriber_name",
+            insurance_data.get("subscriber_name"),
+            existing_subscriber_name,
+        ),
+        (
+            "relationship",
+            insurance_data.get("relationship"),
+            existing_relationship,
+        ),
+        (
+            "effective_date",
+            insurance_data.get("effective_date"),
+            existing_effective,
+        ),
+        (
+            "expiration_date",
+            insurance_data.get("expiration_date"),
+            existing_expiration,
+        ),
+        ("status", insurance_data.get("status"), existing_status),
+        (
+            "payer_identifier",
+            insurance_data.get("payer_identifier"),
+            existing_payer_identifier,
+        ),
+        (
+            "source_policy_id",
+            insurance_data.get("source_policy_id"),
+            existing_source_policy_id,
+        ),
+        ("notes", insurance_data.get("notes"), existing_notes),
+    ]
+
+    for column, new_value, old_value in column_updates:
+        if new_value and (old_value or "") != new_value:
+            updates.append(f"{column} = ?")
+            params.append(new_value)
+
+    ds_id = insurance_data.get("ds_id")
+    if ds_id is not None and (existing_ds_id or 0) != ds_id:
+        updates.append("data_source_id = ?")
+        params.append(ds_id)
+
+    return updates, params
+
+
+def _execute_insurance_update(
+    cur: sqlite3.Cursor,
+    updates: list[str],
+    params: list[object],
+    policy_id: int,
+) -> bool:
+    """Execute update query for changed fields. Returns True if updated."""
+    if not updates:
+        return False
+
+    # Single field update
+    if len(updates) == 1:
+        update_field = updates[0].split()[0]
+        update_single_field(cur, "insurance", update_field, params[0], policy_id)
+    # Multiple fields update
+    else:
+        query = f"UPDATE insurance SET {', '.join(updates)} WHERE id = ?"  # nosec B608
+        cur.execute(query, params + [policy_id])
+
+    return True
+
+
+def _insert_new_insurance(
+    cur: sqlite3.Cursor,
+    patient_id: int,
+    insurance_data: InsuranceData,
+) -> None:
+    """Insert a new insurance record."""
+    cur.execute(
+        """
+        INSERT INTO insurance (
+            patient_id,
+            payer_name,
+            plan_name,
+            coverage_type,
+            policy_type,
+            member_id,
+            group_number,
+            subscriber_id,
+            subscriber_name,
+            relationship,
+            effective_date,
+            expiration_date,
+            status,
+            payer_identifier,
+            source_policy_id,
+            notes,
+            data_source_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            patient_id,
+            insurance_data.get("payer_name"),
+            insurance_data.get("plan_name"),
+            insurance_data.get("coverage_type"),
+            insurance_data.get("policy_type"),
+            insurance_data.get("member_id"),
+            insurance_data.get("group_number"),
+            insurance_data.get("subscriber_id"),
+            insurance_data.get("subscriber_name"),
+            insurance_data.get("relationship"),
+            insurance_data.get("effective_date"),
+            insurance_data.get("expiration_date"),
+            insurance_data.get("status"),
+            insurance_data.get("payer_identifier"),
+            insurance_data.get("source_policy_id"),
+            insurance_data.get("notes"),
+            insurance_data.get("ds_id"),
+        ),
+    )
 
 
 def upsert_insurance(
@@ -45,161 +279,36 @@ def upsert_insurance(
     updated = 0
 
     for policy in mapping_iter:
-        payer_name = clean_str(policy.get("payer_name"))
-        plan_name = clean_str(policy.get("plan_name"))
-        member_id = clean_str(policy.get("member_id"))
-        payer_identifier = clean_str(policy.get("payer_identifier"))
-        group_number = clean_str(policy.get("group_number"))
-        if not (payer_name or plan_name or member_id or group_number):
+        # Extract all fields into type-safe dict
+        insurance_data: InsuranceData = _extract_insurance_fields(policy)
+
+        if not (
+            insurance_data.get("payer_name")
+            or insurance_data.get("plan_name")
+            or insurance_data.get("member_id")
+            or insurance_data.get("group_number")
+        ):
             continue
 
-        ds_id = coerce_int(policy.get("data_source_id"))
-        coverage_type = clean_str(policy.get("coverage_type"))
-        policy_type = clean_str(policy.get("policy_type"))
-        subscriber_id = clean_str(policy.get("subscriber_id"))
-        subscriber_name = clean_str(policy.get("subscriber_name"))
-        relationship = clean_str(policy.get("relationship"))
-        effective_date = clean_str(policy.get("effective_date"))
-        expiration_date = clean_str(policy.get("expiration_date"))
-        status = clean_str(policy.get("status"))
-        source_policy_id = clean_str(policy.get("source_policy_id"))
-        notes = clean_str(policy.get("notes"))
+        insurance_data["patient_id"] = patient_id  # type: ignore
 
-        existing = cur.execute(
-            """
-            SELECT
-                id,
-                coverage_type,
-                policy_type,
-                subscriber_id,
-                subscriber_name,
-                relationship,
-                effective_date,
-                expiration_date,
-                status,
-                payer_identifier,
-                data_source_id,
-                source_policy_id,
-                notes
-              FROM insurance
-             WHERE patient_id = ?
-               AND COALESCE(payer_name, '') = COALESCE(?, '')
-               AND COALESCE(plan_name, '') = COALESCE(?, '')
-               AND COALESCE(member_id, '') = COALESCE(?, '')
-               AND COALESCE(group_number, '') = COALESCE(?, '')
-            """,
-            (
-                patient_id,
-                payer_name or "",
-                plan_name or "",
-                member_id or "",
-                group_number or "",
-            ),
-        ).fetchone()
+        # Find existing record
+        existing = _find_existing_insurance(cur, patient_id, insurance_data)
 
         if existing:
-            (
-                policy_id,
-                existing_coverage,
-                existing_policy_type,
-                existing_subscriber_id,
-                existing_subscriber_name,
-                existing_relationship,
-                existing_effective,
-                existing_expiration,
-                existing_status,
-                existing_payer_identifier,
-                existing_ds_id,
-                existing_source_policy_id,
-                existing_notes,
-            ) = existing
-            updates: list[str] = []
-            params: list[object] = []
+            # Build updates for changed fields
+            updates, params = _build_insurance_update_queries(
+                insurance_data,
+                existing,
+            )
 
-            column_updates = [
-                ("coverage_type", coverage_type, existing_coverage),
-                ("policy_type", policy_type, existing_policy_type),
-                ("subscriber_id", subscriber_id, existing_subscriber_id),
-                ("subscriber_name", subscriber_name, existing_subscriber_name),
-                ("relationship", relationship, existing_relationship),
-                ("effective_date", effective_date, existing_effective),
-                ("expiration_date", expiration_date, existing_expiration),
-                ("status", status, existing_status),
-                ("payer_identifier", payer_identifier, existing_payer_identifier),
-                ("source_policy_id", source_policy_id, existing_source_policy_id),
-                ("notes", notes, existing_notes),
-            ]
-
-            for column, new_value, old_value in column_updates:
-                if new_value and (old_value or "") != new_value:
-                    updates.append(f"{column} = ?")
-                    params.append(new_value)
-
-            if ds_id is not None and (existing_ds_id or 0) != ds_id:
-                updates.append("data_source_id = ?")
-                params.append(ds_id)
-
-            if updates:
-
-                # Single field update
-                if len(updates) == 1:
-                    update_field = updates[0].split()[0]
-                    update_single_field(
-                        cur, "insurance", update_field, params[0], policy_id
-                    )
-                # Multiple fields update
-                else:
-                    # pylint: disable=line-too-long
-                    # fmt: off
-                    query = f"UPDATE insurance SET {', '.join(updates)} WHERE id = ?" # nosec B608
-                    # fmt: on
-                    # pylint: enable=line-too-long
-                    cur.execute(query, params + [policy_id])
+            policy_id = existing[0]
+            if _execute_insurance_update(cur, updates, params, policy_id):
                 updated += 1
             continue
 
-        cur.execute(
-            """
-            INSERT INTO insurance (
-                patient_id,
-                payer_name,
-                plan_name,
-                coverage_type,
-                policy_type,
-                member_id,
-                group_number,
-                subscriber_id,
-                subscriber_name,
-                relationship,
-                effective_date,
-                expiration_date,
-                status,
-                payer_identifier,
-                source_policy_id,
-                notes,
-                data_source_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                patient_id,
-                payer_name,
-                plan_name,
-                coverage_type,
-                policy_type,
-                member_id,
-                group_number,
-                subscriber_id,
-                subscriber_name,
-                relationship,
-                effective_date,
-                expiration_date,
-                status,
-                payer_identifier,
-                source_policy_id,
-                notes,
-                ds_id,
-            ),
-        )
+        # Insert new record
+        _insert_new_insurance(cur, patient_id, insurance_data)
         inserted += 1
 
     conn.commit()

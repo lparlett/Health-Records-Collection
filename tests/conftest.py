@@ -14,7 +14,8 @@ def schema_conn() -> Iterator[sqlite3.Connection]:
     """Provide an in-memory SQLite connection seeded with the project schema."""
     conn = sqlite3.connect(":memory:")
     conn.execute("PRAGMA foreign_keys = ON;")
-    schema_sql = Path("schema.sql").read_text(encoding="utf-8")
+    schema_path = Path(__file__).parent.parent / "schema.sql"
+    schema_sql = schema_path.read_text(encoding="utf-8")
     conn.executescript(schema_sql)
     ensure_schema(conn)
     try:
@@ -24,9 +25,11 @@ def schema_conn() -> Iterator[sqlite3.Connection]:
 
 
 @pytest.fixture
-def data_source_id(test_schema_conn: sqlite3.Connection) -> int:
+def data_source_id(
+    schema_conn: sqlite3.Connection,
+) -> int:  # pylint: disable=redefined-outer-name
     """Insert a reusable data_source row for tests that need a valid foreign key."""
-    cursor = test_schema_conn.cursor()
+    cursor = schema_conn.cursor()
     archive_hash = hashlib.sha256(b"archive.zip").hexdigest()
     cursor.execute(
         """
@@ -52,7 +55,7 @@ def data_source_id(test_schema_conn: sqlite3.Connection) -> int:
         """,
         ("sample.xml", "2025-10-12T00:00:00Z", "hash-sample", archive_id),
     )
-    test_schema_conn.commit()
+    schema_conn.commit()
     return int(cursor.lastrowid) if cursor.lastrowid is not None else 0
 
 
@@ -71,9 +74,9 @@ def _get_test_modules() -> tuple[Any, Any, Any]:
         tuple: Settings, encryption, and sqlcipher support modules
     """
     return (
-        import_module("settings"),
-        import_module("security.encryption"),
-        import_module("security.sqlcipher_support"),
+        import_module("health_records_collection.settings"),
+        import_module("health_records_collection.security.encryption"),
+        import_module("health_records_collection.security.sqlcipher_support"),
     )
 
 
@@ -84,16 +87,12 @@ def isolate_user_settings(
     """Ensure user settings and encryption artifacts use a temp directory for tests."""
     settings_mod, encryption_mod, sqlcipher_mod = _get_test_modules()
 
-    # Create isolated directories for settings and encryption
+    # Create isolated directory for settings (encryption key will be stored here)
     settings_dir = tmp_path_factory.mktemp("settings")
-    encryption_dir = tmp_path_factory.mktemp("encryption")
 
-    # Update settings paths
+    # Update settings paths - encryption key will be derived from USER_SETTINGS_DIR
     monkeypatch.setattr(settings_mod, "USER_SETTINGS_DIR", settings_dir)
     monkeypatch.setattr(settings_mod, "SETTINGS_FILE", settings_dir / "settings.yaml")
-    monkeypatch.setattr(
-        settings_mod, "USER_KEY_PATH", encryption_dir / "encryption.key"
-    )
 
     # Reset encryption manager state
     # pylint: disable=protected-access

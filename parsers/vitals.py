@@ -149,8 +149,9 @@ def parse_vitals(tree: ElementTreeType, ns: dict[str, str]) -> list[VitalEntry]:
     Returns:
         list[VitalEntry]: Normalised vital sign entries.
     """
+    root = tree.getroot()
     vitals: list[VitalEntry] = []
-    section_nodes = tree.xpath(
+    section_nodes = root.xpath(
         ".//hl7:section[hl7:code[@code='8716-3']]",
         namespaces=ns,
     )

@@ -38,8 +38,9 @@ _ALLOWED_OBS_TEMPLATE_IDS: set[str] = {
 
 def _condition_sections(tree: ElementTreeType, ns: dict[str, str]) -> list[ElementType]:
     """Return CCD sections that correspond to problem lists."""
+    root = tree.getroot()
     sections: list[ElementType] = []
-    section_nodes = tree.xpath(".//hl7:section", namespaces=ns)
+    section_nodes = root.xpath(".//hl7:section", namespaces=ns)
     for section in iter_elements(section_nodes):
         code_el = section.find("hl7:code", namespaces=ns)
         code_value = clean_text(code_el.get("code") if code_el is not None else None)
@@ -194,9 +195,11 @@ def _condition_encounter(
     return encounter_source_id, encounter_start, encounter_end
 
 
-def _condition_author_time(observation: ElementType) -> Optional[str]:
+def _condition_author_time(
+    observation: ElementType, ns: dict[str, str]
+) -> Optional[str]:
     """Return the time the observation was authored, if provided."""
-    author_time_el = observation.find("hl7:author/hl7:time")
+    author_time_el = observation.find("hl7:author/hl7:time", namespaces=ns)
     return clean_text(
         author_time_el.get("value") if author_time_el is not None else None
     )
@@ -254,7 +257,7 @@ def parse_conditions(tree: ElementTreeType, ns: dict[str, str]) -> list[Conditio
             for observation in iter_elements(observations):
                 if not _is_condition_observation(observation, ns):
                     continue
-
+                # pylint: disable=line-too-long
                 codes, value_el = _condition_codes(observation, ns)
                 status = _extract_status(observation, ns)
                 start, end = _condition_times(observation, entry, ns)
@@ -264,7 +267,8 @@ def parse_conditions(tree: ElementTreeType, ns: dict[str, str]) -> list[Conditio
                     "hl7:author/hl7:assignedAuthor/hl7:representedOrganization/hl7:name",
                     ns,
                 )
-                author_time = _condition_author_time(observation)
+                # pylint: enable=line-too-long
+                author_time = _condition_author_time(observation, ns)
                 (
                     encounter_source_id,
                     encounter_start,

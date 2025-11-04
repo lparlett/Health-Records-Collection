@@ -73,8 +73,9 @@ def parse_immunizations(
     Returns:
         list[ImmunizationEntry]: Normalised vaccine administration entries.
     """
+    root = tree.getroot()
     immunizations: list[ImmunizationEntry] = []
-    section_nodes_raw = tree.xpath(
+    section_nodes_raw = root.xpath(
         ".//hl7:section[hl7:code[@code='11369-6']]",
         namespaces=ns,
     )
@@ -145,11 +146,12 @@ def parse_immunizations(
             ),
         ]
         vaccine_name = first_non_empty(*name_candidates)
-
+        # pylint: disable=line-too-long
         lot_number_el = admin.find(
             "hl7:consumable/hl7:manufacturedProduct/hl7:manufacturedMaterial/hl7:lotNumberText",
             namespaces=ns,
         )
+        # pylint: enable=line-too-long
         lot_number = normalize_whitespace(
             lot_number_el.text if lot_number_el is not None else None
         )

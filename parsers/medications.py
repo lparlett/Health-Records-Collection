@@ -224,7 +224,8 @@ def _medication_nodes(
     ns: dict[str, str],
 ) -> list[ElementType]:
     """Return CCD medication administration nodes."""
-    raw_nodes = tree.xpath(
+    root = tree.getroot()
+    raw_nodes = root.xpath(
         ".//hl7:substanceAdministration"
         "[hl7:templateId[@root='2.16.840.1.113883.10.20.22.4.16']]",
         namespaces=ns,
@@ -445,7 +446,8 @@ def _register_entry(
 
 def _extract_patient_id(tree: ElementTreeType, ns: dict[str, str]) -> str | None:
     """Return the patient identifier from the CCD, if provided."""
-    patient_ids = tree.xpath(
+    root_elem = tree.getroot()
+    patient_ids = root_elem.xpath(
         ".//hl7:recordTarget/hl7:patientRole/hl7:id",
         namespaces=ns,
     )
@@ -453,11 +455,11 @@ def _extract_patient_id(tree: ElementTreeType, ns: dict[str, str]) -> str | None
         for id_el in patient_ids:
             if isinstance(id_el, ElementType):
                 extension = (id_el.get("extension") or "").strip()
-                root = (id_el.get("root") or "").strip()
+                root_attr = (id_el.get("root") or "").strip()
                 if extension:
                     return extension
-                if root:
-                    return root
+                if root_attr:
+                    return root_attr
     return None
 
 

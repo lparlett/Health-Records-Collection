@@ -16,6 +16,9 @@ __pycache__/
 logs/
 .coverage
 
+# Ignore troubleshooting
+AI_tests_reports/
+
 # Ignore virtual environments
 .venv/
 .vscode/

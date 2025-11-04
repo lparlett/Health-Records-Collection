@@ -50,7 +50,8 @@ class ParticipantRole:
 
 def _insurance_sections(tree: ElementTreeType, ns: dict[str, str]) -> list[ElementType]:
     """Return CCD sections describing insurance coverage."""
-    sections = tree.xpath(".//hl7:section", namespaces=ns)
+    root = tree.getroot()
+    sections = root.xpath(".//hl7:section", namespaces=ns)
     results: list[ElementType] = []
     for section in iter_elements(sections):
         code_el = section.find("hl7:code", namespaces=ns)
@@ -283,14 +284,26 @@ def _extract_coverage_participant(
     )
 
 
-def _prepare_defaults(
+def _extract_first_id(
+    role: ElementType | None,
+    ns: dict[str, str],
+) -> Optional[str]:
+    """Extract the first ID from a role element."""
+    if role is None:
+        return None
+    for id_el in iter_elements(role.findall("hl7:id", namespaces=ns)):
+        candidate = clean_text(id_el.get("extension") or id_el.get("root"))
+        if candidate:
+            return candidate
+    return None
+
+
+def _extract_payer_info(
     tree: ElementTreeType,
     act: ElementType,
     ns: dict[str, str],
-) -> dict[str, Optional[str]]:
-    """Extract default values from a container act for nested details."""
-    defaults: dict[str, Optional[str]] = {}
-
+) -> tuple[Optional[str], Optional[str]]:
+    """Extract payer name and identifier from performer."""
     payer_name = _extract_original_plan_text(
         tree,
         act.find(
@@ -299,101 +312,131 @@ def _prepare_defaults(
         ),
         ns,
     )
-    defaults["payer_name"] = normalize_whitespace(payer_name)
     performer = act.find("hl7:performer/hl7:assignedEntity", namespaces=ns)
-    assigned_id = None
-    if performer is not None:
-        for id_el in iter_elements(performer.findall("hl7:id", namespaces=ns)):
-            candidate = clean_text(id_el.get("extension") or id_el.get("root"))
-            if candidate:
-                assigned_id = candidate
-                break
-    defaults["payer_identifier"] = assigned_id
-    plan_el = act.find("hl7:code", namespaces=ns)
-    defaults["plan_name"] = first_non_empty(
+    payer_id = _extract_first_id(performer, ns)
+    return normalize_whitespace(payer_name), payer_id
+
+
+def _extract_plan_and_coverage_type(
+    plan_el: ElementType | None,
+) -> tuple[Optional[str], Optional[str]]:
+    """Extract plan name and coverage type from code element."""
+    plan_name = first_non_empty(
         normalize_whitespace(
             plan_el.get("displayName") if isinstance(plan_el, ElementType) else None
         ),
         clean_text(plan_el.get("code") if isinstance(plan_el, ElementType) else None),
     )
-    code_el = plan_el
-    defaults["coverage_type"] = first_non_empty(
+    coverage_type = first_non_empty(
         normalize_whitespace(
-            code_el.get("displayName") if isinstance(code_el, ElementType) else None
+            plan_el.get("displayName") if isinstance(plan_el, ElementType) else None
         ),
-        clean_text(code_el.get("code") if isinstance(code_el, ElementType) else None),
+        clean_text(plan_el.get("code") if isinstance(plan_el, ElementType) else None),
     )
-    defaults["policy_type"] = clean_text(act.get("classCode"))
+    return plan_name, coverage_type
 
+
+def _extract_coverage_role_info(
+    act: ElementType,
+    ns: dict[str, str],
+) -> tuple[Optional[str], Optional[str]]:
+    """Extract policy ID and group number from coverage role."""
     coverage_role = act.find(
         "hl7:participant[@typeCode='COV']/hl7:participantRole", namespaces=ns
     )
-    if coverage_role is not None:
-        policy_id = None
-        for id_el in iter_elements(coverage_role.findall("hl7:id", namespaces=ns)):
-            candidate = clean_text(id_el.get("extension") or id_el.get("root"))
-            if candidate:
-                policy_id = candidate
-                break
-        defaults["source_policy_id"] = policy_id
-        group_id = coverage_role.find(
-            "hl7:id[@root='2.16.840.1.113883.4.340']",
-            namespaces=ns,
-        )
-        defaults["group_number"] = clean_text(
-            group_id.get("extension") if isinstance(group_id, ElementType) else None
-        )
+    if coverage_role is None:
+        return None, None
 
-    defaults["effective_date"], defaults["expiration_date"] = extract_effective_time(
-        act.find("hl7:effectiveTime", namespaces=ns),
-        ns,
+    policy_id = _extract_first_id(coverage_role, ns)
+    group_id = coverage_role.find(
+        "hl7:id[@root='2.16.840.1.113883.4.340']",
+        namespaces=ns,
     )
-
-    holder_role = act.find(
-        "hl7:participant[@typeCode='HLD']/hl7:participantRole", namespaces=ns
+    group_number = clean_text(
+        group_id.get("extension") if isinstance(group_id, ElementType) else None
     )
-    member_id = None
-    if holder_role is not None:
-        for id_el in iter_elements(holder_role.findall("hl7:id", namespaces=ns)):
-            candidate = clean_text(id_el.get("extension") or id_el.get("root"))
-            if candidate:
-                member_id = candidate
-                break
-    defaults["member_id"] = member_id
+    return policy_id, group_number
 
+
+def _extract_subscriber_info(
+    tree: ElementTreeType,
+    act: ElementType,
+    ns: dict[str, str],
+) -> tuple[Optional[str], Optional[str], Optional[str]]:
+    """Extract subscriber ID, name, and relationship."""
     subscriber_role = act.find(
         "hl7:participant[@typeCode='SUB']/hl7:participantRole", namespaces=ns
     )
-    subscriber_id = None
-    if subscriber_role is not None:
-        for id_el in iter_elements(subscriber_role.findall("hl7:id", namespaces=ns)):
-            candidate = clean_text(id_el.get("extension") or id_el.get("root"))
-            if candidate:
-                subscriber_id = candidate
-                break
-    defaults["subscriber_id"] = subscriber_id
-    defaults["subscriber_name"] = normalize_whitespace(
+    if subscriber_role is None:
+        return None, None, None
+
+    subscriber_id = _extract_first_id(subscriber_role, ns)
+    subscriber_name = normalize_whitespace(
         safe_xpath_text(subscriber_role, "hl7:playingEntity/hl7:name", ns)
-        if subscriber_role is not None
-        else None
     )
-    sub_code = (
-        subscriber_role.find("hl7:code", namespaces=ns)
-        if subscriber_role is not None
-        else None
-    )
+    sub_code = subscriber_role.find("hl7:code", namespaces=ns)
     relationship_text = None
     if isinstance(sub_code, ElementType):
         original = sub_code.find("hl7:originalText", namespaces=ns)
         if isinstance(original, ElementType):
             relationship_text = _extract_original_text(tree, original, ns)
-    defaults["relationship"] = first_non_empty(
+
+    relationship = first_non_empty(
         normalize_whitespace(
             sub_code.get("displayName") if isinstance(sub_code, ElementType) else None
         ),
         relationship_text,
         clean_text(sub_code.get("code") if isinstance(sub_code, ElementType) else None),
     )
+    return subscriber_id, subscriber_name, relationship
+
+
+def _prepare_defaults(
+    tree: ElementTreeType,
+    act: ElementType,
+    ns: dict[str, str],
+) -> dict[str, Optional[str]]:
+    """Extract default values from a container act for nested details."""
+    defaults: dict[str, Optional[str]] = {}
+
+    # Payer information
+    payer_name, payer_id = _extract_payer_info(tree, act, ns)
+    defaults["payer_name"] = payer_name
+    defaults["payer_identifier"] = payer_id
+
+    # Plan and coverage type
+    plan_el = act.find("hl7:code", namespaces=ns)
+    plan_name, coverage_type = _extract_plan_and_coverage_type(plan_el)
+    defaults["plan_name"] = plan_name
+    defaults["coverage_type"] = coverage_type
+    defaults["policy_type"] = clean_text(act.get("classCode"))
+
+    # Coverage role information
+    policy_id, group_number = _extract_coverage_role_info(act, ns)
+    defaults["source_policy_id"] = policy_id
+    defaults["group_number"] = group_number
+
+    # Effective and expiration dates
+    defaults["effective_date"], defaults["expiration_date"] = extract_effective_time(
+        act.find("hl7:effectiveTime", namespaces=ns),
+        ns,
+    )
+
+    # Holder information
+    holder_role = act.find(
+        "hl7:participant[@typeCode='HLD']/hl7:participantRole", namespaces=ns
+    )
+    defaults["member_id"] = _extract_first_id(holder_role, ns)
+
+    # Subscriber information
+    subscriber_id, subscriber_name, relationship = _extract_subscriber_info(
+        tree, act, ns
+    )
+    defaults["subscriber_id"] = subscriber_id
+    defaults["subscriber_name"] = subscriber_name
+    defaults["relationship"] = relationship
+
+    # Status and notes
     status_el = act.find("hl7:statusCode", namespaces=ns)
     defaults["status"] = clean_text(
         status_el.get("code") if isinstance(status_el, ElementType) else None

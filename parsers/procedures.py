@@ -69,7 +69,8 @@ PROCEDURE_TEMPLATE_IDS: set[str] = {
 
 def _procedure_sections(tree: ElementTreeType, ns: dict[str, str]) -> list[ElementType]:
     """Return CCD sections that likely contain procedure information."""
-    sections = tree.xpath(".//hl7:section", namespaces=ns)
+    root = tree.getroot()
+    sections = root.xpath(".//hl7:section", namespaces=ns)
     results: list[ElementType] = []
     for section in iter_elements(sections):
         code_el = section.find("hl7:code", namespaces=ns)

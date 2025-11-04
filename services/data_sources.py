@@ -32,6 +32,14 @@ def upsert_data_source(
         conn: Active SQLite connection with foreign keys enabled.
         file_path: Path to the CCD XML file being persisted.
         archive_id: Optional ingested_archive primary key for the containing archive.
+        metadata: Optional additional metadata dictionary with any of the 
+            following keys:
+            - document_created: str | None
+            - repository_unique_id: str | None
+            - document_hash: str | None
+            - document_size: int | None
+            - author_institution: str | None
+            - attachment_id: int | None
 
     Returns:
         int: The primary key of the corresponding `data_source` row.
@@ -68,7 +76,12 @@ def upsert_data_source(
         document_size = None
     if attachment_metadata_id is not None:
         try:
-            attachment_metadata_id = int(attachment_metadata_id)
+            if isinstance(
+                attachment_metadata_id, (str, int)
+            ) and str(attachment_metadata_id).isdigit():
+                attachment_metadata_id = int(attachment_metadata_id)
+            else:
+                attachment_metadata_id = None
         except (TypeError, ValueError):
             attachment_metadata_id = None
 
@@ -100,12 +113,20 @@ def upsert_data_source(
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(file_sha256) DO UPDATE SET
             original_filename = excluded.original_filename,
-            source_archive_id = COALESCE(excluded.source_archive_id, data_source.source_archive_id),
-            document_created = COALESCE(excluded.document_created, data_source.document_created),
-            repository_unique_id = COALESCE(excluded.repository_unique_id, data_source.repository_unique_id),
+            source_archive_id = COALESCE(
+                excluded.source_archive_id, data_source.source_archive_id
+            ),
+            document_created = COALESCE(
+                excluded.document_created, data_source.document_created
+            ),
+            repository_unique_id = COALESCE(
+                excluded.repository_unique_id, data_source.repository_unique_id
+            ),
             document_hash = COALESCE(excluded.document_hash, data_source.document_hash),
             document_size = COALESCE(excluded.document_size, data_source.document_size),
-            author_institution = COALESCE(excluded.author_institution, data_source.author_institution),
+            author_institution = COALESCE(
+                excluded.author_institution, data_source.author_institution
+            ),
             attachment_id = COALESCE(data_source.attachment_id, excluded.attachment_id)
         """,
         (
@@ -151,6 +172,7 @@ def link_attachment(
     )
     if cur.rowcount != 1:
         raise sqlite3.DatabaseError(
-            f"Unable to link attachment {attachment_id} to data_source {data_source_id}."
+            f"Unable to link attachment {attachment_id} to "
+            f"data_source {data_source_id}."
         )
     conn.commit()

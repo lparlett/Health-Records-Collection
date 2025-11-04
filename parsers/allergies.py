@@ -18,7 +18,6 @@ from .common import (
     extract_provider_name,
     extract_status_code,
     first_non_empty,
-    get_text_by_id,
     iter_elements,
     normalize_whitespace,
 )
@@ -48,8 +47,9 @@ SEVERITY_TEMPLATE_IDS: set[str] = {
 
 def _allergy_sections(tree: ElementTreeType, ns: dict[str, str]) -> list[ElementType]:
     """Return CCD sections that describe allergies or intolerances."""
+    root = tree.getroot()
     sections: list[ElementType] = []
-    section_nodes = tree.xpath(".//hl7:section", namespaces=ns)
+    section_nodes = root.xpath(".//hl7:section", namespaces=ns)
     for section in iter_elements(section_nodes):
         code_el = section.find("hl7:code", namespaces=ns)
         code_value = clean_text(code_el.get("code") if code_el is not None else None)
@@ -145,9 +145,9 @@ def _extract_severity(observation: ElementType, ns: dict[str, str]) -> Optional[
         templates = collect_template_ids(severity_obs, ns)
         if relationship.get("typeCode") not in {"SUBJ", "REFR"} and not templates:
             continue
+        code_elem = severity_obs.find("hl7:code", namespaces=ns)
         if (
-            severity_obs.find("hl7:code", namespaces=ns) is not None
-            and severity_obs.find("hl7:code", namespaces=ns).get("code") == "SEV"
+            code_elem is not None and code_elem.get("code") == "SEV"
         ) or templates & SEVERITY_TEMPLATE_IDS:
             value = severity_obs.find("hl7:value", namespaces=ns)
             _, _, display = _extract_value_details(value)

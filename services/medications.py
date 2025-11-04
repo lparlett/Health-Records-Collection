@@ -20,23 +20,25 @@ from health_records_collection.services.encounters import (
 
 # Initialize module level variables
 sqlcipher_module: None | ModuleType = None
+sqlcipher_integrity_error: type[Exception] | None = None
 
 try:  # pragma: no cover - depends on optional SQLCipher driver
-    from sqlcipher3 import dbapi2
+    from sqlcipher3 import dbapi2 as sqlcipher_dbapi2
+    from sqlcipher3.dbapi2 import IntegrityError as SqlCipherIntegrityError
 
-    sqlcipher_module = dbapi2
+    sqlcipher_module = sqlcipher_dbapi2
+    sqlcipher_integrity_error = SqlCipherIntegrityError
 except ImportError:  # pragma: no cover - fallback for plain sqlite
     pass
 
 # Define integrity error types to catch based on available database modules
-INTEGRITY_ERRORS: Tuple[type[Exception], ...] = (
-    (
+if sqlcipher_integrity_error is not None:
+    INTEGRITY_ERRORS: Tuple[type[Exception], ...] = (
         sqlite3.IntegrityError,
-        sqlite3.IntegrityError,
-    )  # sqlcipher uses sqlite3 exceptions
-    if sqlcipher_module is not None
-    else (sqlite3.IntegrityError,)
-)
+        sqlcipher_integrity_error,
+    )
+else:
+    INTEGRITY_ERRORS = (sqlite3.IntegrityError,)
 
 __all__ = ["insert_medications"]
 

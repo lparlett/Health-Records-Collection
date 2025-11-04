@@ -194,7 +194,9 @@ def _parse_encounter(
     provider_id = coerce_int(enc.get("provider_id"))
 
     # Early return if missing required fields
-    if not (encounter_date and source_encounter_id):
+    # Skip encounters without a provider (likely duplicates/incomplete data in
+    # other export files)
+    if not (encounter_date and source_encounter_id and provider_name):
         return None
 
     # Resolve provider if needed

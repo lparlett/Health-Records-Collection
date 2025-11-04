@@ -179,7 +179,8 @@ def get_text_by_id(
         return None
 
     ref_id = ref_value.lstrip("#")
-    nodes = cast(Sequence[Any], tree.xpath(f"//*[@ID='{ref_id}']", namespaces=ns))
+    root = tree.getroot()
+    nodes = cast(Sequence[Any], root.xpath(f"//*[@ID='{ref_id}']", namespaces=ns))
     for candidate in nodes:
         text_value = flatten_text(candidate) or first_text(candidate)
         if text_value:
@@ -335,9 +336,7 @@ def extract_encounter_details(
     return source_id, start, end
 
 
-def safe_xpath_text(
-    element: ElementType, path: str, ns: dict[str, str]
-) -> str | None:
+def safe_xpath_text(element: ElementType, path: str, ns: dict[str, str]) -> str | None:
     """Safely extract text using xpath, with namespace fallback.
 
     Handles documents where namespace prefixes may not be declared

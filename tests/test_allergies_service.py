@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import sqlite3
+import unittest
 
 import pytest
 
-from services.allergies import insert_allergies
+from health_records_collection.services.allergies import insert_allergies
 
 
 def _seed_patient(conn: sqlite3.Connection) -> int:
+    """Helper to insert a patient for testing."""
     conn.execute(
         "INSERT INTO patient (given_name, family_name) VALUES (?, ?)",
         ("Allergy", "Patient"),
@@ -15,96 +17,104 @@ def _seed_patient(conn: sqlite3.Connection) -> int:
     return int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
 
 
-@pytest.mark.usefixtures("schema_conn")
-def test_insert_allergies_inserts_and_updates(
-    schema_conn: sqlite3.Connection,
-    data_source_id: int,
-) -> None:
-    patient_id = _seed_patient(schema_conn)
+class TestAllergiesService(unittest.TestCase):
+    """Test suite for allergies service."""
 
-    payload = {
-        "substance": "Peanuts",
-        "substance_code": "256349002",
-        "status": "active",
-        "onset": "20241001",
-        "reaction": "Hives",
-        "severity": "Mild",
-        "provider": "Dr Allergy Tester",
-        "data_source_id": data_source_id,
-        "source_allergy_id": "ALLERGY-1",
-    }
+    @pytest.mark.usefixtures("schema_conn")
+    def test_insert_allergies_inserts_and_updates(
+        self,
+        schema_conn: sqlite3.Connection,
+        data_source_id: int,
+    ) -> None:
+        """Test that insert_allergies properly inserts and updates allergy records."""
+        patient_id = _seed_patient(schema_conn)
 
-    inserted, updated = insert_allergies(schema_conn, patient_id, [payload])
-    assert inserted == 1
-    assert updated == 0
+        payload = {
+            "substance": "Peanuts",
+            "substance_code": "256349002",
+            "status": "active",
+            "onset": "20241001",
+            "reaction": "Hives",
+            "severity": "Mild",
+            "provider": "Dr Allergy Tester",
+            "data_source_id": data_source_id,
+            "source_allergy_id": "ALLERGY-1",
+        }
 
-    row = schema_conn.execute(
-        """
-        SELECT
-            substance,
-            substance_code,
-            severity,
-            reaction,
-            provider_id,
-            data_source_id
-          FROM allergy
-         WHERE patient_id = ?
-        """,
-        (patient_id,),
-    ).fetchone()
-    assert row is not None
-    substance, substance_code, severity, reaction, provider_id, stored_source = row
-    assert substance == "Peanuts"
-    assert substance_code == "256349002"
-    assert severity == "Mild"
-    assert reaction == "Hives"
-    assert provider_id is not None
-    assert stored_source == data_source_id
+        inserted, updated = insert_allergies(schema_conn, patient_id, [payload])
+        self.assertEqual(inserted, 1)
+        self.assertEqual(updated, 0)
 
-    new_source = schema_conn.execute(
-        """
-        INSERT INTO data_source (original_filename, ingested_at, file_sha256)
-        VALUES (?, ?, ?)
-        """,
-        ("allergy.xml", "2025-10-19T00:00:00Z", "hash-allergy"),
-    ).lastrowid
-    schema_conn.commit()
+        row = schema_conn.execute(
+            """
+            SELECT
+                substance,
+                substance_code,
+                severity,
+                reaction,
+                provider_id,
+                data_source_id
+              FROM allergy
+             WHERE patient_id = ?
+            """,
+            (patient_id,),
+        ).fetchone()
+        self.assertIsNotNone(row)
+        substance, substance_code, severity, reaction, provider_id, stored_source = row
+        self.assertEqual(substance, "Peanuts")
+        self.assertEqual(substance_code, "256349002")
+        self.assertEqual(severity, "Mild")
+        self.assertEqual(reaction, "Hives")
+        self.assertIsNotNone(provider_id)
+        self.assertEqual(stored_source, data_source_id)
 
-    update_payload = {
-        **payload,
-        "severity": "Severe",
-        "reaction": "Anaphylaxis",
-        "criticality": "High",
-        "notes": "Carry epinephrine autoinjector",
-        "data_source_id": int(new_source),
-    }
+        new_source = schema_conn.execute(
+            """
+            INSERT INTO data_source (original_filename, ingested_at, file_sha256)
+            VALUES (?, ?, ?)
+            """,
+            ("allergy.xml", "2025-10-19T00:00:00Z", "hash-allergy"),
+        ).lastrowid
+        schema_conn.commit()
 
-    inserted_again, updated_again = insert_allergies(
-        schema_conn,
-        patient_id,
-        [update_payload],
-    )
-    assert inserted_again == 0
-    assert updated_again == 1
+        update_payload = {
+            **payload,
+            "severity": "Severe",
+            "reaction": "Anaphylaxis",
+            "criticality": "High",
+            "notes": "Carry epinephrine autoinjector",
+            "data_source_id": int(new_source) if new_source is not None else None,
+        }
 
-    updated_row = schema_conn.execute(
-        """
-        SELECT severity, reaction, criticality, notes, data_source_id
-          FROM allergy
-         WHERE patient_id = ?
-        """,
-        (patient_id,),
-    ).fetchone()
-    assert updated_row == (
-        "Severe",
-        "Anaphylaxis",
-        "High",
-        "Carry epinephrine autoinjector",
-        int(new_source),
-    )
+        inserted_again, updated_again = insert_allergies(
+            schema_conn,
+            patient_id,
+            [update_payload],
+        )
+        self.assertEqual(inserted_again, 0)
+        self.assertEqual(updated_again, 1)
 
-    count = schema_conn.execute(
-        "SELECT COUNT(*) FROM allergy WHERE patient_id = ?",
-        (patient_id,),
-    ).fetchone()[0]
-    assert count == 1
+        updated_row = schema_conn.execute(
+            """
+            SELECT severity, reaction, criticality, notes, data_source_id
+              FROM allergy
+             WHERE patient_id = ?
+            """,
+            (patient_id,),
+        ).fetchone()
+        self.assertEqual(
+            updated_row,
+            (
+                "Severe",
+                "Anaphylaxis",
+                "High",
+                "Carry epinephrine autoinjector",
+                int(new_source) if new_source is not None else None,
+            ),
+        )
+
+        count = schema_conn.execute(
+            "SELECT COUNT(*) FROM allergy WHERE patient_id = ?",
+            (patient_id,),
+        ).fetchone()[0]
+        self.assertEqual(count, 1)

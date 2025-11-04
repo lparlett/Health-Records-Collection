@@ -184,7 +184,7 @@ def perform_xslt_transformation(
 
         if not isinstance(safe_doc, _Element):
             logger.error(
-                "Safe document parsing returned " "unexpected type: %s", type(safe_doc)
+                "Safe document parsing returned unexpected type: %s", type(safe_doc)
             )
             return None
 

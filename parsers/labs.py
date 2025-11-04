@@ -42,7 +42,8 @@ class OrganizerContext:
 
 def _lab_sections(tree: ElementTreeType, ns: dict[str, str]) -> list[ElementType]:
     """Return CCD sections that correspond to laboratory findings."""
-    sections = tree.xpath(".//hl7:section[hl7:code[@code='30954-2']]", namespaces=ns)
+    root = tree.getroot()
+    sections = root.xpath(".//hl7:section[hl7:code[@code='30954-2']]", namespaces=ns)
     return iter_elements(sections)
 
 

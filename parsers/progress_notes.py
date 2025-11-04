@@ -49,8 +49,9 @@ def parse_progress_notes(
     Returns:
         list[dict[str, Optional[str]]]: Normalised progress note entries.
     """
+    root = tree.getroot()
     notes: list[dict[str, Optional[str]]] = []
-    section_nodes = tree.xpath(".//hl7:section", namespaces=ns)
+    section_nodes = root.xpath(".//hl7:section", namespaces=ns)
     for section in iter_elements(section_nodes):
         title_el = section.find("hl7:title", namespaces=ns)
         title = (
