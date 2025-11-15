@@ -16,6 +16,11 @@ from health_records_collection.tests import helpers
 def _create_archive(conn: sqlite3.Connection, name: str) -> int:
     """Helper to create an archive for testing."""
     hash_value = hashlib.sha256(name.encode("utf-8")).hexdigest()
+    existing = conn.execute(
+        "SELECT id FROM ingested_archive WHERE archive_sha256 = ?", (hash_value,)
+    ).fetchone()
+    if existing:
+        return int(existing[0])
     conn.execute(
         """
         INSERT INTO ingested_archive (
@@ -68,6 +73,9 @@ class TestDataSourcesService(helpers.SchemaTestCase):
     def setUp(self) -> None:
         """Set up test fixtures."""
         super().setUp()
+        self.schema_conn.execute("DELETE FROM data_source")
+        self.schema_conn.execute("DELETE FROM ingested_archive")
+        self.schema_conn.commit()
         self.tmp_path = Path(tempfile.mkdtemp())
         self.data_source_id: int | None = None
 

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import datetime
 import tempfile
-
+from dataclasses import dataclass
 from typing import Optional
 
 import logging
@@ -16,30 +16,29 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def generate_html_file(
-    html_body: str,
-    color_css_content: str,
-    css_content: str,
-    *,
-    xml_path: str,
-    xsl_path: str,
-    css_path: str,
-) -> Optional[str]:
+@dataclass(slots=True)
+class HtmlAssets:
+    """Container for CSS content and diagnostic paths."""
+
+    color_css: str
+    css: str
+    xml_path: str
+    xsl_path: str
+    css_path: str
+
+
+def generate_html_file(html_body: str, assets: HtmlAssets) -> Optional[str]:
     """Generate a complete HTML file from transformation output with embedded CSS.
 
     Args:
         html_body: The HTML body content from XSLT transformation.
-        color_css_content: Color scheme CSS content.
-        css_content: Custom CDA styling CSS content.
-        xml_path: Path to source XML (for diagnostic info).
-        xsl_path: Path to XSL stylesheet (for diagnostic info).
-        css_path: Path to CSS file (for diagnostic info).
+        assets: CSS content and diagnostic metadata.
 
     Returns:
         Path to temporary HTML file or None if generation fails.
     """
     try:
-        html_str = _build_html_template(html_body, color_css_content, css_content)
+        html_str = _build_html_template(html_body, assets.color_css, assets.css)
 
         # Create temporary HTML file
         temp_suffix = ".xhtml" if "<?xml" in html_str else ".html"
@@ -51,7 +50,7 @@ def generate_html_file(
                 "application/xhtml+xml" if temp_suffix == ".xhtml" else "text/html"
             )
             diagnostic_info = _build_diagnostic_comment(
-                xml_path, xsl_path, css_path, content_type
+                assets.xml_path, assets.xsl_path, assets.css_path, content_type
             )
             html_str = diagnostic_info + html_str
 

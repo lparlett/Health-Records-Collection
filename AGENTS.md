@@ -18,6 +18,28 @@ Goals: reproducibility, privacy, and clarity.
 /data/      → synthetic or de-identified samples only
 ```
 
+### Project layout & imports
+
+* The Git repo root (`health-records-collection/`) hosts Poetry metadata, CI workflows, docs, etc., while the actual Python package lives in the nested `health_records_collection/` directory (with its own `.git`, `pyproject.toml`, requirements, etc.).
+* When installing or linting, **cd into** `health_records_collection/` first and run `pip install -e .` (or Poetry commands) there so `pip` sees the package metadata.
+* When invoking tools from the outer repo, set `PYTHONPATH=$PWD` (or add the parent directory to `sys.path`) so imports resolve exactly as they do in CI. GitHub Actions' "Expose package import path" step mirrors this behavior.
+* Place all new Python modules inside the inner `health_records_collection/` package; avoid creating additional top-level packages in the outer repo.
+
+### PowerShell tips
+
+* Use parentheses for index ranges when calling `Select-Object -Index (start..end)`; literal `10..25` without parentheses is parsed as a string.
+* Prefer `python -c "<script>"` for quick transformations; multiline scripts are easiest via a here-string (`$script = @'...'@; python -c $script`) to avoid escaping.
+* When editing files via PowerShell loops, read to an array, modify, then `Set-Content`—avoids quoting issues compared to inline `sed`/`perl`.
+* Always set `Set-Location -Path ...` inside each command instead of relying on `cd`, because the CLI resets the working directory per invocation.
+* If you need literal backticks inside python strings, escape them aggressively (`\``) or build the snippet using triple quotes in Python to reduce escaping overhead.
+
+### Encoding & line endings
+
+* Default `python -c "..."` writes use the shell’s code page (cp1252 on Windows). When emitting Unicode (e.g., arrows), call `Path.write_text(..., encoding="utf-8")` or add `# -*- coding: utf-8 -*-` to temp scripts.
+* Normalize files with `text.splitlines()` and join using `"\n".join(...) + "\n"` to avoid CRLF/LF oscillation, but ensure you never clobber binary blobs—only use on text sources.
+* When replacing large blocks via one-off scripts, write the script to a temp file and run it (avoids quoting issues) and verify the result with `git diff` before proceeding.
+* Never overwrite a file with an empty string; if a transformation fails, restore from `git checkout -- path` immediately rather than re-running on a zero-length file.
+
 ---
 
 ## Environment
@@ -121,6 +143,7 @@ Source: [StackHawk](https://www.stackhawk.com/blog/4-best-practices-for-ai-code-
 
 * Generated code must include a brief comment noting that it was AI-assisted.
 * Do not inject this comment into private data or schema dumps.
+* Every commit with an agent must include the AI agent and model acknowledgement.
 
 ---
 
@@ -185,4 +208,4 @@ Source: [StackHawk](https://www.stackhawk.com/blog/4-best-practices-for-ai-code-
 
 ---
 
-Last updated: 2025-10-29
+Last updated: 2025-11-15

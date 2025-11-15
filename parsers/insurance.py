@@ -641,15 +641,16 @@ def parse_insurance(
 
     for section in _insurance_sections(tree, ns):
         for entry in iter_elements(section.findall("hl7:entry", namespaces=ns)):
-            acts = [
-                act
-                for act in iter_elements(entry.findall("hl7:act", namespaces=ns))
-                if _is_coverage_act(act, ns)
-            ]
-            if not acts:
+            coverage_acts: list[ElementType] = []
+            for act in iter_elements(entry.findall("hl7:act", namespaces=ns)):
+                if _is_coverage_act(act, ns):
+                    coverage_acts.append(act)
+                else:
+                    coverage_acts.extend(_collect_detail_acts(act, ns))
+            if not coverage_acts:
                 continue
 
-            for container in acts:
+            for container in coverage_acts:
                 defaults = _prepare_defaults(tree, container, ns)
                 detail_acts = _collect_detail_acts(container, ns) or [container]
                 for coverage_act in detail_acts:

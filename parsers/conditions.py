@@ -247,16 +247,15 @@ class ConditionRecord:
     key: ConditionKey
 
 
-def _build_condition_record(
+def _condition_entry(
     observation: ElementType,
     entry: ElementType,
     tree: ElementTreeType,
     ns: dict[str, str],
-) -> ConditionRecord | None:
-    """Return a condition entry/key pair for a qualifying observation."""
+) -> ConditionEntry | None:
+    """Build the condition entry payload or None if not applicable."""
     if not _is_condition_observation(observation, ns):
         return None
-    # pylint: disable=line-too-long
     codes, value_el = _condition_codes(observation, ns)
     status = _extract_status(observation, ns)
     start, end = _condition_times(observation, entry, ns)
@@ -266,35 +265,42 @@ def _build_condition_record(
         "hl7:author/hl7:assignedAuthor/hl7:representedOrganization/hl7:name",
         ns,
     )
-    # pylint: enable-line-too-long
     author_time = _condition_author_time(observation, ns)
     encounter_source_id, encounter_start, encounter_end = _condition_encounter(
         entry, ns
     )
-
     obs_text = _observation_text(observation, tree, ns)
     notes = _condition_notes(tree, entry, ns, obs_text)
     name = _condition_name(obs_text, value_el, codes)
     if name is None:
         return None
+    return {
+        "name": name,
+        "codes": codes,
+        "status": status.title() if status else None,
+        "start": start,
+        "end": end,
+        "notes": notes,
+        "provider": provider_name,
+        "author_time": author_time,
+        "encounter_source_id": encounter_source_id,
+        "encounter_start": encounter_start,
+        "encounter_end": encounter_end,
+    }
 
-    key = _condition_key(name, codes, start)
-    return ConditionRecord(
-        entry={
-            "name": name,
-            "codes": codes,
-            "status": status.title() if status else None,
-            "start": start,
-            "end": end,
-            "notes": notes,
-            "provider": provider_name,
-            "author_time": author_time,
-            "encounter_source_id": encounter_source_id,
-            "encounter_start": encounter_start,
-            "encounter_end": encounter_end,
-        },
-        key=key,
-    )
+
+def _build_condition_record(
+    observation: ElementType,
+    entry: ElementType,
+    tree: ElementTreeType,
+    ns: dict[str, str],
+) -> ConditionRecord | None:
+    """Return a condition entry/key pair for a qualifying observation."""
+    entry_data = _condition_entry(observation, entry, tree, ns)
+    if entry_data is None:
+        return None
+    key = _condition_key(entry_data["name"], entry_data["codes"], entry_data["start"])
+    return ConditionRecord(entry=entry_data, key=key)
 
 
 def parse_conditions(tree: ElementTreeType, ns: dict[str, str]) -> list[ConditionEntry]:

@@ -266,8 +266,10 @@ def _fetch_records(
     return df.to_dict("records")
 
 
-def get_encounter_detail(conn: SQLCipherConnection, encounter_id: int) -> dict:
-    """Return a dictionary containing the complete encounter detail."""
+def _encounter_metadata(
+    conn: SQLCipherConnection, encounter_id: int
+) -> tuple[dict[str, Any], int]:
+    """Fetch metadata details for an encounter."""
     meta_query = """
         SELECT e.id AS encounter_id,
                e.patient_id,
@@ -303,11 +305,9 @@ def get_encounter_detail(conn: SQLCipherConnection, encounter_id: int) -> dict:
         raise ValueError(f"Encounter {encounter_id} not found.")
 
     meta_row = meta_df.iloc[0].to_dict()
-    patient_id = int(meta_row["patient_id"])
-
     metadata = {
         "encounter_id": encounter_id,
-        "patient_id": patient_id,
+        "patient_id": int(meta_row["patient_id"]),
         "encounter_date": meta_row.get("encounter_date"),
         "encounter_type": meta_row.get("encounter_type"),
         "notes": meta_row.get("notes"),
@@ -338,106 +338,93 @@ def get_encounter_detail(conn: SQLCipherConnection, encounter_id: int) -> dict:
             "mime_type": meta_row.get("attachment_mime_type"),
         },
     }
+    return metadata, metadata["patient_id"]
 
-    conditions = _fetch_records(
-        conn,
-        """
-        SELECT name,
-               status,
-               COALESCE(code, '') AS code,
-               COALESCE(code_display, '') AS code_display,
-               onset_date,
-               notes
-          FROM condition
-         WHERE encounter_id = ?
-         ORDER BY name
+
+def _encounter_sections(
+    conn: SQLCipherConnection, encounter_id: int
+) -> dict[str, list[dict]]:
+    """Collect encounter-related records grouped by section."""
+    queries = {
+        "conditions": """
+            SELECT name,
+                   status,
+                   COALESCE(code, '') AS code,
+                   COALESCE(code_display, '') AS code_display,
+                   onset_date,
+                   notes
+              FROM condition
+             WHERE encounter_id = ?
+             ORDER BY name
         """,
-        (encounter_id,),
-    )
-
-    medications = _fetch_records(
-        conn,
-        """
-        SELECT name,
-               dose,
-               route,
-               frequency,
-               start_date,
-               end_date,
-               status,
-               notes
-          FROM medication
-         WHERE encounter_id = ?
-         ORDER BY name
+        "medications": """
+            SELECT name,
+                   dose,
+                   route,
+                   frequency,
+                   start_date,
+                   end_date,
+                   status,
+                   notes
+              FROM medication
+             WHERE encounter_id = ?
+             ORDER BY name
         """,
-        (encounter_id,),
-    )
-
-    lab_results = _fetch_records(
-        conn,
-        """
-        SELECT loinc_code,
-               test_name,
-               result_value,
-               unit,
-               reference_range,
-               abnormal_flag,
-               date
-          FROM lab_result
-         WHERE encounter_id = ?
-         ORDER BY date, test_name
+        "lab_results": """
+            SELECT loinc_code,
+                   test_name,
+                   result_value,
+                   unit,
+                   reference_range,
+                   abnormal_flag,
+                   date
+              FROM lab_result
+             WHERE encounter_id = ?
+             ORDER BY date, test_name
         """,
-        (encounter_id,),
-    )
-
-    vitals = _fetch_records(
-        conn,
-        """
-        SELECT vital_type,
-               value,
-               unit,
-               date
-          FROM vital
-         WHERE encounter_id = ?
-         ORDER BY date, vital_type
+        "vitals": """
+            SELECT vital_type,
+                   value,
+                   unit,
+                   date
+              FROM vital
+             WHERE encounter_id = ?
+             ORDER BY date, vital_type
         """,
-        (encounter_id,),
-    )
-
-    progress_notes = _fetch_records(
-        conn,
-        """
-        SELECT note_title,
-               note_datetime,
-               note_text,
-               source_note_id
-          FROM progress_note
-         WHERE encounter_id = ?
-         ORDER BY note_datetime
+        "progress_notes": """
+            SELECT note_title,
+                   note_datetime,
+                   note_text,
+                   source_note_id
+              FROM progress_note
+             WHERE encounter_id = ?
+             ORDER BY note_datetime
         """,
-        (encounter_id,),
-    )
-
-    procedures = _fetch_records(
-        conn,
-        """
-        SELECT name,
-               code,
-               code_system,
-               code_display,
-               status,
-               date,
-               notes
-          FROM procedure
-         WHERE encounter_id = ?
-         ORDER BY date, name
+        "procedures": """
+            SELECT name,
+                   code,
+                   code_system,
+                   code_display,
+                   status,
+                   date,
+                   notes
+              FROM procedure
+             WHERE encounter_id = ?
+             ORDER BY date, name
         """,
-        (encounter_id,),
-    )
+    }
+    return {
+        name: _fetch_records(conn, query, (encounter_id,))
+        for name, query in queries.items()
+    }
 
-    encounter_date = metadata["encounter_date"]
-    immunization_cutoff = encounter_date if encounter_date else None
-    immunizations_query = """
+
+def _patient_immunizations(
+    conn: SQLCipherConnection, patient_id: int, encounter_date: str | None
+) -> list[dict]:
+    """Return immunizations up to the encounter date (if provided)."""
+    cutoff = encounter_date or None
+    query = """
         SELECT vaccine_name,
                cvx_code,
                date_administered,
@@ -451,21 +438,19 @@ def get_encounter_detail(conn: SQLCipherConnection, encounter_id: int) -> dict:
                  OR date_administered <= ? )
          ORDER BY date_administered
     """
-    immunizations = _fetch_records(
-        conn,
-        immunizations_query,
-        (patient_id, immunization_cutoff, immunization_cutoff),
-    )
+    return _fetch_records(conn, query, (patient_id, cutoff, cutoff))
+
+
+def get_encounter_detail(conn: SQLCipherConnection, encounter_id: int) -> dict:
+    """Return a dictionary containing the complete encounter detail."""
+    metadata, patient_id = _encounter_metadata(conn, encounter_id)
+    sections = _encounter_sections(conn, encounter_id)
+    immunizations = _patient_immunizations(conn, patient_id, metadata["encounter_date"])
 
     return {
         "patient_id": patient_id,
         "metadata": metadata,
-        "conditions": conditions,
-        "medications": medications,
-        "lab_results": lab_results,
-        "vitals": vitals,
-        "progress_notes": progress_notes,
-        "procedures": procedures,
+        **sections,
         "immunizations": immunizations,
     }
 

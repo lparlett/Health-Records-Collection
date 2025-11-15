@@ -47,6 +47,41 @@ class CardMetrics:
     height: float
 
 
+@dataclass(slots=True)
+class DiagramStyle:
+    """Precomputed style values derived from zoom/text settings."""
+
+    scale: float
+    text_color: str
+    title_size: float
+    field_size: float
+    label_size: float
+    edge_color: str = "#5c7080"
+    card_fill: str = "#f5f7fb"
+    card_border: str = "#c3ccd6"
+
+    @classmethod
+    def from_zoom(cls, zoom: float, text_color: str) -> "DiagramStyle":
+        scale = max(0.75, min(3.0, zoom))
+        return cls(
+            scale=scale,
+            text_color=text_color,
+            title_size=18 * scale,
+            field_size=13 * scale,
+            label_size=11 * scale,
+        )
+
+
+@dataclass(slots=True)
+class AnchorRequest:
+    """Parameters required to compute an anchor coordinate."""
+
+    node_id: str
+    anchor: Anchor
+    slot: int
+    total: int
+
+
 class DiagramBuilder:
     """Generate SVG markup for database schema ER diagram."""
 
@@ -83,16 +118,39 @@ class DiagramBuilder:
         """
         self.nodes = nodes
         self.edges = edges
-        self.scale = max(0.75, min(3.0, zoom))
-        self.text_color = text_color
+        self.style = DiagramStyle.from_zoom(zoom, text_color)
 
-        # Computed style properties
-        self.title_size = 18 * self.scale
-        self.field_size = 13 * self.scale
-        self.label_size = 11 * self.scale
-        self.edge_color = "#5c7080"
-        self.card_fill = "#f5f7fb"
-        self.card_border = "#c3ccd6"
+    @property
+    def scale(self) -> float:
+        return self.style.scale
+
+    @property
+    def text_color(self) -> str:
+        return self.style.text_color
+
+    @property
+    def title_size(self) -> float:
+        return self.style.title_size
+
+    @property
+    def field_size(self) -> float:
+        return self.style.field_size
+
+    @property
+    def label_size(self) -> float:
+        return self.style.label_size
+
+    @property
+    def edge_color(self) -> str:
+        return self.style.edge_color
+
+    @property
+    def card_fill(self) -> str:
+        return self.style.card_fill
+
+    @property
+    def card_border(self) -> str:
+        return self.style.card_border
 
     def build(self) -> tuple[str, int]:
         """Generate SVG markup and recommended container height.
@@ -203,72 +261,16 @@ class DiagramBuilder:
     def _build_edges(self) -> list[str]:
         """Generate SVG paths for relationship edges."""
         svg_lines: list[str] = []
-        node_lookup: Dict[str, PositionedNode] = {
-            node.identifier: node for node in self.nodes
-        }
-
-        # Group edges by (source, target) pair for multi-edge handling
-        edges_by_pair: Dict[tuple[str, str], list[EdgeSpec]] = {}
-        for edge in self.edges:
-            pair = (edge.source, edge.target)
-            if pair not in edges_by_pair:
-                edges_by_pair[pair] = []
-            edges_by_pair[pair].append(edge)
-
-        # Build anchor slot mappings for parallel edges
-        source_anchor_slots: Dict[str, Dict[Anchor, list[EdgeSpec]]] = {}
-        target_anchor_slots: Dict[str, Dict[Anchor, list[EdgeSpec]]] = {}
-        for edge in self.edges:
-            source_anchor_slots.setdefault(edge.source, {}).setdefault(
-                edge.source_anchor, []
-            ).append(edge)
-            target_anchor_slots.setdefault(edge.target, {}).setdefault(
-                edge.target_anchor, []
-            ).append(edge)
+        node_lookup = self._node_lookup()
+        edges_by_pair = self._edges_grouped_by_pair()
+        source_slots, target_slots = self._anchor_slot_maps()
 
         for edges_for_pair in edges_by_pair.values():
             for edge in edges_for_pair:
-                source_slots = source_anchor_slots.get(edge.source, {}).get(
-                    edge.source_anchor, [edge]
+                start, end, orientation = self._edge_segment(
+                    edge, node_lookup, source_slots, target_slots
                 )
-                target_slots = target_anchor_slots.get(edge.target, {}).get(
-                    edge.target_anchor, [edge]
-                )
-                source_index = source_slots.index(edge)
-                target_index = target_slots.index(edge)
-
-                start_x, start_y = self._anchor_point(
-                    node_lookup,
-                    edge.source,
-                    edge.source_anchor,
-                    source_index,
-                    total=len(source_slots),
-                )
-                end_x, end_y = self._anchor_point(
-                    node_lookup,
-                    edge.target,
-                    edge.target_anchor,
-                    target_index,
-                    total=len(target_slots),
-                )
-
-                # Determine orientation for curve routing
-                if edge.source_anchor in {"left", "right"} and edge.target_anchor in {
-                    "left",
-                    "right",
-                }:
-                    orientation = "horizontal"
-                elif edge.source_anchor in {"top", "bottom"} and edge.target_anchor in {
-                    "top",
-                    "bottom",
-                }:
-                    orientation = "vertical"
-                else:
-                    orientation = "diagonal"
-
-                path = self._curve_path(
-                    start_x, start_y, end_x, end_y, orientation=orientation
-                )
+                path = self._curve_path(start, end, orientation=orientation)
                 svg_lines.append(
                     (
                         f'<path d="{path}" '
@@ -279,6 +281,81 @@ class DiagramBuilder:
                 )
 
         return svg_lines
+
+    def _node_lookup(self) -> Dict[str, PositionedNode]:
+        """Return dictionary of nodes keyed by identifier."""
+        return {node.identifier: node for node in self.nodes}
+
+    def _edges_grouped_by_pair(self) -> Dict[tuple[str, str], list[EdgeSpec]]:
+        """Group edges by their (source, target) pair."""
+        grouped: Dict[tuple[str, str], list[EdgeSpec]] = {}
+        for edge in self.edges:
+            grouped.setdefault((edge.source, edge.target), []).append(edge)
+        return grouped
+
+    def _anchor_slot_maps(
+        self,
+    ) -> tuple[
+        Dict[str, Dict[Anchor, list[EdgeSpec]]],
+        Dict[str, Dict[Anchor, list[EdgeSpec]]],
+    ]:
+        """Return mappings of edges per anchor for parallel routing."""
+        source_slots: Dict[str, Dict[Anchor, list[EdgeSpec]]] = {}
+        target_slots: Dict[str, Dict[Anchor, list[EdgeSpec]]] = {}
+        for edge in self.edges:
+            source_slots.setdefault(edge.source, {}).setdefault(
+                edge.source_anchor, []
+            ).append(edge)
+            target_slots.setdefault(edge.target, {}).setdefault(
+                edge.target_anchor, []
+            ).append(edge)
+        return source_slots, target_slots
+
+    def _edge_segment(
+        self,
+        edge: EdgeSpec,
+        node_lookup: Dict[str, PositionedNode],
+        source_slots: Dict[str, Dict[Anchor, list[EdgeSpec]]],
+        target_slots: Dict[str, Dict[Anchor, list[EdgeSpec]]],
+    ) -> tuple[tuple[float, float], tuple[float, float], str]:
+        """Return start/end coordinates and orientation for an edge."""
+        source_edges = source_slots.get(edge.source, {}).get(edge.source_anchor, [edge])
+        target_edges = target_slots.get(edge.target, {}).get(edge.target_anchor, [edge])
+        start = self._anchor_point(
+            node_lookup,
+            AnchorRequest(
+                node_id=edge.source,
+                anchor=edge.source_anchor,
+                slot=source_edges.index(edge),
+                total=len(source_edges),
+            ),
+        )
+        end = self._anchor_point(
+            node_lookup,
+            AnchorRequest(
+                node_id=edge.target,
+                anchor=edge.target_anchor,
+                slot=target_edges.index(edge),
+                total=len(target_edges),
+            ),
+        )
+        orientation = self._edge_orientation(edge)
+        return start, end, orientation
+
+    @staticmethod
+    def _edge_orientation(edge: EdgeSpec) -> str:
+        """Return routing orientation based on anchor positions."""
+        if edge.source_anchor in {"left", "right"} and edge.target_anchor in {
+            "left",
+            "right",
+        }:
+            return "horizontal"
+        if edge.source_anchor in {"top", "bottom"} and edge.target_anchor in {
+            "top",
+            "bottom",
+        }:
+            return "vertical"
+        return "diagonal"
 
     def _build_nodes(self) -> list[str]:
         """Generate SVG rectangles and text for all nodes."""
@@ -457,40 +534,38 @@ class DiagramBuilder:
     def _anchor_point(
         self,
         node_lookup: Dict[str, PositionedNode],
-        node_id: str,
-        anchor: Anchor,
-        slot: int,
-        *,
-        total: int,
+        request: AnchorRequest,
     ) -> tuple[float, float]:
         """Compute anchor point coordinates on node edge."""
-        node = node_lookup[node_id]
+        node = node_lookup[request.node_id]
         x = node.x * self.scale
         y = node.y * self.scale
         width = node.width * self.scale
         height = node.height * self.scale
-        total = max(total, 1)
-        offset = slot + 1
+        total = max(request.total, 1)
+        offset = request.slot + 1
 
-        if anchor == "left":
+        if request.anchor == "left":
             step = height / (total + 1)
             return x, y + step * offset
-        if anchor == "right":
+        if request.anchor == "right":
             step = height / (total + 1)
             return x + width, y + step * offset
-        if anchor == "top":
+        if request.anchor == "top":
             step = width / (total + 1)
             return x + step * offset, y
-        if anchor == "bottom":
+        if request.anchor == "bottom":
             step = width / (total + 1)
             return x + step * offset, y + height
 
         return x + width / 2, y + height / 2
 
     def _curve_path(
-        self, x1: float, y1: float, x2: float, y2: float, *, orientation: str
+        self, start: tuple[float, float], end: tuple[float, float], *, orientation: str
     ) -> str:
-        """Generate SVG Bézier curve path for edge routing."""
+        """Generate SVG Bezier curve path for edge routing."""
+        x1, y1 = start
+        x2, y2 = end
         if orientation == "horizontal":
             offset = max(60.0 * self.scale, abs(x2 - x1) / 2)
             if x2 < x1:
