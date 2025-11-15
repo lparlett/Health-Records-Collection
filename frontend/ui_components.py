@@ -7,6 +7,7 @@
 
 import streamlit as st
 
+
 def sidebar_table_selector(tables: list[str]) -> list[str]:
     """Render a sidebar multiselect for choosing database tables."""
     st.sidebar.header("Select Tables")
