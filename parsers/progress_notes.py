@@ -51,46 +51,10 @@ def parse_progress_notes(
     """
     root = tree.getroot()
     notes: list[dict[str, Optional[str]]] = []
-    section_nodes = root.xpath(".//hl7:section", namespaces=ns)
-    for section in iter_elements(section_nodes):
-        title_el = section.find("hl7:title", namespaces=ns)
-        title = (
-            (normalize_whitespace(title_el.text) or "").lower()
-            if title_el is not None
-            else ""
-        )
-        if "progress note" not in title:
-            continue
-
-        item_nodes = section.xpath("hl7:text/hl7:list/hl7:item", namespaces=ns)
-        for item in iter_elements(item_nodes):
-            caption_el = item.find("hl7:caption", namespaces=ns)
-            caption_text = None
-            if caption_el is not None:
-                caption_text = normalize_whitespace(caption_el.xpath("string()"))
-
-            provider_name, note_iso_dt, encounter_hint = _parse_caption(caption_text)
-
-            content_el = item.find("hl7:content[@ID]", namespaces=ns)
-            if content_el is None:
-                content_el = item.find("hl7:content", namespaces=ns)
-            if content_el is None:
-                continue
-
-            note_text = _text_with_breaks(content_el)
-            if not note_text:
-                continue
-
-            notes.append(
-                {
-                    "title": caption_text,
-                    "provider": provider_name,
-                    "note_datetime": note_iso_dt,
-                    "encounter_date": encounter_hint,
-                    "text": note_text,
-                    "source_id": content_el.get("ID"),
-                }
-            )
+    for section in _progress_sections(root, ns):
+        for note in _section_notes(section, ns):
+            if note:
+                notes.append(note)
     return notes
 
 
@@ -186,6 +150,68 @@ def _parse_caption(
         compact_date=compact_date,
     )
     return provider_name, note_iso, encounter
+
+
+def _progress_sections(root: ElementType, ns: dict[str, str]) -> list[ElementType]:
+    """Yield section nodes that correspond to progress notes."""
+    section_nodes = root.xpath(".//hl7:section", namespaces=ns)
+    matching_sections: list[ElementType] = []
+    for section in iter_elements(section_nodes):
+        title_el = section.find("hl7:title", namespaces=ns)
+        title = (
+            (normalize_whitespace(title_el.text) or "").lower()
+            if title_el is not None
+            else ""
+        )
+        if "progress note" in title:
+            matching_sections.append(section)
+    return matching_sections
+
+
+def _section_notes(
+    section: ElementType, ns: dict[str, str]
+) -> list[Optional[dict[str, Optional[str]]]]:
+    """Return structured notes extracted from the given section."""
+    item_nodes = section.xpath("hl7:text/hl7:list/hl7:item", namespaces=ns)
+    entries: list[Optional[dict[str, Optional[str]]]] = []
+    for item in iter_elements(item_nodes):
+        entries.append(_note_from_item(item, ns))
+    return entries
+
+
+def _note_from_item(
+    item: ElementType, ns: dict[str, str]
+) -> Optional[dict[str, Optional[str]]]:
+    """Build a single note entry from an item node."""
+    caption_text = _caption_text(item, ns)
+    provider_name, note_iso_dt, encounter_hint = _parse_caption(caption_text)
+
+    content_el = item.find("hl7:content[@ID]", namespaces=ns)
+    if content_el is None:
+        content_el = item.find("hl7:content", namespaces=ns)
+    if content_el is None:
+        return None
+
+    note_text = _text_with_breaks(content_el)
+    if not note_text:
+        return None
+
+    return {
+        "title": caption_text,
+        "provider": provider_name,
+        "note_datetime": note_iso_dt,
+        "encounter_date": encounter_hint,
+        "text": note_text,
+        "source_id": content_el.get("ID"),
+    }
+
+
+def _caption_text(item: ElementType, ns: dict[str, str]) -> Optional[str]:
+    """Return normalised caption text from an item, if present."""
+    caption_el = item.find("hl7:caption", namespaces=ns)
+    if caption_el is None:
+        return None
+    return normalize_whitespace(caption_el.xpath("string()"))
 
 
 def _text_with_breaks(node: ElementType) -> Optional[str]:

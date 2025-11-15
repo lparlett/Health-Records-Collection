@@ -67,6 +67,7 @@ def _load_progress_note_color_css() -> str:
 
 
 def _normalize_heading_candidate(text: str) -> str:
+    """Normalize a heading candidate for comparison."""
     stripped = text.strip()
     stripped = re.sub(r"^[\-\*\u2022\uFFFD•]+\s*", "", stripped)
     stripped = stripped.rstrip(":").strip()
@@ -92,6 +93,7 @@ def _looks_like_section_heading(line: str) -> bool:
 
 
 def _format_paragraph_body(text: str) -> str:
+    """Format paragraph body text with HTML escaping and line breaks."""
     escaped = html.escape(text)
     escaped = re.sub(
         r"&lt;br\s*/?&gt;",
@@ -103,6 +105,7 @@ def _format_paragraph_body(text: str) -> str:
 
 
 def _extract_heading(raw_line: str) -> tuple[Optional[str], Optional[str]]:
+    """Extract section heading and remainder from a raw line."""
     stripped = raw_line.strip()
     if not stripped:
         return None, None

@@ -9,7 +9,8 @@
 from __future__ import annotations
 
 import sqlite3
-from typing import Mapping, Sequence, Tuple, TypedDict
+from dataclasses import dataclass, field
+from typing import Mapping, Optional, Sequence, Tuple
 
 from health_records_collection.db.utils import execute_update
 from health_records_collection.services.common import (
@@ -21,57 +22,168 @@ from health_records_collection.services.common import (
 __all__ = ["upsert_insurance"]
 
 
-class InsuranceData(TypedDict, total=False):
-    """Type-safe insurance policy field dictionary."""
+@dataclass
+class SubscriberInfo:
+    """Subscriber metadata for an insurance policy."""
 
-    payer_name: str | None
-    plan_name: str | None
-    member_id: str | None
-    payer_identifier: str | None
-    group_number: str | None
-    ds_id: int | None
-    coverage_type: str | None
-    policy_type: str | None
-    subscriber_id: str | None
-    subscriber_name: str | None
-    relationship: str | None
-    effective_date: str | None
-    expiration_date: str | None
-    status: str | None
-    source_policy_id: str | None
-    notes: str | None
+    subscriber_id: Optional[str] = None
+    subscriber_name: Optional[str] = None
+    relationship: Optional[str] = None
+
+
+@dataclass
+class InsuranceIdentifiers:
+    """Identifier fields for an insurance policy."""
+
+    member_id: Optional[str] = None
+    group_number: Optional[str] = None
+    payer_identifier: Optional[str] = None
+    source_policy_id: Optional[str] = None
+
+
+@dataclass
+class InsuranceDates:
+    """Date metadata for insurance policies."""
+
+    effective_date: Optional[str] = None
+    expiration_date: Optional[str] = None
+
+
+@dataclass
+class InsuranceRecord:
+    """Normalized insurance policy data ready for persistence."""
+
     patient_id: int
+    payer_name: Optional[str] = None
+    plan_name: Optional[str] = None
+    coverage_type: Optional[str] = None
+    policy_type: Optional[str] = None
+    status: Optional[str] = None
+    notes: Optional[str] = None
+    data_source_id: Optional[int] = None
+    subscriber: SubscriberInfo = field(default_factory=SubscriberInfo)
+    identifiers: InsuranceIdentifiers = field(default_factory=InsuranceIdentifiers)
+    dates: InsuranceDates = field(default_factory=InsuranceDates)
+
+    @property
+    def subscriber_id(self) -> Optional[str]:
+        return self.subscriber.subscriber_id
+
+    @property
+    def subscriber_name(self) -> Optional[str]:
+        return self.subscriber.subscriber_name
+
+    @property
+    def relationship(self) -> Optional[str]:
+        return self.subscriber.relationship
+
+    @property
+    def effective_date(self) -> Optional[str]:
+        return self.dates.effective_date
+
+    @property
+    def expiration_date(self) -> Optional[str]:
+        return self.dates.expiration_date
+
+    @property
+    def member_id(self) -> Optional[str]:
+        return self.identifiers.member_id
+
+    @property
+    def group_number(self) -> Optional[str]:
+        return self.identifiers.group_number
+
+    @property
+    def payer_identifier(self) -> Optional[str]:
+        return self.identifiers.payer_identifier
+
+    @property
+    def source_policy_id(self) -> Optional[str]:
+        return self.identifiers.source_policy_id
 
 
-def _extract_insurance_fields(policy: Mapping[str, object]) -> InsuranceData:
-    """Extract and clean all insurance fields from a policy entry."""
-    return {
-        "payer_name": clean_str(policy.get("payer_name")),
-        "plan_name": clean_str(policy.get("plan_name")),
-        "member_id": clean_str(policy.get("member_id")),
-        "payer_identifier": clean_str(policy.get("payer_identifier")),
-        "group_number": clean_str(policy.get("group_number")),
-        "ds_id": coerce_int(policy.get("data_source_id")),
-        "coverage_type": clean_str(policy.get("coverage_type")),
-        "policy_type": clean_str(policy.get("policy_type")),
-        "subscriber_id": clean_str(policy.get("subscriber_id")),
-        "subscriber_name": clean_str(policy.get("subscriber_name")),
-        "relationship": clean_str(policy.get("relationship")),
-        "effective_date": clean_str(policy.get("effective_date")),
-        "expiration_date": clean_str(policy.get("expiration_date")),
-        "status": clean_str(policy.get("status")),
-        "source_policy_id": clean_str(policy.get("source_policy_id")),
-        "notes": clean_str(policy.get("notes")),
-    }  # type: ignore
+@dataclass
+class ExistingInsuranceRow:
+    """Existing insurance row fetched from the database."""
+
+    id: int
+    coverage_type: Optional[str]
+    policy_type: Optional[str]
+    subscriber: SubscriberInfo
+    dates: InsuranceDates
+    status: Optional[str]
+    payer_identifier: Optional[str]
+    data_source_id: Optional[int]
+    source_policy_id: Optional[str]
+    notes: Optional[str]
+
+    @property
+    def subscriber_id(self) -> Optional[str]:
+        return self.subscriber.subscriber_id
+
+    @property
+    def subscriber_name(self) -> Optional[str]:
+        return self.subscriber.subscriber_name
+
+    @property
+    def relationship(self) -> Optional[str]:
+        return self.subscriber.relationship
+
+    @property
+    def effective_date(self) -> Optional[str]:
+        return self.dates.effective_date
+
+    @property
+    def expiration_date(self) -> Optional[str]:
+        return self.dates.expiration_date
+
+
+def _build_insurance_record(
+    policy: Mapping[str, object],
+    patient_id: int,
+) -> Optional[InsuranceRecord]:
+    """Return a normalized insurance record or None if insufficient data."""
+    record = InsuranceRecord(
+        patient_id=patient_id,
+        payer_name=clean_str(policy.get("payer_name")),
+        plan_name=clean_str(policy.get("plan_name")),
+        coverage_type=clean_str(policy.get("coverage_type")),
+        policy_type=clean_str(policy.get("policy_type")),
+        status=clean_str(policy.get("status")),
+        notes=clean_str(policy.get("notes")),
+        data_source_id=coerce_int(policy.get("data_source_id")),
+    )
+    record.identifiers = InsuranceIdentifiers(
+        member_id=clean_str(policy.get("member_id")),
+        group_number=clean_str(policy.get("group_number")),
+        payer_identifier=clean_str(policy.get("payer_identifier")),
+        source_policy_id=clean_str(policy.get("source_policy_id")),
+    )
+    record.subscriber = SubscriberInfo(
+        subscriber_id=clean_str(policy.get("subscriber_id")),
+        subscriber_name=clean_str(policy.get("subscriber_name")),
+        relationship=clean_str(policy.get("relationship")),
+    )
+    record.dates = InsuranceDates(
+        effective_date=clean_str(policy.get("effective_date")),
+        expiration_date=clean_str(policy.get("expiration_date")),
+    )
+    if not (
+        record.payer_name
+        or record.plan_name
+        or record.identifiers.member_id
+        or record.identifiers.group_number
+    ):
+        return None
+    return record
 
 
 def _find_existing_insurance(
     cur: sqlite3.Cursor,
-    patient_id: int,
-    insurance_data: InsuranceData,
-) -> tuple | None:
+    record: InsuranceRecord,
+) -> Optional[ExistingInsuranceRow]:
     """Find existing insurance record in database."""
-    return cur.execute(
+    row = cur.execute(
         """
         SELECT
             id,
@@ -92,101 +204,77 @@ def _find_existing_insurance(
            AND COALESCE(payer_name, '') = COALESCE(?, '')
            AND COALESCE(plan_name, '') = COALESCE(?, '')
            AND COALESCE(member_id, '') = COALESCE(?, '')
-           AND COALESCE(group_number, '') = COALESCE(?, '')
+          AND COALESCE(group_number, '') = COALESCE(?, '')
         """,
         (
-            patient_id,
-            insurance_data.get("payer_name") or "",
-            insurance_data.get("plan_name") or "",
-            insurance_data.get("member_id") or "",
-            insurance_data.get("group_number") or "",
+            record.patient_id,
+            record.payer_name or "",
+            record.plan_name or "",
+            record.member_id or "",
+            record.group_number or "",
         ),
     ).fetchone()
+    if row is None:
+        return None
+    return ExistingInsuranceRow(
+        id=int(row[0]),
+        coverage_type=row[1],
+        policy_type=row[2],
+        subscriber=SubscriberInfo(
+            subscriber_id=row[3],
+            subscriber_name=row[4],
+            relationship=row[5],
+        ),
+        dates=InsuranceDates(
+            effective_date=row[6],
+            expiration_date=row[7],
+        ),
+        status=row[8],
+        payer_identifier=row[9],
+        data_source_id=row[10],
+        source_policy_id=row[11],
+        notes=row[12],
+    )
 
 
 def _build_insurance_update_queries(
-    insurance_data: InsuranceData,
-    existing: tuple,
+    record: InsuranceRecord,
+    existing: ExistingInsuranceRow,
 ) -> tuple[list[str], list[object]]:
     """Build update SQL and parameters for changed fields."""
-    (
-        _,
-        existing_coverage,
-        existing_policy_type,
-        existing_subscriber_id,
-        existing_subscriber_name,
-        existing_relationship,
-        existing_effective,
-        existing_expiration,
-        existing_status,
-        existing_payer_identifier,
-        existing_ds_id,
-        existing_source_policy_id,
-        existing_notes,
-    ) = existing
+    column_updates = [
+        ("coverage_type", record.coverage_type, existing.coverage_type),
+        ("policy_type", record.policy_type, existing.policy_type),
+        ("subscriber_id", record.subscriber_id, existing.subscriber_id),
+        ("subscriber_name", record.subscriber_name, existing.subscriber_name),
+        ("relationship", record.relationship, existing.relationship),
+        ("effective_date", record.effective_date, existing.effective_date),
+        ("expiration_date", record.expiration_date, existing.expiration_date),
+        ("status", record.status, existing.status),
+        ("payer_identifier", record.payer_identifier, existing.payer_identifier),
+        ("source_policy_id", record.source_policy_id, existing.source_policy_id),
+        ("notes", record.notes, existing.notes),
+    ]
 
     updates: list[str] = []
     params: list[object] = []
-
-    column_updates = [
-        ("coverage_type", insurance_data.get("coverage_type"), existing_coverage),
-        ("policy_type", insurance_data.get("policy_type"), existing_policy_type),
-        (
-            "subscriber_id",
-            insurance_data.get("subscriber_id"),
-            existing_subscriber_id,
-        ),
-        (
-            "subscriber_name",
-            insurance_data.get("subscriber_name"),
-            existing_subscriber_name,
-        ),
-        (
-            "relationship",
-            insurance_data.get("relationship"),
-            existing_relationship,
-        ),
-        (
-            "effective_date",
-            insurance_data.get("effective_date"),
-            existing_effective,
-        ),
-        (
-            "expiration_date",
-            insurance_data.get("expiration_date"),
-            existing_expiration,
-        ),
-        ("status", insurance_data.get("status"), existing_status),
-        (
-            "payer_identifier",
-            insurance_data.get("payer_identifier"),
-            existing_payer_identifier,
-        ),
-        (
-            "source_policy_id",
-            insurance_data.get("source_policy_id"),
-            existing_source_policy_id,
-        ),
-        ("notes", insurance_data.get("notes"), existing_notes),
-    ]
-
     for column, new_value, old_value in column_updates:
         if new_value and (old_value or "") != new_value:
             updates.append(f"{column} = ?")
             params.append(new_value)
 
-    ds_id = insurance_data.get("ds_id")
-    if ds_id is not None and (existing_ds_id or 0) != ds_id:
+    if record.data_source_id is not None and (
+        existing.data_source_id or 0
+    ) != record.data_source_id:
         updates.append("data_source_id = ?")
-        params.append(ds_id)
+        params.append(record.data_source_id)
 
     return updates, params
 
 
 def _insert_new_insurance(
     cur: sqlite3.Cursor,
-    patient_id: int,
-    insurance_data: InsuranceData,
+    record: InsuranceRecord,
 ) -> None:
     """Insert a new insurance record."""
     cur.execute(
@@ -212,23 +300,23 @@ def _insert_new_insurance(
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
-            patient_id,
-            insurance_data.get("payer_name"),
-            insurance_data.get("plan_name"),
-            insurance_data.get("coverage_type"),
-            insurance_data.get("policy_type"),
-            insurance_data.get("member_id"),
-            insurance_data.get("group_number"),
-            insurance_data.get("subscriber_id"),
-            insurance_data.get("subscriber_name"),
-            insurance_data.get("relationship"),
-            insurance_data.get("effective_date"),
-            insurance_data.get("expiration_date"),
-            insurance_data.get("status"),
-            insurance_data.get("payer_identifier"),
-            insurance_data.get("source_policy_id"),
-            insurance_data.get("notes"),
-            insurance_data.get("ds_id"),
+            record.patient_id,
+            record.payer_name,
+            record.plan_name,
+            record.coverage_type,
+            record.policy_type,
+            record.member_id,
+            record.group_number,
+            record.subscriber_id,
+            record.subscriber_name,
+            record.relationship,
+            record.effective_date,
+            record.expiration_date,
+            record.status,
+            record.payer_identifier,
+            record.source_policy_id,
+            record.notes,
+            record.data_source_id,
         ),
     )
 
@@ -257,36 +345,20 @@ def upsert_insurance(
     updated = 0
 
     for policy in mapping_iter:
-        # Extract all fields into type-safe dict
-        insurance_data: InsuranceData = _extract_insurance_fields(policy)
-
-        if not (
-            insurance_data.get("payer_name")
-            or insurance_data.get("plan_name")
-            or insurance_data.get("member_id")
-            or insurance_data.get("group_number")
-        ):
+        record = _build_insurance_record(policy, patient_id)
+        if record is None:
             continue
 
-        insurance_data["patient_id"] = patient_id  # type: ignore
-
-        # Find existing record
-        existing = _find_existing_insurance(cur, patient_id, insurance_data)
+        existing = _find_existing_insurance(cur, record)
 
         if existing:
-            # Build updates for changed fields
-            updates, params = _build_insurance_update_queries(
-                insurance_data,
-                existing,
-            )
+            updates, params = _build_insurance_update_queries(record, existing)
 
-            policy_id = existing[0]
-            if execute_update(cur, "insurance", updates, params, policy_id):
+            if execute_update(cur, "insurance", updates, params, existing.id):
                 updated += 1
             continue
 
-        # Insert new record
-        _insert_new_insurance(cur, patient_id, insurance_data)
+        _insert_new_insurance(cur, record)
         inserted += 1
 
     conn.commit()

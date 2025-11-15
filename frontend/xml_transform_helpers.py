@@ -12,7 +12,6 @@ from typing import Optional
 import logging
 
 from lxml import etree as unsafe_etree  # nosec B410
-from lxml.etree import _Element  # nosec B410
 from defusedxml.lxml import fromstring
 from defusedxml.common import (
     DefusedXmlException as XMLSyntaxError,
@@ -23,6 +22,8 @@ from defusedxml.common import (
 from health_records_collection.frontend import static_resources
 from health_records_collection.frontend.xml_constants import RESTRICTED_PARSER
 from health_records_collection.security import encryption
+
+ElementType = unsafe_etree._Element  # type: ignore[attr-defined]  # nosec B410  # pylint: disable=protected-access
 
 logger = logging.getLogger(__name__)
 
@@ -106,7 +107,7 @@ def load_and_validate_xml(xml_path: str) -> Optional[str]:
     return xml_content
 
 
-def parse_xml_securely(xml_content: str) -> Optional[_Element]:
+def parse_xml_securely(xml_content: str) -> Optional[ElementType]:
     """Parse XML content using defusedxml for security.
 
     Args:
@@ -117,7 +118,7 @@ def parse_xml_securely(xml_content: str) -> Optional[_Element]:
     """
     try:
         result = fromstring(xml_content.encode("utf-8"))
-        if not isinstance(result, _Element):
+        if not isinstance(result, ElementType):
             logger.error("XML parsing returned unexpected type: %s", type(result))
             return None
         return result
@@ -144,7 +145,7 @@ def build_xslt_transformer(xsl_path: str) -> Optional[unsafe_etree.XSLT]:
             xsl_text.encode("utf-8"), parser=RESTRICTED_PARSER
         )
 
-        if not isinstance(xsl_doc, _Element):
+        if not isinstance(xsl_doc, ElementType):
             logger.error("XSL parsing returned unexpected type: %s", type(xsl_doc))
             return None
 
@@ -158,7 +159,7 @@ def build_xslt_transformer(xsl_path: str) -> Optional[unsafe_etree.XSLT]:
 
 
 def perform_xslt_transformation(
-    transformer: unsafe_etree.XSLT, xml_doc: _Element
+    transformer: unsafe_etree.XSLT, xml_doc: ElementType
 ) -> Optional[str]:
     """Perform XSLT transformation on XML document.
 
@@ -169,7 +170,7 @@ def perform_xslt_transformation(
     Returns:
         Transformed HTML string, or None if transformation fails.
     """
-    if not isinstance(xml_doc, _Element):
+    if not isinstance(xml_doc, ElementType):
         logger.error("Invalid XML document type: %s (expected _Element)", type(xml_doc))
         return None
 
@@ -182,7 +183,7 @@ def perform_xslt_transformation(
             xml_str, parser=RESTRICTED_PARSER
         )  # nosec B320
 
-        if not isinstance(safe_doc, _Element):
+        if not isinstance(safe_doc, ElementType):
             logger.error(
                 "Safe document parsing returned unexpected type: %s", type(safe_doc)
             )

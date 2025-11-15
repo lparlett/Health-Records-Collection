@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import sqlite3
 from types import ModuleType
-from typing import Mapping, Sequence, Tuple
+from dataclasses import dataclass
+from typing import Mapping, Optional, Sequence, Tuple
 
 from health_records_collection.services.common import clean_str, coerce_int
 from health_records_collection.services.encounters import (
@@ -41,6 +42,39 @@ else:
     INTEGRITY_ERRORS = (sqlite3.IntegrityError,)
 
 __all__ = ["insert_medications"]
+
+
+@dataclass
+class MedicationRecord:
+    """Normalized medication data for persistence."""
+
+    patient_id: int
+    encounter_id: Optional[int]
+    name: Optional[str]
+    dose: Optional[str]
+    route: Optional[str]
+    frequency: Optional[str]
+    start_date: Optional[str]
+    end_date: Optional[str]
+    status: Optional[str]
+    notes: Optional[str]
+    data_source_id: Optional[int]
+
+    def as_row(self) -> tuple[object, ...]:
+        """Return tuple representation for SQL insertion."""
+        return (
+            self.patient_id,
+            self.encounter_id,
+            self.name,
+            self.dose,
+            self.route,
+            self.frequency,
+            self.start_date,
+            self.end_date,
+            self.status,
+            self.notes,
+            self.data_source_id,
+        )
 
 
 def insert_medications(
@@ -81,74 +115,95 @@ def insert_medications(
     cur = conn.cursor()
     duplicates = 0
     for med in meds:
-        notes = clean_str(med.get("notes"))
-        rxnorm = clean_str(med.get("rxnorm"))
-        if rxnorm:
-            if notes:
-                notes = f"{notes} (RxNorm: {rxnorm})"
-            else:
-                notes = f"RxNorm: {rxnorm}"
-
-        encounter_date = (
-            clean_str(med.get("start"))
-            or clean_str(med.get("end"))
-            or clean_str(med.get("author_time"))
-        )
-        provider_name = clean_str(med.get("provider"))
-
-        lookup = EncounterLookup(
-            patient_id=patient_id,
-            encounter_date=encounter_date,
-            provider_name=provider_name,
-        )
-        encounter_id = find_encounter_id(conn, lookup)
-
-        name = clean_str(med.get("name"))
-        dose = clean_str(med.get("dose"))
-        route = clean_str(med.get("route"))
-        frequency = clean_str(med.get("frequency"))
-        start_date = clean_str(med.get("start_bucket")) or clean_str(med.get("start"))
-        end_date = clean_str(med.get("end_bucket")) or clean_str(med.get("end"))
-        status = clean_str(med.get("status"))
-        ds_id = coerce_int(med.get("data_source_id"))
-
-        row = (
-            patient_id,
-            encounter_id,
-            name,
-            dose,
-            route,
-            frequency,
-            start_date,
-            end_date,
-            status,
-            notes,
-            ds_id,
-        )
+        record = _build_medication_record(conn, patient_id, med)
         try:
-            cur.execute(INSERT_MEDICATION_SQL, row)
+            cur.execute(INSERT_MEDICATION_SQL, record.as_row())
         except INTEGRITY_ERRORS:
             duplicates += 1
-            if ds_id is not None:
-                cur.execute(
-                    """
-                    UPDATE medication
-                       SET data_source_id = COALESCE(data_source_id, ?)
-                     WHERE patient_id = ?
-                       AND COALESCE(encounter_id, -1) = COALESCE(?, -1)
-                       AND COALESCE(name, '') = COALESCE(?, '')
-                       AND COALESCE(dose, '') = COALESCE(?, '')
-                       AND COALESCE(start_date, '') = COALESCE(?, '')
-                    """,
-                    (
-                        ds_id,
-                        patient_id,
-                        encounter_id,
-                        name or "",
-                        dose or "",
-                        start_date or "",
-                    ),
-                )
+            _update_existing_medication(cur, record)
 
     conn.commit()
     return duplicates
+
+
+def _build_medication_record(
+    conn: sqlite3.Connection,
+    patient_id: int,
+    med: Mapping[str, object],
+) -> MedicationRecord:
+    """Return normalized medication record."""
+    notes = _compose_notes(clean_str(med.get("notes")), clean_str(med.get("rxnorm")))
+    encounter_id = _resolve_encounter(conn, patient_id, med)
+    start_date = clean_str(med.get("start_bucket")) or clean_str(med.get("start"))
+    end_date = clean_str(med.get("end_bucket")) or clean_str(med.get("end"))
+
+    return MedicationRecord(
+        patient_id=patient_id,
+        encounter_id=encounter_id,
+        name=clean_str(med.get("name")),
+        dose=clean_str(med.get("dose")),
+        route=clean_str(med.get("route")),
+        frequency=clean_str(med.get("frequency")),
+        start_date=start_date,
+        end_date=end_date,
+        status=clean_str(med.get("status")),
+        notes=notes,
+        data_source_id=coerce_int(med.get("data_source_id")),
+    )
+
+
+def _compose_notes(notes: Optional[str], rxnorm: Optional[str]) -> Optional[str]:
+    """Return notes string augmented with RxNorm when present."""
+    if rxnorm:
+        prefix = f"RxNorm: {rxnorm}"
+        return f"{notes} ({prefix})" if notes else prefix
+    return notes
+
+
+def _resolve_encounter(
+    conn: sqlite3.Connection,
+    patient_id: int,
+    med: Mapping[str, object],
+) -> Optional[int]:
+    """Return encounter ID for medication entry, if resolvable."""
+    encounter_date = (
+        clean_str(med.get("start"))
+        or clean_str(med.get("end"))
+        or clean_str(med.get("author_time"))
+    )
+    provider_name = clean_str(med.get("provider"))
+    lookup = EncounterLookup(
+        patient_id=patient_id,
+        encounter_date=encounter_date,
+        provider_name=provider_name,
+    )
+    return find_encounter_id(conn, lookup)
+
+
+def _update_existing_medication(
+    cur: sqlite3.Cursor,
+    record: MedicationRecord,
+) -> None:
+    """Update existing medication row with missing data source id."""
+    if record.data_source_id is None:
+        return
+
+    cur.execute(
+        """
+        UPDATE medication
+           SET data_source_id = COALESCE(data_source_id, ?)
+         WHERE patient_id = ?
+           AND COALESCE(encounter_id, -1) = COALESCE(?, -1)
+           AND COALESCE(name, '') = COALESCE(?, '')
+           AND COALESCE(dose, '') = COALESCE(?, '')
+           AND COALESCE(start_date, '') = COALESCE(?, '')
+        """,
+        (
+            record.data_source_id,
+            record.patient_id,
+            record.encounter_id,
+            record.name or "",
+            record.dose or "",
+            record.start_date or "",
+        ),
+    )

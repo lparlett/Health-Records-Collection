@@ -1,10 +1,9 @@
-from __future__ import annotations
-
 # Purpose: Streamlit helpers for rendering patient vital and lab trends.
 # Author: Codex + Lauren
 # Date: 2025-10-21
 # Tests: Manual Streamlit verification pending.
 # AI-assisted: This module was created with AI assistance.
+from __future__ import annotations
 
 import sqlite3
 

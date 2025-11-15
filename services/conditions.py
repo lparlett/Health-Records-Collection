@@ -9,7 +9,8 @@
 from __future__ import annotations
 
 import sqlite3
-from typing import Mapping, Sequence, TypedDict
+from dataclasses import dataclass
+from typing import Mapping, Optional, Sequence, TypedDict
 
 from health_records_collection.db.utils import execute_update
 from health_records_collection.services.common import (
@@ -188,6 +189,14 @@ class ConditionData(TypedDict, total=False):
     codes: list[Mapping[str, object]]
 
 
+@dataclass
+class ConditionRecordBundle:
+    """Container for record data and associated codes."""
+
+    record: ConditionData
+    codes: list[Mapping[str, object]]
+
+
 def insert_conditions(
     conn: sqlite3.Connection,
     patient_id: int,
@@ -205,63 +214,66 @@ def insert_conditions(
 
     cur = conn.cursor()
     for cond in conditions:
-        # Extract and validate codes
-        codes = _extract_condition_codes(cond)
-        code_value, code_system, code_display = _extract_primary_code(codes)
-
-        # Extract all condition fields into type-safe dict
-        condition_data: ConditionData = _extract_condition_fields(
-            cond,
-            codes,
-            code_value,
-            code_system,
-            code_display,
-        )
-
-        if not condition_data.get("name"):
+        bundle = _prepare_condition_record(conn, patient_id, cond)
+        if bundle is None:
             continue
 
-        # Enrich with patient context
-        condition_data["patient_id"] = patient_id  # type: ignore
-
-        # Resolve provider
-        provider_name = clean_str(cond.get("provider"))
-        if provider_name:
-            prov_id = get_or_create_provider(conn, provider_name)
-            condition_data["provider_id"] = prov_id  # type: ignore
-
-        # Resolve encounter with fallback
-        encounter_id = _resolve_condition_encounter(
-            conn,
-            patient_id,
-            cond,
-            provider_name,
-            condition_data.get("provider_id"),
-        )
-        if encounter_id:
-            condition_data["encounter_id"] = encounter_id  # type: ignore
-
-        # Find existing record
+        condition_data = bundle.record
         existing = _find_existing_condition(cur, patient_id, condition_data)
 
         if existing:
-            # Build updates for changed fields
             updates, params = build_updates_from_specs(
                 condition_data, existing, STANDARD_RECORD_UPDATE_SPECS
             )
             condition_id = existing[0]
-            if execute_update(cur, "condition", updates, params, condition_id):
-                pass  # Updated successfully
+            execute_update(cur, "condition", updates, params, condition_id)
         else:
-            # Insert new record
             condition_id = _insert_new_condition(cur, condition_data)
 
-        # Process additional codes for the condition
         insert_code_mappings(
             cur,
             table="condition_code",
             ref_id=condition_id,
-            codes=codes,
+            codes=bundle.codes,
         )
 
     conn.commit()
+
+
+def _prepare_condition_record(
+    conn: sqlite3.Connection,
+    patient_id: int,
+    cond: Mapping[str, object],
+) -> Optional[ConditionRecordBundle]:
+    """Return a validated condition record bundle."""
+    codes = _extract_condition_codes(cond)
+    code_value, code_system, code_display = _extract_primary_code(codes)
+    condition_data: ConditionData = _extract_condition_fields(
+        cond,
+        codes,
+        code_value,
+        code_system,
+        code_display,
+    )
+    if not condition_data.get("name"):
+        return None
+
+    condition_data["patient_id"] = patient_id  # type: ignore
+
+    provider_name = clean_str(cond.get("provider"))
+    provider_id = None
+    if provider_name:
+        provider_id = get_or_create_provider(conn, provider_name)
+        condition_data["provider_id"] = provider_id  # type: ignore
+
+    encounter_id = _resolve_condition_encounter(
+        conn,
+        patient_id,
+        cond,
+        provider_name,
+        provider_id,
+    )
+    if encounter_id:
+        condition_data["encounter_id"] = encounter_id  # type: ignore
+
+    return ConditionRecordBundle(record=condition_data, codes=codes)

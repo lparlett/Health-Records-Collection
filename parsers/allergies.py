@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Optional
 
 from .common import (
@@ -43,6 +44,47 @@ REACTION_TEMPLATE_IDS: set[str] = {
 SEVERITY_TEMPLATE_IDS: set[str] = {
     "2.16.840.1.113883.10.20.22.4.8.2",  # Severity observation extension
 }
+
+
+@dataclass
+class SubstanceInfo:
+    """Structured details about the allergen substance."""
+
+    name: Optional[str]
+    code: Optional[str]
+    code_system: Optional[str]
+    display: Optional[str]
+
+
+@dataclass
+class ReactionContext:
+    """Information about the reaction and severity."""
+
+    reaction: Optional[str]
+    reaction_code: Optional[str]
+    reaction_code_system: Optional[str]
+    severity: Optional[str]
+    criticality: Optional[str]
+
+
+@dataclass
+class TemporalContext:
+    """Captures status, onset, and note metadata."""
+
+    status: Optional[str]
+    onset: Optional[str]
+    noted_date: Optional[str]
+    notes: Optional[str]
+
+
+@dataclass
+class EncounterContext:
+    """Provider and encounter linkage information."""
+
+    provider: Optional[str]
+    encounter_source_id: Optional[str]
+    encounter_start: Optional[str]
+    encounter_end: Optional[str]
 
 
 def _allergy_sections(tree: ElementTreeType, ns: dict[str, str]) -> list[ElementType]:
@@ -220,62 +262,34 @@ def _build_allergy_entry(
     if not _is_allergy_observation(observation, ns):
         return None
 
-    value_details = _extract_value_details(observation.find("hl7:value", namespaces=ns))
-    participant_details = _extract_participant_substance(observation, ns)
-
-    substance_name = first_non_empty(
-        participant_details[0],
-        value_details[2],
-        value_details[0],
-    )
-    if substance_name is None:
+    substance = _build_substance_info(observation, ns)
+    if substance.name is None:
         return None
 
-    reaction_details = _extract_reaction_details(observation, ns)
-    severity = _extract_severity(observation, ns)
-    notes = extract_notes(tree, observation, ns)
-    status = extract_status_code(observation, ns)
-    start, _ = extract_effective_time(
-        observation.find("hl7:effectiveTime", namespaces=ns),
-        ns,
-    )
-    author_time = _extract_author_time(observation, ns)
-    criticality = _extract_criticality(observation, ns)
-    provider_name = extract_provider_name(
-        observation,
-        "hl7:author/hl7:assignedAuthor/hl7:assignedPerson/hl7:name",
-        "hl7:author/hl7:assignedAuthor/hl7:representedOrganization/hl7:name",
-        ns,
-    )
-    encounter_source_id, encounter_start, encounter_end = _extract_encounter_hint(
-        observation,
-        ns,
-    )
+    reaction = _build_reaction_context(observation, ns)
+    temporal = _build_temporal_context(tree, observation, ns)
+    encounter = _build_encounter_context(observation, ns)
     source_id = _extract_source_id(observation, ns)
 
     return {
-        "substance": substance_name,
-        "substance_code": first_non_empty(participant_details[1], value_details[0]),
-        "substance_code_system": first_non_empty(
-            participant_details[2], value_details[1]
-        ),
-        "substance_code_display": first_non_empty(
-            participant_details[3], value_details[2]
-        ),
-        "reaction": reaction_details[0],
-        "reaction_code": reaction_details[1],
-        "reaction_code_system": reaction_details[2],
-        "severity": severity,
-        "criticality": criticality,
-        "status": status,
-        "onset": start,
-        "noted_date": author_time,
-        "notes": notes,
-        "provider": provider_name,
+        "substance": substance.name,
+        "substance_code": substance.code,
+        "substance_code_system": substance.code_system,
+        "substance_code_display": substance.display,
+        "reaction": reaction.reaction,
+        "reaction_code": reaction.reaction_code,
+        "reaction_code_system": reaction.reaction_code_system,
+        "severity": reaction.severity,
+        "criticality": reaction.criticality,
+        "status": temporal.status,
+        "onset": temporal.onset,
+        "noted_date": temporal.noted_date,
+        "notes": temporal.notes,
+        "provider": encounter.provider,
         "source_allergy_id": source_id,
-        "encounter_source_id": encounter_source_id,
-        "encounter_start": encounter_start,
-        "encounter_end": encounter_end,
+        "encounter_source_id": encounter.encounter_source_id,
+        "encounter_start": encounter.encounter_start,
+        "encounter_end": encounter.encounter_end,
     }
 
 
@@ -293,3 +307,73 @@ def parse_allergies(
                 if allergy:
                     allergies.append(allergy)
     return allergies
+
+
+def _build_substance_info(
+    observation: ElementType, ns: dict[str, str]
+) -> SubstanceInfo:
+    """Return structured substance data for an observation."""
+    value_details = _extract_value_details(observation.find("hl7:value", namespaces=ns))
+    participant_details = _extract_participant_substance(observation, ns)
+    return SubstanceInfo(
+        name=first_non_empty(
+            participant_details[0],
+            value_details[2],
+            value_details[0],
+        ),
+        code=first_non_empty(participant_details[1], value_details[0]),
+        code_system=first_non_empty(participant_details[2], value_details[1]),
+        display=first_non_empty(participant_details[3], value_details[2]),
+    )
+
+
+def _build_reaction_context(
+    observation: ElementType, ns: dict[str, str]
+) -> ReactionContext:
+    """Return reaction, severity, and criticality data."""
+    reaction_details = _extract_reaction_details(observation, ns)
+    return ReactionContext(
+        reaction=reaction_details[0],
+        reaction_code=reaction_details[1],
+        reaction_code_system=reaction_details[2],
+        severity=_extract_severity(observation, ns),
+        criticality=_extract_criticality(observation, ns),
+    )
+
+
+def _build_temporal_context(
+    tree: ElementTreeType, observation: ElementType, ns: dict[str, str]
+) -> TemporalContext:
+    """Return status, onset, noted date, and human notes."""
+    start, _ = extract_effective_time(
+        observation.find("hl7:effectiveTime", namespaces=ns),
+        ns,
+    )
+    return TemporalContext(
+        status=extract_status_code(observation, ns),
+        onset=start,
+        noted_date=_extract_author_time(observation, ns),
+        notes=extract_notes(tree, observation, ns),
+    )
+
+
+def _build_encounter_context(
+    observation: ElementType, ns: dict[str, str]
+) -> EncounterContext:
+    """Return provider attribution and encounter hints."""
+    provider_name = extract_provider_name(
+        observation,
+        "hl7:author/hl7:assignedAuthor/hl7:assignedPerson/hl7:name",
+        "hl7:author/hl7:assignedAuthor/hl7:representedOrganization/hl7:name",
+        ns,
+    )
+    encounter_source_id, encounter_start, encounter_end = _extract_encounter_hint(
+        observation,
+        ns,
+    )
+    return EncounterContext(
+        provider=provider_name,
+        encounter_source_id=encounter_source_id,
+        encounter_start=encounter_start,
+        encounter_end=encounter_end,
+    )

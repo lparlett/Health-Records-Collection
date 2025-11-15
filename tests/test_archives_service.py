@@ -8,6 +8,9 @@ AI-assisted: This test module was generated with AI assistance.
 """
 
 from __future__ import annotations
+
+from typing import Any, cast
+
 from health_records_collection.services import archives
 from health_records_collection.tests import helpers
 
@@ -24,6 +27,7 @@ class TestArchivesService(helpers.SchemaTestCase):
 
         row = archives.archive_was_ingested(self.schema_conn, archive_hash)
         self.assertIsNotNone(row)
+        row = cast(dict[str, Any], row)
         self.assertEqual(row["id"], archive_id)
         self.assertEqual(row["archive_name"], "first.zip")
         self.assertEqual(row["archive_sha256"], archive_hash)
@@ -44,6 +48,7 @@ class TestArchivesService(helpers.SchemaTestCase):
 
         second_row = archives.archive_was_ingested(self.schema_conn, archive_hash)
         self.assertIsNotNone(second_row)
+        second_row = cast(dict[str, Any], second_row)
         self.assertEqual(first_id, second_id)
         self.assertEqual(second_id, second_row["id"])
         self.assertEqual(second_row["archive_name"], "updated-name.zip")

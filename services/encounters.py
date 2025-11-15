@@ -9,7 +9,7 @@
 from __future__ import annotations
 
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Mapping, Optional, Sequence
 
 from health_records_collection.db.utils import update_single_field
@@ -152,19 +152,81 @@ def find_encounter_id(
 
 
 @dataclass
+class ProviderContext:
+    """Structured provider information for an encounter."""
+
+    name: Optional[str] = None
+    id: Optional[int] = None
+    organization_id: Optional[int] = None
+
+
+@dataclass
+class EncounterDetails:
+    """Narrative and classification details for an encounter."""
+
+    encounter_type: Optional[str] = None
+    reason_for_visit: Optional[str] = None
+    notes: Optional[str] = None
+
+
+@dataclass
 class EncounterData:
     """Container for parsed encounter data."""
 
     patient_id: int
     encounter_date: Optional[str] = None
     source_encounter_id: Optional[str] = None
-    provider_name: Optional[str] = None
-    provider_id: Optional[int] = None
-    encounter_type: Optional[str] = None
-    reason_for_visit: Optional[str] = None
-    notes: Optional[str] = None
+    provider: ProviderContext = field(default_factory=ProviderContext)
+    details: EncounterDetails = field(default_factory=EncounterDetails)
     data_source_id: Optional[int] = None
-    organization_id: Optional[int] = None
+
+    @property
+    def provider_name(self) -> Optional[str]:
+        return self.provider.name
+
+    @provider_name.setter
+    def provider_name(self, value: Optional[str]) -> None:
+        self.provider.name = value
+
+    @property
+    def provider_id(self) -> Optional[int]:
+        return self.provider.id
+
+    @provider_id.setter
+    def provider_id(self, value: Optional[int]) -> None:
+        self.provider.id = value
+
+    @property
+    def organization_id(self) -> Optional[int]:
+        return self.provider.organization_id
+
+    @organization_id.setter
+    def organization_id(self, value: Optional[int]) -> None:
+        self.provider.organization_id = value
+
+    @property
+    def encounter_type(self) -> Optional[str]:
+        return self.details.encounter_type
+
+    @encounter_type.setter
+    def encounter_type(self, value: Optional[str]) -> None:
+        self.details.encounter_type = value
+
+    @property
+    def reason_for_visit(self) -> Optional[str]:
+        return self.details.reason_for_visit
+
+    @reason_for_visit.setter
+    def reason_for_visit(self, value: Optional[str]) -> None:
+        self.details.reason_for_visit = value
+
+    @property
+    def notes(self) -> Optional[str]:
+        return self.details.notes
+
+    @notes.setter
+    def notes(self, value: Optional[str]) -> None:
+        self.details.notes = value
 
 
 def _parse_notes(enc: Mapping[str, object]) -> Optional[str]:
@@ -211,18 +273,19 @@ def _parse_encounter(
             conn, org_name, entity_type="organization"
         )
 
-    return EncounterData(
+    encounter = EncounterData(
         patient_id=patient_id,
         encounter_date=encounter_date,
         source_encounter_id=source_encounter_id,
-        provider_name=provider_name,
-        provider_id=provider_id,
-        encounter_type=clean_str(enc.get("type")),
-        reason_for_visit=clean_str(enc.get("reason_for_visit")),
-        notes=_parse_notes(enc),
         data_source_id=coerce_int(enc.get("data_source_id")),
-        organization_id=organization_id,
     )
+    encounter.provider_name = provider_name
+    encounter.provider_id = provider_id
+    encounter.organization_id = organization_id
+    encounter.encounter_type = clean_str(enc.get("type"))
+    encounter.reason_for_visit = clean_str(enc.get("reason_for_visit"))
+    encounter.notes = _parse_notes(enc)
+    return encounter
 
 
 def insert_encounters(

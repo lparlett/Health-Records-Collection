@@ -47,7 +47,8 @@ def ensure_mapping_sequence(items: Iterable[Any]) -> Iterator[Mapping[str, Any]]
             yield item
 
 
-def _value_is_not_none(value: Any) -> bool:
+def value_is_not_none(value: Any) -> bool:
+    """Return True if value is not None."""
     return value is not None
 
 
@@ -67,7 +68,7 @@ STANDARD_RECORD_UPDATE_SPECS: tuple[UpdateFieldSpec, ...] = (
     UpdateFieldSpec("notes", "notes", 2, ""),
     UpdateFieldSpec("provider_id", "provider_id", 3, 0),
     UpdateFieldSpec("encounter_id", "encounter_id", 4, 0),
-    UpdateFieldSpec("ds_id", "data_source_id", 5, 0, _value_is_not_none),
+    UpdateFieldSpec("ds_id", "data_source_id", 5, 0, value_is_not_none),
 )
 
 

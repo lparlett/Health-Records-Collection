@@ -9,7 +9,7 @@ AI-assisted: Module generated with AI assistance.
 
 import html
 from dataclasses import dataclass
-from typing import Dict
+from typing import Callable, Dict, Sequence
 
 from health_records_collection.frontend.common_types import Anchor, EdgeSpec
 
@@ -21,6 +21,26 @@ class PositionedNode:
     identifier: str
     title: str
     fields: tuple[str, ...]
+    x: float
+    y: float
+    width: float
+    height: float
+
+
+@dataclass
+class RelationshipLayout:
+    """Layout context for relationship sections."""
+
+    x: float
+    width: float
+    cursor: float
+    top_margin: float
+
+
+@dataclass
+class CardMetrics:
+    """Scaled dimensions for a rendered node card."""
+
     x: float
     y: float
     width: float
@@ -263,129 +283,182 @@ class DiagramBuilder:
     def _build_nodes(self) -> list[str]:
         """Generate SVG rectangles and text for all nodes."""
         svg_lines: list[str] = []
+        outgoing_edges, incoming_edges = self._group_edges()
 
-        # Build relationship info for each node
+        for node in self.nodes:
+            svg_lines.extend(
+                self._render_node(
+                    node,
+                    outgoing_edges.get(node.identifier, []),
+                    incoming_edges.get(node.identifier, []),
+                )
+            )
+
+        return svg_lines
+
+    def _group_edges(
+        self,
+    ) -> tuple[Dict[str, list[EdgeSpec]], Dict[str, list[EdgeSpec]]]:
+        """Return mappings of outgoing and incoming edges keyed by node id."""
         outgoing_edges: Dict[str, list[EdgeSpec]] = {}
         incoming_edges: Dict[str, list[EdgeSpec]] = {}
         for edge in self.edges:
             outgoing_edges.setdefault(edge.source, []).append(edge)
             incoming_edges.setdefault(edge.target, []).append(edge)
+        return outgoing_edges, incoming_edges
 
-        for node in self.nodes:
-            x = node.x * self.scale
-            y = node.y * self.scale
-            width = node.width * self.scale
-            height = node.height * self.scale
+    def _render_node(
+        self,
+        node: PositionedNode,
+        outgoing: Sequence[EdgeSpec],
+        incoming: Sequence[EdgeSpec],
+    ) -> list[str]:
+        """Return SVG fragments for a single positioned node."""
+        node_lines: list[str] = []
+        x = node.x * self.scale
+        y = node.y * self.scale
+        width = node.width * self.scale
+        height = node.height * self.scale
+        metrics = CardMetrics(x=x, y=y, width=width, height=height)
 
-            # Card background
-            svg_lines.append(
+        node_lines.append(self._card_rect(x, y, width, height))
+        title_y = y + 28 * self.scale
+        node_lines.append(self._card_title(node.title, x, width, title_y))
+        field_stack_height = self._append_fields(
+            node_lines,
+            node,
+            metrics,
+            title_y,
+        )
+
+        cursor = y + field_stack_height * self.scale
+        rel_lines, cursor = self._render_relationship_section(
+            title="References",
+            edges=outgoing,
+            layout=RelationshipLayout(
+                x=x, width=width, cursor=cursor, top_margin=self.REL_SECTION_MARGIN
+            ),
+            formatter=self._format_outgoing_label,
+        )
+        node_lines.extend(rel_lines)
+
+        gap = self.REL_SECTION_GAP if outgoing else self.REL_SECTION_MARGIN
+        rel_lines, _ = self._render_relationship_section(
+            title="Referenced by",
+            edges=incoming,
+            layout=RelationshipLayout(
+                x=x, width=width, cursor=cursor, top_margin=gap
+            ),
+            formatter=self._format_incoming_label,
+        )
+        node_lines.extend(rel_lines)
+
+        return node_lines
+
+    def _card_rect(self, x: float, y: float, width: float, height: float) -> str:
+        """Return SVG rect string for the node card."""
+        return (
+            f'<rect x="{x:.1f}" y="{y:.1f}" width="{width:.1f}" '
+            f'height="{height:.1f}" '
+            f'rx="{12 * self.scale:.1f}" ry="{12 * self.scale:.1f}" '
+            f'fill="{self.card_fill}" stroke="{self.card_border}" '
+            f'stroke-width="{1.2 * self.scale:.2f}" />'
+        )
+
+    def _card_title(self, title: str, x: float, width: float, title_y: float) -> str:
+        """Return SVG text element for a card title."""
+        return (
+            f'<text x="{x + width / 2:.1f}" y="{title_y:.1f}" '
+            f'fill="{self.text_color}" font-size="{self.title_size:.1f}" '
+            'font-family="Helvetica" font-weight="600" text-anchor="middle">'
+            f"{html.escape(title)}"
+            "</text>"
+        )
+
+    def _append_fields(
+        self,
+        node_lines: list[str],
+        node: PositionedNode,
+        metrics: CardMetrics,
+        title_y: float,
+    ) -> float:
+        """Append field lines to node_lines and return base block height."""
+        for idx, field in enumerate(node.fields, start=1):
+            line_y = (
+                title_y
+                + (self.HEADER_BLOCK_HEIGHT - 8.0) * self.scale
+                + (idx - 1) * self.FIELD_LINE_SPACING * self.scale
+            )
+            if line_y + 16 * self.scale > metrics.y + metrics.height:
+                break
+            node_lines.append(
                 (
-                    f'<rect x="{x:.1f}" y="{y:.1f}" width="{width:.1f}" '
-                    f'height="{height:.1f}" '
-                    f'rx="{12 * self.scale:.1f}" ry="{12 * self.scale:.1f}" '
-                    f'fill="{self.card_fill}" stroke="{self.card_border}" '
-                    f'stroke-width="{1.2 * self.scale:.2f}" />'
+                    f'<text x="{metrics.x + metrics.width / 2:.1f}" y="{line_y:.1f}" '
+                    f'fill="{self.text_color}" font-size="{self.field_size:.1f}" '
+                    'font-family="Helvetica" text-anchor="middle">'
+                    f"{html.escape(field)}"
+                    "</text>"
                 )
             )
+        return self.HEADER_BLOCK_HEIGHT + len(node.fields) * self.FIELD_LINE_SPACING
 
-            # Title
-            title_y = y + 28 * self.scale
-            svg_lines.append(
+    def _render_relationship_section(
+        self,
+        *,
+        title: str,
+        edges: Sequence[EdgeSpec],
+        layout: RelationshipLayout,
+        formatter: Callable[[EdgeSpec], str],
+    ) -> tuple[list[str], float]:
+        """Render a relationship subsection and return lines plus updated cursor."""
+        if not edges:
+            return [], layout.cursor
+
+        lines: list[str] = []
+        cursor = layout.cursor + layout.top_margin * self.scale
+        header_y = cursor + self.REL_HEADER_OFFSET * self.scale
+        lines.append(
+            (
+                f'<text x="{layout.x + layout.width / 2:.1f}" y="{header_y:.1f}" '
+                f'fill="{self.edge_color}" font-size="{self.label_size:.1f}" '
+                'font-family="Helvetica" text-anchor="middle" font-weight="600">'
+                f"{title}"
+                "</text>"
+            )
+        )
+        for rel_idx, edge in enumerate(edges, start=1):
+            rel_y = header_y + rel_idx * (self.REL_LINE_SPACING * self.scale)
+            lines.append(
                 (
-                    f'<text x="{x + width / 2:.1f}" y="{title_y:.1f}" '
-                    f'fill="{self.text_color}" font-size="{self.title_size:.1f}" '
-                    'font-family="Helvetica" font-weight="600" text-anchor="middle">'
-                    f"{html.escape(node.title)}"
+                    f'<text x="{layout.x + 12 * self.scale:.1f}" y="{rel_y:.1f}" '
+                    f'fill="{self.edge_color}" '
+                    f'font-size="{self.label_size:.1f}" '
+                    'font-family="Helvetica" text-anchor="start">'
+                    f"{formatter(edge)}"
                     "</text>"
                 )
             )
 
-            # Field list
-            for idx, field in enumerate(node.fields, start=1):
-                line_y = (
-                    title_y
-                    + (self.HEADER_BLOCK_HEIGHT - 8.0) * self.scale
-                    + (idx - 1) * self.FIELD_LINE_SPACING * self.scale
-                )
-                if line_y + 16 * self.scale > y + height:
-                    break
-                svg_lines.append(
-                    (
-                        f'<text x="{x + width / 2:.1f}" y="{line_y:.1f}" '
-                        f'fill="{self.text_color}" font-size="{self.field_size:.1f}" '
-                        'font-family="Helvetica" text-anchor="middle">'
-                        f"{html.escape(field)}"
-                        "</text>"
-                    )
-                )
+        cursor = (
+            header_y
+            + len(edges) * (self.REL_LINE_SPACING * self.scale)
+            + self.REL_FOOTER_PADDING * self.scale
+        )
+        return lines, cursor
 
-            # Relationship sections
-            base_height = (
-                self.HEADER_BLOCK_HEIGHT + len(node.fields) * self.FIELD_LINE_SPACING
-            )
-            cursor = y + base_height * self.scale
-            outgoing = outgoing_edges.get(node.identifier, [])
-            incoming = incoming_edges.get(node.identifier, [])
+    @staticmethod
+    def _format_outgoing_label(edge: EdgeSpec) -> str:
+        """Return formatted text for outgoing relationships."""
+        return (
+            f"- {html.escape(edge.label)} \u2192 {html.escape(edge.target)}"
+        )
 
-            if outgoing:
-                cursor += self.REL_SECTION_MARGIN * self.scale
-                header_y = cursor + self.REL_HEADER_OFFSET * self.scale
-                svg_lines.append(
-                    (
-                        f'<text x="{x + width / 2:.1f}" y="{header_y:.1f}" '
-                        f'fill="{self.edge_color}" font-size="{self.label_size:.1f}" '
-                        'font-family="Helvetica" text-anchor="middle" '
-                        'font-weight="600">'
-                        "References"
-                        "</text>"
-                    )
-                )
-                for rel_idx, edge in enumerate(outgoing, start=1):
-                    rel_y = header_y + rel_idx * (self.REL_LINE_SPACING * self.scale)
-                    svg_lines.append(
-                        (
-                            f'<text x="{x + 12 * self.scale:.1f}" y="{rel_y:.1f}" '
-                            f'fill="{self.edge_color}" '
-                            f'font-size="{self.label_size:.1f}" '
-                            'font-family="Helvetica" text-anchor="start">'
-                            f"- {html.escape(edge.label)} → {html.escape(edge.target)}"
-                            "</text>"
-                        )
-                    )
-                cursor = (
-                    header_y
-                    + len(outgoing) * (self.REL_LINE_SPACING * self.scale)
-                    + self.REL_FOOTER_PADDING * self.scale
-                )
-
-            if incoming:
-                gap = self.REL_SECTION_GAP if outgoing else self.REL_SECTION_MARGIN
-                cursor += gap * self.scale
-                header_y = cursor + self.REL_HEADER_OFFSET * self.scale
-                svg_lines.append(
-                    (
-                        f'<text x="{x + width / 2:.1f}" y="{header_y:.1f}" '
-                        f'fill="{self.edge_color}" font-size="{self.label_size:.1f}" '
-                        'font-family="Helvetica" text-anchor="middle" '
-                        'font-weight="600">'
-                        "Referenced by"
-                        "</text>"
-                    )
-                )
-                for rel_idx, edge in enumerate(incoming, start=1):
-                    rel_y = header_y + rel_idx * (self.REL_LINE_SPACING * self.scale)
-                    svg_lines.append(
-                        (
-                            f'<text x="{x + 12 * self.scale:.1f}" y="{rel_y:.1f}" '
-                            f'fill="{self.edge_color}" '
-                            f'font-size="{self.label_size:.1f}" '
-                            'font-family="Helvetica" text-anchor="start">'
-                            f"- {html.escape(edge.source)} ← {html.escape(edge.label)}"
-                            "</text>"
-                        )
-                    )
-
-        return svg_lines
+    @staticmethod
+    def _format_incoming_label(edge: EdgeSpec) -> str:
+        """Return formatted text for incoming relationships."""
+        return (
+            f"- {html.escape(edge.source)} \u2190 {html.escape(edge.label)}"
+        )
 
     def _anchor_point(
         self,

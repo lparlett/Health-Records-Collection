@@ -1,3 +1,8 @@
+# Purpose: Test suite for allergies service.
+# Author: Codex assistant + Lauren
+# Date: 2025-11-14
+# AI-assisted: Portions of this file were generated with AI assistance.
+
 from __future__ import annotations
 
 import sqlite3

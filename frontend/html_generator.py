@@ -145,7 +145,7 @@ def _build_diagnostic_comment(
     Returns:
         HTML comment string with diagnostic info.
     """
-    return f"""<!-- 
+    return f"""<!--
 CDA Document Transformation Info:
 Source XML: {xml_path}
 XSL Path: {xsl_path}

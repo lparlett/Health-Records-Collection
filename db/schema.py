@@ -29,6 +29,7 @@ def _add_column_if_missing(
 
 
 def _iter_provider_migrations() -> Iterator[str]:
+    """Yield SQL statements to migrate provider table data."""
     yield """
         UPDATE provider
            SET entity_type = CASE
@@ -69,6 +70,7 @@ def _iter_provider_migrations() -> Iterator[str]:
 
 
 def ensure_provider_schema(conn: sqlite3.Connection) -> None:
+    """Ensure provider table has required columns and constraints."""
     cur = conn.cursor()
     cur.execute("PRAGMA table_info(provider)")
     rows = cur.fetchall()
@@ -95,6 +97,7 @@ def ensure_provider_schema(conn: sqlite3.Connection) -> None:
 
 
 def ensure_encounter_schema(conn: sqlite3.Connection) -> None:
+    """Ensure encounter table has required columns."""
     cur = conn.cursor()
     cur.execute("PRAGMA table_info(encounter)")
     columns = {row[1] for row in cur.fetchall()}
@@ -103,6 +106,8 @@ def ensure_encounter_schema(conn: sqlite3.Connection) -> None:
 
 
 def ensure_medication_constraints(conn: sqlite3.Connection) -> None:
+    """Enforce uniqueness of medications by patient, encounter, name, dose, 
+    and start date."""
     conn.execute(
         """
         DELETE FROM medication
@@ -132,6 +137,7 @@ def ensure_medication_constraints(conn: sqlite3.Connection) -> None:
 
 
 def ensure_allergy_schema(conn: sqlite3.Connection) -> None:
+    """Ensure allergy table has required columns and constraints."""
     cur = conn.cursor()
     cur.execute("PRAGMA table_info(allergy)")
     rows = cur.fetchall()
@@ -189,6 +195,7 @@ def ensure_allergy_schema(conn: sqlite3.Connection) -> None:
 
 
 def ensure_insurance_schema(conn: sqlite3.Connection) -> None:
+    """Ensure insurance table has required columns and constraints."""
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS insurance (
@@ -296,6 +303,7 @@ def ensure_data_source_columns(conn: sqlite3.Connection) -> None:
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
+    """Ensure the database schema is up to date."""
     ensure_archive_registry(conn)
     ensure_data_source_archive_reference(conn)
     ensure_provider_schema(conn)
@@ -309,6 +317,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
 
 
 def ensure_immunization_constraints(conn: sqlite3.Connection) -> None:
+    """Enforce uniqueness of immunizations by patient, date, and CVX code."""
     conn.execute(
         """
         DELETE FROM immunization

@@ -1,3 +1,8 @@
+# Purpose: Test setup and fixtures for health records collection tests.
+# Author: Codex assistant + Lauren
+# Date: 2025-11-14
+# AI-assisted: Portions of this file were generated with AI assistance.
+
 import hashlib
 import sqlite3
 from importlib import import_module
