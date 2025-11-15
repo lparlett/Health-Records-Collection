@@ -445,9 +445,7 @@ def _default_coverage_role_info(
     return {"source_policy_id": policy_id, "group_number": group_number}
 
 
-def _default_dates(
-    act: ElementType, ns: dict[str, str]
-) -> dict[str, Optional[str]]:
+def _default_dates(act: ElementType, ns: dict[str, str]) -> dict[str, Optional[str]]:
     """Return effective/expiration defaults."""
     effective, expiration = extract_effective_time(
         act.find("hl7:effectiveTime", namespaces=ns),

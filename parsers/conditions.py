@@ -268,7 +268,9 @@ def _build_condition_record(
     )
     # pylint: enable-line-too-long
     author_time = _condition_author_time(observation, ns)
-    encounter_source_id, encounter_start, encounter_end = _condition_encounter(entry, ns)
+    encounter_source_id, encounter_start, encounter_end = _condition_encounter(
+        entry, ns
+    )
 
     obs_text = _observation_text(observation, tree, ns)
     notes = _condition_notes(tree, entry, ns, obs_text)

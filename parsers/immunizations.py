@@ -33,6 +33,7 @@ class VaccineDetails:
     lot_number: str | None
     cvx_codes: list[str]
 
+
 CVX_CODE_SYSTEMS: set[str] = {
     "2.16.840.1.113883.12.292",  # CVX vaccination codes
     "2.16.840.1.113883.6.59",  # Legacy SNOMED/CVX mapping (occasionally used)
@@ -72,9 +73,7 @@ def _unique_non_empty(values: Iterable[str | None]) -> list[str]:
     return unique
 
 
-def _immunization_status(
-    admin: ElementType, ns: dict[str, str]
-) -> str | None:
+def _immunization_status(admin: ElementType, ns: dict[str, str]) -> str | None:
     """Return the normalized status code for an administration."""
     status_el = admin.find("hl7:statusCode", namespaces=ns)
     return normalize_whitespace(
@@ -82,9 +81,7 @@ def _immunization_status(
     )
 
 
-def _immunization_effective_time(
-    admin: ElementType, ns: dict[str, str]
-) -> str | None:
+def _immunization_effective_time(admin: ElementType, ns: dict[str, str]) -> str | None:
     """Return the best available administration timestamp."""
     start, end = extract_effective_time(
         admin.find("hl7:effectiveTime", namespaces=ns),
@@ -127,24 +124,34 @@ def _resolve_vaccine_name(
     """Return the best descriptive label for the immunization."""
     code_el, material_code_el = codes
     candidates = [
-        normalize_whitespace(code_el.get("displayName"))
-        if code_el is not None
-        else None,
-        extract_notes(tree, code_el, ns, text_xpath="hl7:originalText")
-        if code_el is not None
-        else None,
+        (
+            normalize_whitespace(code_el.get("displayName"))
+            if code_el is not None
+            else None
+        ),
+        (
+            extract_notes(tree, code_el, ns, text_xpath="hl7:originalText")
+            if code_el is not None
+            else None
+        ),
         extract_notes(tree, admin, ns),
-        normalize_whitespace(material_code_el.get("displayName"))
-        if material_code_el is not None
-        else None,
-        extract_notes(tree, material_code_el, ns, text_xpath="hl7:originalText")
-        if material_code_el is not None
-        else None,
+        (
+            normalize_whitespace(material_code_el.get("displayName"))
+            if material_code_el is not None
+            else None
+        ),
+        (
+            extract_notes(tree, material_code_el, ns, text_xpath="hl7:originalText")
+            if material_code_el is not None
+            else None
+        ),
         product_name,
         normalize_whitespace(code_el.get("code")) if code_el is not None else None,
-        normalize_whitespace(material_code_el.get("code"))
-        if material_code_el is not None
-        else None,
+        (
+            normalize_whitespace(material_code_el.get("code"))
+            if material_code_el is not None
+            else None
+        ),
     ]
     return first_non_empty(*candidates)
 
