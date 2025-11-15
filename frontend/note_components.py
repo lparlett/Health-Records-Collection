@@ -1,10 +1,11 @@
-from __future__ import annotations
-
 # Purpose: Streamlit helpers for rendering clinical progress notes.
 # Author: Codex + Lauren
 # Date: 2025-10-21
 # Tests: Manual Streamlit verification pending.
 # AI-assisted: This module was created with AI assistance.
+"""Streamlit helpers for rendering clinical progress notes."""
+
+from __future__ import annotations
 
 import html
 import re

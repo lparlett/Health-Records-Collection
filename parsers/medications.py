@@ -30,6 +30,7 @@ from .xml_types import ElementType, ElementTreeType
 
 @dataclass(slots=True)
 class DocumentContext:
+    """Contextual information extracted from the overall document."""
     patient_id: str
     encounter_id: str | None
     encounter_start: str | None
@@ -38,6 +39,7 @@ class DocumentContext:
 
 @dataclass(slots=True)
 class MedicationIdentity:
+    """Core identity attributes for a medication entry."""
     name: str
     rxnorm: str | None
     notes: str | None
@@ -48,6 +50,7 @@ class MedicationIdentity:
 
 @dataclass(slots=True)
 class MedicationTiming:
+    """Timing details for a medication entry."""
     start: str | None
     end: str | None
     start_bucket: str | None
@@ -56,6 +59,7 @@ class MedicationTiming:
 
 @dataclass(slots=True)
 class MedicationEncounter:
+    """Encounter details associated with a medication entry."""
     source_id: str | None
     start: str | None
     end: str | None
@@ -63,6 +67,7 @@ class MedicationEncounter:
 
 @dataclass(slots=True)
 class MedicationDose:
+    """Dosage details for a medication entry."""
     route: str | None
     dose: str | None
     frequency: str | None
@@ -72,6 +77,7 @@ MedicationKey = tuple[str, str, str, str, str]
 
 
 class MedicationEntry(TypedDict, total=False):
+    """Structured representation of a medication administration entry."""
     name: str | None
     rxnorm: str | None
     dose: str | None

@@ -67,38 +67,47 @@ class InsuranceRecord:
 
     @property
     def subscriber_id(self) -> Optional[str]:
+        """Return subscriber ID."""
         return self.subscriber.subscriber_id
 
     @property
     def subscriber_name(self) -> Optional[str]:
+        """Return subscriber name."""
         return self.subscriber.subscriber_name
 
     @property
     def relationship(self) -> Optional[str]:
+        """Return relationship to subscriber."""
         return self.subscriber.relationship
 
     @property
     def effective_date(self) -> Optional[str]:
+        """Return effective date."""
         return self.dates.effective_date
 
     @property
     def expiration_date(self) -> Optional[str]:
+        """Return expiration date."""
         return self.dates.expiration_date
 
     @property
     def member_id(self) -> Optional[str]:
+        """Return member ID."""
         return self.identifiers.member_id
 
     @property
     def group_number(self) -> Optional[str]:
+        """Return group number."""
         return self.identifiers.group_number
 
     @property
     def payer_identifier(self) -> Optional[str]:
+        """Return payer identifier."""
         return self.identifiers.payer_identifier
 
     @property
     def source_policy_id(self) -> Optional[str]:
+        """Return source policy ID."""
         return self.identifiers.source_policy_id
 
 
@@ -119,22 +128,27 @@ class ExistingInsuranceRow:
 
     @property
     def subscriber_id(self) -> Optional[str]:
+        """Return subscriber ID."""
         return self.subscriber.subscriber_id
 
     @property
     def subscriber_name(self) -> Optional[str]:
+        """Return subscriber name."""
         return self.subscriber.subscriber_name
 
     @property
     def relationship(self) -> Optional[str]:
+        """Return relationship to subscriber."""
         return self.subscriber.relationship
 
     @property
     def effective_date(self) -> Optional[str]:
+        """Return effective date."""
         return self.dates.effective_date
 
     @property
     def expiration_date(self) -> Optional[str]:
+        """Return expiration date."""
         return self.dates.expiration_date
 
 
