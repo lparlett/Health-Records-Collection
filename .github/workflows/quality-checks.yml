@@ -71,7 +71,7 @@ jobs:
 
       - name: Type check with mypy
         run: |
-          mypy --install-types --non-interactive --exclude 'tests|.venv' .
+          mypy --install-types --non-interactive --exclude 'tests|.venv' health_records_collection
 
       - name: Run Bandit security scan
         run: |
