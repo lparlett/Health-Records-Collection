@@ -33,6 +33,7 @@ LabEntry = dict[str, Optional[str]]
 @dataclass(slots=True)
 class OrganizerContext:
     """Reusable context data for lab organizer entries."""
+
     encounter_id: Optional[str]
     encounter_start: Optional[str]
     encounter_end: Optional[str]
