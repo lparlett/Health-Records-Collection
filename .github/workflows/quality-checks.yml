@@ -29,6 +29,18 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Expose package import path
+        run: |
+          parent_dir="$(dirname "${GITHUB_WORKSPACE}")"
+          if [ ! -e "$parent_dir/health_records_collection" ]; then
+            ln -s "${GITHUB_WORKSPACE}" "$parent_dir/health_records_collection"
+          fi
+          if [ -n "$PYTHONPATH" ]; then
+            echo "PYTHONPATH=$parent_dir:$PYTHONPATH" >> "${GITHUB_ENV}"
+          else
+            echo "PYTHONPATH=$parent_dir" >> "${GITHUB_ENV}"
+          fi
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -48,8 +60,6 @@ jobs:
         run: black --check --diff --exclude '/(\.venv|\.git|build|dist|data|db|docs\/_build)/' .
 
       - name: Lint with pylint
-        env:
-          PYTHONPATH: ${{ github.workspace }}
         run: |
           pylint \
             db \
