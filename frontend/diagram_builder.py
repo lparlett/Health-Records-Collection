@@ -62,6 +62,7 @@ class DiagramStyle:
 
     @classmethod
     def from_zoom(cls, zoom: float, text_color: str) -> "DiagramStyle":
+        """Construct a style instance from zoom and text color inputs."""
         scale = max(0.75, min(3.0, zoom))
         return cls(
             scale=scale,
@@ -122,34 +123,42 @@ class DiagramBuilder:
 
     @property
     def scale(self) -> float:
+        """Return the scaling multiplier for layout measurements."""
         return self.style.scale
 
     @property
     def text_color(self) -> str:
+        """Return the configured text color for rendered elements."""
         return self.style.text_color
 
     @property
     def title_size(self) -> float:
+        """Return the computed font size for table titles."""
         return self.style.title_size
 
     @property
     def field_size(self) -> float:
+        """Return the computed font size for field rows."""
         return self.style.field_size
 
     @property
     def label_size(self) -> float:
+        """Return the computed font size for relationship labels."""
         return self.style.label_size
 
     @property
     def edge_color(self) -> str:
+        """Return the stroke color used for relationship edges."""
         return self.style.edge_color
 
     @property
     def card_fill(self) -> str:
+        """Return the fill color used for node cards."""
         return self.style.card_fill
 
     @property
     def card_border(self) -> str:
+        """Return the stroke color for the card outline."""
         return self.style.card_border
 
     def build(self) -> tuple[str, int]:

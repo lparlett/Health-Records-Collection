@@ -159,7 +159,7 @@ def _condition_times(
     observation: ElementType,
     entry: ElementType,
     ns: dict[str, str],
-) -> tuple[str | None, str | None]:
+) -> ConditionPeriod:
     """Determine onset and resolution timestamps for the condition."""
     start, end = extract_effective_time(
         observation.find("hl7:effectiveTime", namespaces=ns),
@@ -173,17 +173,17 @@ def _condition_times(
         )
         start = start or concern_start
         end = end or concern_end
-    return start, end
+    return ConditionPeriod(start=start, end=end)
 
 
 def _condition_encounter(
     entry: ElementType,
     ns: dict[str, str],
-) -> tuple[str | None, str | None, str | None]:
+) -> EncounterWindow:
     """Return encounter linkage details if present."""
     encounter_el = entry.find(".//hl7:encounter", namespaces=ns)
     if encounter_el is None:
-        return None, None, None
+        return EncounterWindow(None, None, None)
     encounter_id_el = encounter_el.find("hl7:id", namespaces=ns)
     encounter_source_id = (
         clean_text(encounter_id_el.get("extension") or encounter_id_el.get("root"))
@@ -194,7 +194,11 @@ def _condition_encounter(
         encounter_el.find("hl7:effectiveTime", namespaces=ns),
         ns,
     )
-    return encounter_source_id, encounter_start, encounter_end
+    return EncounterWindow(
+        source_id=encounter_source_id,
+        start=encounter_start,
+        end=encounter_end,
+    )
 
 
 def _condition_author_time(
@@ -247,6 +251,23 @@ class ConditionRecord:
     key: ConditionKey
 
 
+@dataclass(slots=True)
+class ConditionPeriod:
+    """Capture the onset and resolution timestamps for a condition."""
+
+    start: Optional[str]
+    end: Optional[str]
+
+
+@dataclass(slots=True)
+class EncounterWindow:
+    """Represent encounter metadata linked to a condition."""
+
+    source_id: Optional[str]
+    start: Optional[str]
+    end: Optional[str]
+
+
 def _condition_entry(
     observation: ElementType,
     entry: ElementType,
@@ -258,19 +279,9 @@ def _condition_entry(
         return None
     codes, value_el = _condition_codes(observation, ns)
     status = _extract_status(observation, ns)
-    start, end = _condition_times(observation, entry, ns)
-    provider_name = extract_provider_name(
-        observation,
-        "hl7:author/hl7:assignedAuthor/hl7:assignedPerson/hl7:name",
-        "hl7:author/hl7:assignedAuthor/hl7:representedOrganization/hl7:name",
-        ns,
-    )
-    author_time = _condition_author_time(observation, ns)
-    encounter_source_id, encounter_start, encounter_end = _condition_encounter(
-        entry, ns
-    )
+    period = _condition_times(observation, entry, ns)
+    encounter = _condition_encounter(entry, ns)
     obs_text = _observation_text(observation, tree, ns)
-    notes = _condition_notes(tree, entry, ns, obs_text)
     name = _condition_name(obs_text, value_el, codes)
     if name is None:
         return None
@@ -278,14 +289,19 @@ def _condition_entry(
         "name": name,
         "codes": codes,
         "status": status.title() if status else None,
-        "start": start,
-        "end": end,
-        "notes": notes,
-        "provider": provider_name,
-        "author_time": author_time,
-        "encounter_source_id": encounter_source_id,
-        "encounter_start": encounter_start,
-        "encounter_end": encounter_end,
+        "start": period.start,
+        "end": period.end,
+        "notes": _condition_notes(tree, entry, ns, obs_text),
+        "provider": extract_provider_name(
+            observation,
+            "hl7:author/hl7:assignedAuthor/hl7:assignedPerson/hl7:name",
+            "hl7:author/hl7:assignedAuthor/hl7:representedOrganization/hl7:name",
+            ns,
+        ),
+        "author_time": _condition_author_time(observation, ns),
+        "encounter_source_id": encounter.source_id,
+        "encounter_start": encounter.start,
+        "encounter_end": encounter.end,
     }
 
 
