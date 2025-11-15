@@ -1,16 +1,16 @@
 from __future__ import annotations
 
 import hashlib
+import shutil
 import sqlite3
-import unittest
-from pathlib import Path
 import tempfile
+from pathlib import Path
 
-from health_records_collection.db.schema import ensure_schema
 from health_records_collection.services.data_sources import (
     link_attachment,
     upsert_data_source,
 )
+from health_records_collection.tests import helpers
 
 
 def _create_archive(conn: sqlite3.Connection, name: str) -> int:
@@ -62,33 +62,20 @@ def _assert_single_row(conn: sqlite3.Connection, expected_archive: str) -> None:
         raise AssertionError("Expected archive_id to be not None")
 
 
-class TestDataSourcesService(unittest.TestCase):
+class TestDataSourcesService(helpers.SchemaTestCase):
     """Test suite for data sources service."""
 
     def setUp(self) -> None:
         """Set up test fixtures."""
-        
-        # Create temporary directory for test files
-        self.temp_dir = tempfile.TemporaryDirectory()
-        self.tmp_path = Path(self.temp_dir.name)
-        
-        # Initialize data_source_id
+        super().setUp()
+        self.tmp_path = Path(tempfile.mkdtemp())
         self.data_source_id: int | None = None
-
-        # Create schema_conn for database testing
-        self.schema_conn = sqlite3.connect(":memory:")
-        self.schema_conn.execute("PRAGMA foreign_keys = ON;")
-        schema_path = Path(__file__).parent.parent / "schema.sql"
-        schema_sql = schema_path.read_text(encoding="utf-8")
-        self.schema_conn.executescript(schema_sql)
-        ensure_schema(self.schema_conn)
 
     def tearDown(self) -> None:
         """Clean up after testing."""
-        self.schema_conn.close()
-        self.temp_dir.cleanup()
+        super().tearDown()
+        shutil.rmtree(self.tmp_path, ignore_errors=True)
 
-    
     def test_upsert_data_source_inserts_and_updates(self) -> None:
         """Test that upsert_data_source inserts and updates."""
         doc_path = self.tmp_path / "document.xml"
@@ -96,9 +83,7 @@ class TestDataSourcesService(unittest.TestCase):
 
         archive_id_1 = _create_archive(self.schema_conn, "batch-01.zip")
         first_id = upsert_data_source(
-            self.schema_conn, 
-            doc_path, 
-            archive_id=archive_id_1
+            self.schema_conn, doc_path, archive_id=archive_id_1
         )
         self.assertIsInstance(first_id, int)
         self.assertGreater(first_id, 0)
@@ -106,9 +91,7 @@ class TestDataSourcesService(unittest.TestCase):
 
         archive_id_2 = _create_archive(self.schema_conn, "batch-02.zip")
         second_id = upsert_data_source(
-            self.schema_conn, 
-            doc_path,
-            archive_id=archive_id_2
+            self.schema_conn, doc_path, archive_id=archive_id_2
         )
         self.assertEqual(second_id, first_id)
         _assert_single_row(self.schema_conn, "batch-02.zip")
@@ -125,9 +108,9 @@ class TestDataSourcesService(unittest.TestCase):
         id_b = upsert_data_source(self.schema_conn, doc_b, archive_id=archive_id)
 
         self.assertNotEqual(id_a, id_b)
-        count = self.schema_conn.execute(
-            "SELECT COUNT(*) FROM data_source"
-        ).fetchone()[0]
+        count = self.schema_conn.execute("SELECT COUNT(*) FROM data_source").fetchone()[
+            0
+        ]
         self.assertEqual(count, 2)
 
     def test_upsert_data_source_raises_on_missing_file(self) -> None:

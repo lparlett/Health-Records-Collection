@@ -9,13 +9,16 @@
 from __future__ import annotations
 
 import sqlite3
-from typing import Any, Mapping, Sequence, TypedDict
+from typing import Mapping, Sequence, TypedDict
 
-from health_records_collection.db.utils import update_single_field
+from health_records_collection.db.utils import execute_update
 from health_records_collection.services.common import (
     clean_str,
     coerce_int,
     ensure_mapping_sequence,
+    STANDARD_RECORD_UPDATE_SPECS,
+    build_updates_from_specs,
+    insert_code_mappings,
 )
 from health_records_collection.services.encounters import (
     EncounterLookup,
@@ -125,106 +128,6 @@ def _find_existing_condition(
             condition_data.get("onset_date") or "",
         ),
     ).fetchone()
-
-
-def _build_condition_update_queries(
-    condition_data: ConditionData,
-    existing: tuple,
-) -> tuple[list[str], list[Any]]:
-    """Build update SQL and parameters for changed fields."""
-    (
-        _,
-        existing_status,
-        existing_notes,
-        existing_provider_id,
-        existing_encounter_id,
-        existing_data_source,
-    ) = existing
-
-    updates: list[str] = []
-    params: list[Any] = []
-
-    # Simple field updates
-    status = condition_data.get("status")
-    if status and (existing_status or "") != status:
-        updates.append("status = ?")
-        params.append(status)
-
-    notes = condition_data.get("notes")
-    if notes and (existing_notes or "") != notes:
-        updates.append("notes = ?")
-        params.append(notes)
-
-    # ID field updates
-    provider_id = condition_data.get("provider_id")
-    if provider_id and (existing_provider_id or 0) != provider_id:
-        updates.append("provider_id = ?")
-        params.append(provider_id)
-
-    encounter_id = condition_data.get("encounter_id")
-    if encounter_id and (existing_encounter_id or 0) != encounter_id:
-        updates.append("encounter_id = ?")
-        params.append(encounter_id)
-
-    ds_id = condition_data.get("ds_id")
-    if ds_id is not None and (existing_data_source or 0) != ds_id:
-        updates.append("data_source_id = ?")
-        params.append(ds_id)
-
-    return updates, params
-
-
-def _execute_condition_update(
-    cur: sqlite3.Cursor,
-    updates: list[str],
-    params: list[Any],
-    condition_id: int,
-) -> bool:
-    """Execute update query for changed fields. Returns True if updated."""
-    if not updates:
-        return False
-
-    # Single field update
-    if len(updates) == 1:
-        update_field = updates[0].split()[0]
-        update_single_field(cur, "condition", update_field, params[0], condition_id)
-    # Multiple fields update
-    else:
-        query = f"UPDATE condition SET {', '.join(updates)} WHERE id = ?"  # nosec B608
-        cur.execute(query, params + [condition_id])
-
-    return True
-
-
-def _insert_condition_codes(
-    cur: sqlite3.Cursor,
-    condition_id: int,
-    codes: list[Mapping[str, object]],
-) -> None:
-    """Process and insert additional codes for the condition."""
-    for code in codes:
-        code_val = clean_str(code.get("code"))
-        if not code_val:
-            continue
-        code_system_val = clean_str(code.get("system"))
-        display_val = clean_str(code.get("display"))
-        cur.execute(
-            """
-            INSERT OR IGNORE INTO condition_code (
-                condition_id,
-                code,
-                code_system,
-                display_name
-            )
-            VALUES (?, ?, ?, ?)
-            """,
-            (
-                condition_id,
-                code_val,
-                code_system_val,
-                display_val,
-            ),
-        )
 
 
 def _insert_new_condition(
@@ -343,16 +246,22 @@ def insert_conditions(
 
         if existing:
             # Build updates for changed fields
-            updates, params = _build_condition_update_queries(condition_data, existing)
-
+            updates, params = build_updates_from_specs(
+                condition_data, existing, STANDARD_RECORD_UPDATE_SPECS
+            )
             condition_id = existing[0]
-            if _execute_condition_update(cur, updates, params, condition_id):
+            if execute_update(cur, "condition", updates, params, condition_id):
                 pass  # Updated successfully
         else:
             # Insert new record
             condition_id = _insert_new_condition(cur, condition_data)
 
         # Process additional codes for the condition
-        _insert_condition_codes(cur, condition_id, codes)
+        insert_code_mappings(
+            cur,
+            table="condition_code",
+            ref_id=condition_id,
+            codes=codes,
+        )
 
     conn.commit()

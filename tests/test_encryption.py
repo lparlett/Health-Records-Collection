@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import shutil
 import tempfile
 import unittest
 
@@ -19,12 +20,11 @@ class TestEncryption(unittest.TestCase):
 
     def setUp(self) -> None:
         """Set up temporary directory for encryption testing."""
-        self.temp_dir = tempfile.TemporaryDirectory()
-        self.tmp_path = Path(self.temp_dir.name)
+        self.tmp_path = Path(tempfile.mkdtemp())
 
     def tearDown(self) -> None:
         """Clean up temporary directory after testing."""
-        self.temp_dir.cleanup()
+        shutil.rmtree(self.tmp_path, ignore_errors=True)
 
     def test_encrypt_decrypt_roundtrip(self) -> None:
         """Test that files can be encrypted and decrypted correctly."""

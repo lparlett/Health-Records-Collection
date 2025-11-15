@@ -11,11 +11,14 @@ from __future__ import annotations
 import sqlite3
 from typing import Mapping, Sequence, TypedDict
 
-from health_records_collection.db.utils import update_single_field
+from health_records_collection.db.utils import execute_update
 from health_records_collection.services.common import (
     clean_str,
     coerce_int,
     ensure_mapping_sequence,
+    STANDARD_RECORD_UPDATE_SPECS,
+    build_updates_from_specs,
+    insert_code_mappings,
 )
 from health_records_collection.services.encounters import (
     EncounterLookup,
@@ -129,89 +132,6 @@ def _find_existing_procedure(
     ).fetchone()
 
 
-def _build_procedure_updates(
-    proc_data: ProcedureData,
-    existing: tuple[int, str | None, str | None, int | None, int | None, int | None],
-) -> tuple[list[str], list[object]]:
-    """Build UPDATE query components for changed fields.
-
-    Args:
-        proc_data: New procedure data.
-        existing: Existing procedure record tuple.
-
-    Returns:
-        Tuple[list[str], list[object]]: (update_clauses, params)
-    """
-    (
-        _,
-        existing_status,
-        existing_notes,
-        existing_provider_id,
-        existing_encounter_id,
-        existing_data_source,
-    ) = existing
-
-    updates: list[str] = []
-    params: list[object] = []
-
-    status = proc_data.get("status")
-    if status and (existing_status or "") != status:
-        updates.append("status = ?")
-        params.append(status)
-
-    notes = proc_data.get("notes")
-    if notes and (existing_notes or "") != notes:
-        updates.append("notes = ?")
-        params.append(notes)
-
-    provider_id = proc_data.get("provider_id")
-    if provider_id and (existing_provider_id or 0) != provider_id:
-        updates.append("provider_id = ?")
-        params.append(provider_id)
-
-    encounter_id = proc_data.get("encounter_id")
-    if encounter_id and (existing_encounter_id or 0) != encounter_id:
-        updates.append("encounter_id = ?")
-        params.append(encounter_id)
-
-    ds_id = proc_data.get("ds_id")
-    if ds_id is not None and (existing_data_source or 0) != ds_id:
-        updates.append("data_source_id = ?")
-        params.append(ds_id)
-
-    return (updates, params)
-
-
-def _execute_procedure_update(
-    cur: sqlite3.Cursor,
-    updates: list[str],
-    params: list[object],
-    procedure_id: int,
-) -> bool:
-    """Execute UPDATE query for procedure record.
-
-    Args:
-        cur: Database cursor.
-        updates: List of update clauses.
-        params: List of parameter values.
-        procedure_id: Procedure ID to update.
-
-    Returns:
-        bool: True if updates were applied.
-    """
-    if not updates:
-        return False
-
-    if len(updates) == 1:
-        update_field = updates[0].split()[0]
-        update_single_field(cur, "procedure", update_field, params[0], procedure_id)
-    else:
-        query = f"UPDATE procedure SET {', '.join(updates)} WHERE id = ?"  # nosec B608
-        cur.execute(query, params + [procedure_id])
-
-    return True
-
-
 def _insert_procedure_record(
     cur: sqlite3.Cursor,
     patient_id: int,
@@ -260,43 +180,6 @@ def _insert_procedure_record(
         ),
     )
     return int(cur.lastrowid or 0)
-
-
-def _insert_procedure_codes(
-    cur: sqlite3.Cursor,
-    procedure_id: int,
-    codes: Sequence[Mapping[str, object]],
-) -> None:
-    """Insert procedure code entries.
-
-    Args:
-        cur: Database cursor.
-        procedure_id: ID of procedure record.
-        codes: Sequence of code mappings.
-    """
-    for code in codes:
-        code_val = clean_str(code.get("code"))
-        if not code_val:
-            continue
-        code_system_val = clean_str(code.get("system"))
-        display_val = clean_str(code.get("display"))
-        cur.execute(
-            """
-            INSERT OR IGNORE INTO procedure_code (
-                procedure_id,
-                code,
-                code_system,
-                display_name
-            )
-            VALUES (?, ?, ?, ?)
-            """,
-            (
-                procedure_id,
-                code_val,
-                code_system_val,
-                display_val,
-            ),
-        )
 
 
 class ProcedureData(TypedDict, total=False):
@@ -356,9 +239,13 @@ def insert_procedures(
 
         if existing:
             # Update existing record
-            updates, params = _build_procedure_updates(proc_data, existing)
+            updates, params = build_updates_from_specs(
+                proc_data,
+                existing,
+                STANDARD_RECORD_UPDATE_SPECS,
+            )
             procedure_id = existing[0]
-            _execute_procedure_update(cur, updates, params, procedure_id)
+            execute_update(cur, "procedure", updates, params, procedure_id)
         else:
             # Insert new record
             procedure_id = _insert_procedure_record(
@@ -371,6 +258,11 @@ def insert_procedures(
         if isinstance(raw_codes, Sequence) and not isinstance(raw_codes, (str, bytes)):
             codes = list(ensure_mapping_sequence(raw_codes))
 
-        _insert_procedure_codes(cur, procedure_id, codes)
+        insert_code_mappings(
+            cur,
+            table="procedure_code",
+            ref_id=procedure_id,
+            codes=codes,
+        )
 
     conn.commit()

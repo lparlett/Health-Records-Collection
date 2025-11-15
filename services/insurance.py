@@ -11,7 +11,7 @@ from __future__ import annotations
 import sqlite3
 from typing import Mapping, Sequence, Tuple, TypedDict
 
-from health_records_collection.db.utils import update_single_field
+from health_records_collection.db.utils import execute_update
 from health_records_collection.services.common import (
     clean_str,
     coerce_int,
@@ -183,28 +183,6 @@ def _build_insurance_update_queries(
     return updates, params
 
 
-def _execute_insurance_update(
-    cur: sqlite3.Cursor,
-    updates: list[str],
-    params: list[object],
-    policy_id: int,
-) -> bool:
-    """Execute update query for changed fields. Returns True if updated."""
-    if not updates:
-        return False
-
-    # Single field update
-    if len(updates) == 1:
-        update_field = updates[0].split()[0]
-        update_single_field(cur, "insurance", update_field, params[0], policy_id)
-    # Multiple fields update
-    else:
-        query = f"UPDATE insurance SET {', '.join(updates)} WHERE id = ?"  # nosec B608
-        cur.execute(query, params + [policy_id])
-
-    return True
-
-
 def _insert_new_insurance(
     cur: sqlite3.Cursor,
     patient_id: int,
@@ -303,7 +281,7 @@ def upsert_insurance(
             )
 
             policy_id = existing[0]
-            if _execute_insurance_update(cur, updates, params, policy_id):
+            if execute_update(cur, "insurance", updates, params, policy_id):
                 updated += 1
             continue
 

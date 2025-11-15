@@ -1,12 +1,8 @@
 from __future__ import annotations
-from pathlib import Path
-import hashlib
-
 import sqlite3
-import unittest
-
 
 from health_records_collection.services.labs import insert_labs
+from health_records_collection.tests import helpers
 
 
 def _seed_patient(conn: sqlite3.Connection) -> int:
@@ -18,56 +14,9 @@ def _seed_patient(conn: sqlite3.Connection) -> int:
     return int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
 
 
-class TestLabsService(unittest.TestCase):
+class TestLabsService(helpers.SchemaTestCase):
     """Test suite for labs service."""
 
-    def setUp(self) -> None:
-        """Set up test fixtures."""
-        from health_records_collection.db.schema import ensure_schema
-        
-        # Create schema_conn for database testing
-        self.schema_conn = sqlite3.connect(":memory:")
-        self.schema_conn.execute("PRAGMA foreign_keys = ON;")
-        schema_path = Path(__file__).parent.parent / "schema.sql"
-        schema_sql = schema_path.read_text(encoding="utf-8")
-        self.schema_conn.executescript(schema_sql)
-        ensure_schema(self.schema_conn)
-        
-        # Create a data_source_id for tests
-        archive_hash = hashlib.sha256(b"archive.zip").hexdigest()
-        self.schema_conn.execute(
-            """
-            INSERT INTO ingested_archive (
-                archive_name,
-                archive_sha256,
-                first_ingested_at,
-                last_ingested_at,
-                ingest_count
-            ) VALUES (?, ?, '2025-10-12T00:00:00Z', '2025-10-12T00:00:00Z', 1)
-            """,
-            ("archive.zip", archive_hash),
-        )
-        archive_id = int(self.schema_conn.execute("SELECT last_insert_rowid()").fetchone()[0])
-        
-        self.schema_conn.execute(
-            """
-            INSERT INTO data_source (
-                original_filename,
-                file_sha256,
-                ingested_at,
-                source_archive_id
-            ) VALUES (?, ?, '2025-10-12T00:00:00Z', ?)
-            """,
-            ("test.xml", hashlib.sha256(b"test").hexdigest(), archive_id),
-        )
-        self.data_source_id = int(self.schema_conn.execute("SELECT last_insert_rowid()").fetchone()[0])
-        self.schema_conn.commit()
-
-    def tearDown(self) -> None:
-        """Clean up after testing."""
-        self.schema_conn.close()
-
-    
     def test_insert_labs_sets_data_source(self) -> None:
         """Test that insert_labs sets data_source_id."""
         patient_id = _seed_patient(self.schema_conn)
@@ -131,7 +80,11 @@ class TestLabsService(unittest.TestCase):
         insert_labs(self.schema_conn, patient_id, labs)
 
         rows = self.schema_conn.execute(
-            "SELECT loinc_code, date, result_value FROM lab_result WHERE patient_id = ?",
+            """
+            SELECT loinc_code, date, result_value
+              FROM lab_result
+             WHERE patient_id = ?
+            """,
             (patient_id,),
         ).fetchall()
 

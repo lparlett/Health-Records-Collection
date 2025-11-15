@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 import sqlite3
 import tempfile
 import unittest
@@ -11,15 +12,14 @@ class TestSchema(unittest.TestCase):
 
     def setUp(self) -> None:
         """Set up temporary database for schema testing."""
-        self.temp_dir = tempfile.TemporaryDirectory()
-        self.tmp_path = Path(self.temp_dir.name)
+        self.tmp_path = Path(tempfile.mkdtemp())
         self.conn: sqlite3.Connection | None = None
 
     def tearDown(self) -> None:
         """Clean up temporary database after testing."""
         if self.conn:
             self.conn.close()
-        self.temp_dir.cleanup()
+        shutil.rmtree(self.tmp_path, ignore_errors=True)
 
     def _load_schema(self) -> sqlite3.Connection:
         """Helper to load schema into temporary database."""

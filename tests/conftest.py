@@ -9,8 +9,8 @@ from health_records_collection.db.schema import ensure_schema
 from health_records_collection.services import providers as provider_service
 
 
-@pytest.fixture
-def schema_conn() -> Iterator[sqlite3.Connection]:
+@pytest.fixture(name="schema_conn")
+def _schema_conn_fixture() -> Iterator[sqlite3.Connection]:
     """Provide an in-memory SQLite connection seeded with the project schema."""
     conn = sqlite3.connect(":memory:")
     conn.execute("PRAGMA foreign_keys = ON;")
@@ -25,9 +25,7 @@ def schema_conn() -> Iterator[sqlite3.Connection]:
 
 
 @pytest.fixture
-def data_source_id(
-    schema_conn: sqlite3.Connection,
-) -> int:  # pylint: disable=redefined-outer-name
+def data_source_id(schema_conn: sqlite3.Connection) -> int:
     """Insert a reusable data_source row for tests that need a valid foreign key."""
     cursor = schema_conn.cursor()
     archive_hash = hashlib.sha256(b"archive.zip").hexdigest()

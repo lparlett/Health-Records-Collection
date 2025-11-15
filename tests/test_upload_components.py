@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import io
+import shutil
 import sqlite3
 import tempfile
 import unittest
@@ -128,15 +129,15 @@ class UploadComponentsTestCase(unittest.TestCase):
 
     def setUp(self) -> None:
         """Set up test fixtures."""
-        self.tempdir = tempfile.TemporaryDirectory()
+        self.tmp_path = Path(tempfile.mkdtemp())
 
     def tearDown(self) -> None:
         """Clean up test fixtures."""
-        self.tempdir.cleanup()
+        shutil.rmtree(self.tmp_path, ignore_errors=True)
 
     def test_render_upload_page_ingests_archives(self) -> None:
         """Ensure uploaded archives are persisted, ingested, and feedback recorded."""
-        tmp_path = Path(self.tempdir.name)
+        tmp_path = self.tmp_path
         stub_file = _DummyUploadedFile("Patient Records!.zip", _build_zip_bytes())
         stubs = _StreamlitStub(uploads=[stub_file], submit_result=True)
 
@@ -191,7 +192,7 @@ class UploadComponentsTestCase(unittest.TestCase):
 
     def test_render_upload_page_blocks_oversized_archives(self) -> None:
         """Verify archives exceeding the size limit are rejected without ingestion."""
-        tmp_path = Path(self.tempdir.name)
+        tmp_path = self.tmp_path
         oversize = upload_components.MAX_ARCHIVE_BYTES + 1
         stub_file = _DummyUploadedFile(
             "too_large.zip",
@@ -243,7 +244,7 @@ class UploadComponentsTestCase(unittest.TestCase):
 
     def test_render_upload_page_rejects_non_zip(self) -> None:
         """Reject uploads whose content is not a valid ZIP archive."""
-        tmp_path = Path(self.tempdir.name)
+        tmp_path = self.tmp_path
         stub_file = _DummyUploadedFile("notes.zip", b"not-a-zip")
         stubs = _StreamlitStub(uploads=[stub_file], submit_result=True)
 
@@ -290,7 +291,7 @@ class UploadComponentsTestCase(unittest.TestCase):
 
     def test_render_upload_page_detects_duplicate_archives(self) -> None:
         """Skip ingestion when the archive hash already exists in the registry."""
-        tmp_path = Path(self.tempdir.name)
+        tmp_path = self.tmp_path
         stub_file = _DummyUploadedFile("duplicate.zip", _build_zip_bytes())
         stubs = _StreamlitStub(uploads=[stub_file], submit_result=True)
 
