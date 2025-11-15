@@ -158,12 +158,13 @@ class UploadComponentsTestCase(unittest.TestCase):
         def _rerun() -> None:
             rerun_called["flag"] = True
 
-        with mock.patch.object(upload_components, "st", stubs), mock.patch.object(
-            upload_components, "RAW_ARCHIVE_DIR", tmp_path
-        ), mock.patch.object(
-            upload_components, "archive_was_ingested", lambda conn, sha: None
-        ), mock.patch.object(
-            upload_components, "ingest_archive", _fake_ingest
+        with (
+            mock.patch.object(upload_components, "st", stubs),
+            mock.patch.object(upload_components, "RAW_ARCHIVE_DIR", tmp_path),
+            mock.patch.object(
+                upload_components, "archive_was_ingested", lambda conn, sha: None
+            ),
+            mock.patch.object(upload_components, "ingest_archive", _fake_ingest),
         ):
 
             conn = sqlite3.connect(":memory:")
@@ -217,12 +218,13 @@ class UploadComponentsTestCase(unittest.TestCase):
         def _rerun() -> None:
             rerun_called["flag"] = True
 
-        with mock.patch.object(upload_components, "st", stubs), mock.patch.object(
-            upload_components, "RAW_ARCHIVE_DIR", tmp_path
-        ), mock.patch.object(
-            upload_components, "archive_was_ingested", lambda conn, sha: None
-        ), mock.patch.object(
-            upload_components, "ingest_archive", _fake_ingest
+        with (
+            mock.patch.object(upload_components, "st", stubs),
+            mock.patch.object(upload_components, "RAW_ARCHIVE_DIR", tmp_path),
+            mock.patch.object(
+                upload_components, "archive_was_ingested", lambda conn, sha: None
+            ),
+            mock.patch.object(upload_components, "ingest_archive", _fake_ingest),
         ):
 
             conn = sqlite3.connect(":memory:")
@@ -264,12 +266,13 @@ class UploadComponentsTestCase(unittest.TestCase):
         def _rerun() -> None:
             rerun_called["flag"] = True
 
-        with mock.patch.object(upload_components, "st", stubs), mock.patch.object(
-            upload_components, "RAW_ARCHIVE_DIR", tmp_path
-        ), mock.patch.object(
-            upload_components, "archive_was_ingested", lambda conn, sha: None
-        ), mock.patch.object(
-            upload_components, "ingest_archive", _fake_ingest
+        with (
+            mock.patch.object(upload_components, "st", stubs),
+            mock.patch.object(upload_components, "RAW_ARCHIVE_DIR", tmp_path),
+            mock.patch.object(
+                upload_components, "archive_was_ingested", lambda conn, sha: None
+            ),
+            mock.patch.object(upload_components, "ingest_archive", _fake_ingest),
         ):
 
             conn = sqlite3.connect(":memory:")
@@ -322,12 +325,11 @@ class UploadComponentsTestCase(unittest.TestCase):
         def _rerun() -> None:
             rerun_called["flag"] = True
 
-        with mock.patch.object(upload_components, "st", stubs), mock.patch.object(
-            upload_components, "RAW_ARCHIVE_DIR", tmp_path
-        ), mock.patch.object(
-            upload_components, "archive_was_ingested", _fake_lookup
-        ), mock.patch.object(
-            upload_components, "ingest_archive", _fake_ingest
+        with (
+            mock.patch.object(upload_components, "st", stubs),
+            mock.patch.object(upload_components, "RAW_ARCHIVE_DIR", tmp_path),
+            mock.patch.object(upload_components, "archive_was_ingested", _fake_lookup),
+            mock.patch.object(upload_components, "ingest_archive", _fake_ingest),
         ):
 
             conn = sqlite3.connect(":memory:")
