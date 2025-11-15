@@ -33,15 +33,37 @@ REASON_FOR_VISIT_CODES: set[str] = {
 
 
 @dataclass(slots=True)
+class TimeWindow:
+    """Normalized representation of a start/end pair."""
+
+    start: Optional[str]
+    end: Optional[str]
+
+
+@dataclass(slots=True)
+class ProviderSummary:
+    """Provider name/organization pair."""
+
+    person: Optional[str]
+    organization: Optional[str]
+
+
+@dataclass(slots=True)
+class EncounterDetails:
+    """Bundle of location, source ID, and narrative notes."""
+
+    location: Optional[str]
+    source_id: Optional[str]
+    notes: Optional[str]
+
+
+@dataclass(slots=True)
 class DocumentContext:
     """Document-level encounter metadata shared across entries."""
 
-    global_start: Optional[str]
-    global_end: Optional[str]
-    service_start: Optional[str]
-    service_end: Optional[str]
-    provider_person: Optional[str]
-    provider_org: Optional[str]
+    global_window: TimeWindow
+    service_window: TimeWindow
+    provider: ProviderSummary
     invalid_times: set[str]
     reason_for_visit: Optional[str]
 
@@ -79,6 +101,12 @@ def _collect_invalid_times(tree: ElementTreeType, ns: dict[str, str]) -> set[str
         if len(birth_time) >= 8:
             invalid_times.add(birth_time[:8])
     return invalid_times
+
+
+def _time_window(node: ElementType | None, ns: dict[str, str]) -> TimeWindow:
+    """Extract a start/end pair from an effectiveTime node."""
+    start, end = extract_effective_time(node, ns)
+    return TimeWindow(start=start, end=end)
 
 
 def _reason_sections(tree: ElementTreeType, ns: dict[str, str]) -> list[ElementType]:
@@ -150,7 +178,7 @@ def _document_context(tree: ElementTreeType, ns: dict[str, str]) -> DocumentCont
             ),
             ns,
         )
-    global_start, global_end = extract_effective_time(
+    global_window = _time_window(
         (
             encompassing.find("hl7:effectiveTime", namespaces=ns)
             if encompassing is not None
@@ -160,7 +188,7 @@ def _document_context(tree: ElementTreeType, ns: dict[str, str]) -> DocumentCont
     )
 
     service_event = tree.find("hl7:documentationOf/hl7:serviceEvent", namespaces=ns)
-    service_start, service_end = extract_effective_time(
+    service_window = _time_window(
         (
             service_event.find("hl7:effectiveTime", namespaces=ns)
             if service_event is not None
@@ -170,12 +198,12 @@ def _document_context(tree: ElementTreeType, ns: dict[str, str]) -> DocumentCont
     )
 
     return DocumentContext(
-        global_start=global_start,
-        global_end=global_end,
-        service_start=service_start,
-        service_end=service_end,
-        provider_person=provider_person,
-        provider_org=provider_org,
+        global_window=global_window,
+        service_window=service_window,
+        provider=ProviderSummary(
+            person=provider_person,
+            organization=provider_org,
+        ),
         invalid_times=_collect_invalid_times(tree, ns),
         reason_for_visit=_reason_for_visit(tree, ns),
     )
@@ -308,20 +336,79 @@ def _is_valid_time_value(value: Optional[str], invalid_values: set[str]) -> bool
 
 
 def _merge_time_candidates(
-    *candidates: tuple[Optional[str], Optional[str]],
+    *windows: TimeWindow,
     invalid_values: set[str],
-) -> tuple[Optional[str], Optional[str]]:
+) -> TimeWindow:
     """Merge time ranges from most general to specific candidates."""
     start: Optional[str] = None
     end: Optional[str] = None
-    for candidate_start, candidate_end in candidates:
+    for window in windows:
+        candidate_start, candidate_end = window.start, window.end
         if candidate_start and _is_valid_time_value(candidate_start, invalid_values):
             start = candidate_start
         if candidate_end and _is_valid_time_value(candidate_end, invalid_values):
             end = candidate_end
     if end is None:
         end = start
-    return start, end
+    return TimeWindow(start=start, end=end)
+
+
+def _resolve_encounter_window(
+    encounter: ElementType,
+    ns: dict[str, str],
+    context: DocumentContext,
+) -> TimeWindow:
+    """Resolve the best available encounter time window."""
+    encounter_window = _time_window(
+        encounter.find("hl7:effectiveTime", namespaces=ns),
+        ns,
+    )
+    return _merge_time_candidates(
+        context.global_window,
+        context.service_window,
+        encounter_window,
+        invalid_values=context.invalid_times,
+    )
+
+
+def _resolve_encounter_provider(
+    encounter: ElementType,
+    ns: dict[str, str],
+    fallback: ProviderSummary,
+) -> ProviderSummary:
+    """Return provider info using encounter values with document fallback."""
+    person, organisation = _encounter_provider(
+        encounter,
+        ns,
+        fallback.person,
+        fallback.organization,
+    )
+    return ProviderSummary(person=person, organization=organisation)
+
+
+def _encounter_details(
+    encounter: ElementType,
+    tree: ElementTreeType,
+    ns: dict[str, str],
+    status: Optional[str],
+    mood: Optional[str],
+) -> EncounterDetails:
+    """Return location, source ID, and narrative notes for an encounter."""
+    description = _encounter_description(encounter, tree, ns)
+    location = _encounter_location(encounter, ns)
+    additional_notes = _encounter_additional_notes(encounter, tree, ns)
+    source_id = _encounter_source_id(encounter, ns)
+    notes = _join_clean(
+        [
+            description,
+            _join_clean(additional_notes),
+            f"Location: {location}" if location else None,
+            f"Status: {status}" if status else None,
+            f"Mood: {mood}" if mood else None,
+            f"Encounter ID: {source_id}" if source_id else None,
+        ]
+    )
+    return EncounterDetails(location=location, source_id=source_id, notes=notes)
 
 
 def _build_encounter_entry(
@@ -337,51 +424,22 @@ def _build_encounter_entry(
     if mood == "APT":
         return None  # Skip appointments; only actual encounters are captured
 
-    description = _encounter_description(encounter, tree, ns)
-    encounter_start, encounter_end = extract_effective_time(
-        encounter.find("hl7:effectiveTime", namespaces=ns),
-        ns,
-    )
-    start, end = _merge_time_candidates(
-        (context.global_start, context.global_end),
-        (context.service_start, context.service_end),
-        (encounter_start, encounter_end),
-        invalid_values=context.invalid_times,
-    )
-
-    provider_name, organisation = _encounter_provider(
-        encounter,
-        ns,
-        context.provider_person,
-        context.provider_org,
-    )
-    location = _encounter_location(encounter, ns)
-    additional_notes = _encounter_additional_notes(encounter, tree, ns)
-    source_id = _encounter_source_id(encounter, ns)
-
-    notes = _join_clean(
-        [
-            description,
-            _join_clean(additional_notes),
-            f"Location: {location}" if location else None,
-            f"Status: {status}" if status else None,
-            f"Mood: {mood}" if mood else None,
-            f"Encounter ID: {source_id}" if source_id else None,
-        ]
-    )
+    timing = _resolve_encounter_window(encounter, ns, context)
+    provider = _resolve_encounter_provider(encounter, ns, context.provider)
+    details = _encounter_details(encounter, tree, ns, status, mood)
 
     return {
         "code": code,
         "type": encounter_type,
         "status": status,
         "mood": mood,
-        "start": start,
-        "end": end,
-        "provider": provider_name,
-        "organization": organisation,
-        "location": location,
-        "notes": notes,
-        "source_id": source_id,
+        "start": timing.start,
+        "end": timing.end,
+        "provider": provider.person,
+        "organization": provider.organization,
+        "location": details.location,
+        "notes": details.notes,
+        "source_id": details.source_id,
         "reason_for_visit": context.reason_for_visit,
     }
 

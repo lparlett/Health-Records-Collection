@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Optional
 
 from .common import (
@@ -22,6 +23,7 @@ from .common import (
 from .xml_types import ElementType, ElementTreeType
 
 ConditionEntry = dict[str, Any]
+ConditionKey = tuple[Optional[str], Optional[str], Optional[str]]
 
 SECTION_CODES: set[str] = {
     "11450-4",  # Problem List
@@ -231,10 +233,66 @@ def _condition_key(
     name: Optional[str],
     codes: list[dict[str, str | None]],
     start: Optional[str],
-) -> tuple[Optional[str], Optional[str], Optional[str]]:
+) -> ConditionKey:
     """Generate a deduplication key for condition entries."""
     main_code = codes[0]["code"] if codes else None
     return (name, main_code, start)
+
+
+@dataclass(slots=True)
+class ConditionRecord:
+    """Encapsulate a condition entry with its deduplication key."""
+
+    entry: ConditionEntry
+    key: ConditionKey
+
+
+def _build_condition_record(
+    observation: ElementType,
+    entry: ElementType,
+    tree: ElementTreeType,
+    ns: dict[str, str],
+) -> ConditionRecord | None:
+    """Return a condition entry/key pair for a qualifying observation."""
+    if not _is_condition_observation(observation, ns):
+        return None
+    # pylint: disable=line-too-long
+    codes, value_el = _condition_codes(observation, ns)
+    status = _extract_status(observation, ns)
+    start, end = _condition_times(observation, entry, ns)
+    provider_name = extract_provider_name(
+        observation,
+        "hl7:author/hl7:assignedAuthor/hl7:assignedPerson/hl7:name",
+        "hl7:author/hl7:assignedAuthor/hl7:representedOrganization/hl7:name",
+        ns,
+    )
+    # pylint: enable-line-too-long
+    author_time = _condition_author_time(observation, ns)
+    encounter_source_id, encounter_start, encounter_end = _condition_encounter(entry, ns)
+
+    obs_text = _observation_text(observation, tree, ns)
+    notes = _condition_notes(tree, entry, ns, obs_text)
+    name = _condition_name(obs_text, value_el, codes)
+    if name is None:
+        return None
+
+    key = _condition_key(name, codes, start)
+    return ConditionRecord(
+        entry={
+            "name": name,
+            "codes": codes,
+            "status": status.title() if status else None,
+            "start": start,
+            "end": end,
+            "notes": notes,
+            "provider": provider_name,
+            "author_time": author_time,
+            "encounter_source_id": encounter_source_id,
+            "encounter_start": encounter_start,
+            "encounter_end": encounter_end,
+        },
+        key=key,
+    )
 
 
 def parse_conditions(tree: ElementTreeType, ns: dict[str, str]) -> list[ConditionEntry]:
@@ -249,57 +307,18 @@ def parse_conditions(tree: ElementTreeType, ns: dict[str, str]) -> list[Conditio
     """
 
     conditions: list[ConditionEntry] = []
-    seen_keys: set[tuple[str | None, str | None, str | None]] = set()
+    seen_keys: set[ConditionKey] = set()
 
     for section in _condition_sections(tree, ns):
         for entry in iter_elements(section.findall("hl7:entry", namespaces=ns)):
             observations = entry.xpath(".//hl7:observation", namespaces=ns)
             for observation in iter_elements(observations):
-                if not _is_condition_observation(observation, ns):
+                record = _build_condition_record(observation, entry, tree, ns)
+                if record is None:
                     continue
-                # pylint: disable=line-too-long
-                codes, value_el = _condition_codes(observation, ns)
-                status = _extract_status(observation, ns)
-                start, end = _condition_times(observation, entry, ns)
-                provider_name = extract_provider_name(
-                    observation,
-                    "hl7:author/hl7:assignedAuthor/hl7:assignedPerson/hl7:name",
-                    "hl7:author/hl7:assignedAuthor/hl7:representedOrganization/hl7:name",
-                    ns,
-                )
-                # pylint: enable=line-too-long
-                author_time = _condition_author_time(observation, ns)
-                (
-                    encounter_source_id,
-                    encounter_start,
-                    encounter_end,
-                ) = _condition_encounter(entry, ns)
-
-                obs_text = _observation_text(observation, tree, ns)
-                notes = _condition_notes(tree, entry, ns, obs_text)
-                name = _condition_name(obs_text, value_el, codes)
-                if name is None:
+                if record.key in seen_keys:
                     continue
-
-                key = _condition_key(name, codes, start)
-                if key in seen_keys:
-                    continue
-                seen_keys.add(key)
-
-                conditions.append(
-                    {
-                        "name": name,
-                        "codes": codes,
-                        "status": status.title() if status else None,
-                        "start": start,
-                        "end": end,
-                        "notes": notes,
-                        "provider": provider_name,
-                        "author_time": author_time,
-                        "encounter_source_id": encounter_source_id,
-                        "encounter_start": encounter_start,
-                        "encounter_end": encounter_end,
-                    }
-                )
+                seen_keys.add(record.key)
+                conditions.append(record.entry)
 
     return conditions

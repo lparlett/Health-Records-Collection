@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from lxml.etree import _Element as ElementType  # nosec B410
     from lxml.etree import _ElementTree as ElementTreeType  # nosec B410
 else:  # pragma: no cover - runtime aliases needed for isinstance checks
-    ElementType = etree._Element  # type: ignore[attr-defined]  # pylint: disable=protected-access
-    ElementTreeType = etree._ElementTree  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    from lxml.etree import _Element as ElementType  # nosec B410
+    from lxml.etree import _ElementTree as ElementTreeType  # nosec B410
 
 __all__ = ["etree", "ElementType", "ElementTreeType"]

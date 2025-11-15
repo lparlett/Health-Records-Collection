@@ -407,52 +407,84 @@ def _prepare_defaults(
 ) -> dict[str, Optional[str]]:
     """Extract default values from a container act for nested details."""
     defaults: dict[str, Optional[str]] = {}
+    defaults.update(_default_payer_info(tree, act, ns))
+    defaults.update(_default_plan_info(act, ns))
+    defaults.update(_default_coverage_role_info(act, ns))
+    defaults.update(_default_dates(act, ns))
+    defaults.update(_default_member_info(tree, act, ns))
+    defaults.update(_default_status_and_notes(tree, act, ns))
+    return defaults
 
-    # Payer information
+
+def _default_payer_info(
+    tree: ElementTreeType, act: ElementType, ns: dict[str, str]
+) -> dict[str, Optional[str]]:
+    """Return payer metadata defaults."""
     payer_name, payer_id = _extract_payer_info(tree, act, ns)
-    defaults["payer_name"] = payer_name
-    defaults["payer_identifier"] = payer_id
+    return {"payer_name": payer_name, "payer_identifier": payer_id}
 
-    # Plan and coverage type
+
+def _default_plan_info(
+    act: ElementType, ns: dict[str, str]
+) -> dict[str, Optional[str]]:
+    """Return plan and coverage defaults."""
     plan_el = act.find("hl7:code", namespaces=ns)
     plan_name, coverage_type = _extract_plan_and_coverage_type(plan_el)
-    defaults["plan_name"] = plan_name
-    defaults["coverage_type"] = coverage_type
-    defaults["policy_type"] = clean_text(act.get("classCode"))
+    return {
+        "plan_name": plan_name,
+        "coverage_type": coverage_type,
+        "policy_type": clean_text(act.get("classCode")),
+    }
 
-    # Coverage role information
+
+def _default_coverage_role_info(
+    act: ElementType, ns: dict[str, str]
+) -> dict[str, Optional[str]]:
+    """Return defaults derived from coverage role data."""
     policy_id, group_number = _extract_coverage_role_info(act, ns)
-    defaults["source_policy_id"] = policy_id
-    defaults["group_number"] = group_number
+    return {"source_policy_id": policy_id, "group_number": group_number}
 
-    # Effective and expiration dates
-    defaults["effective_date"], defaults["expiration_date"] = extract_effective_time(
+
+def _default_dates(
+    act: ElementType, ns: dict[str, str]
+) -> dict[str, Optional[str]]:
+    """Return effective/expiration defaults."""
+    effective, expiration = extract_effective_time(
         act.find("hl7:effectiveTime", namespaces=ns),
         ns,
     )
+    return {"effective_date": effective, "expiration_date": expiration}
 
-    # Holder information
+
+def _default_member_info(
+    tree: ElementTreeType, act: ElementType, ns: dict[str, str]
+) -> dict[str, Optional[str]]:
+    """Return holder and subscriber defaults."""
     holder_role = act.find(
         "hl7:participant[@typeCode='HLD']/hl7:participantRole", namespaces=ns
     )
-    defaults["member_id"] = _extract_first_id(holder_role, ns)
-
-    # Subscriber information
     subscriber_id, subscriber_name, relationship = _extract_subscriber_info(
         tree, act, ns
     )
-    defaults["subscriber_id"] = subscriber_id
-    defaults["subscriber_name"] = subscriber_name
-    defaults["relationship"] = relationship
+    return {
+        "member_id": _extract_first_id(holder_role, ns),
+        "subscriber_id": subscriber_id,
+        "subscriber_name": subscriber_name,
+        "relationship": relationship,
+    }
 
-    # Status and notes
+
+def _default_status_and_notes(
+    tree: ElementTreeType, act: ElementType, ns: dict[str, str]
+) -> dict[str, Optional[str]]:
+    """Return status and note defaults."""
     status_el = act.find("hl7:statusCode", namespaces=ns)
-    defaults["status"] = clean_text(
-        status_el.get("code") if isinstance(status_el, ElementType) else None
-    )
-    defaults["notes"] = extract_notes(tree, act, ns)
-
-    return defaults
+    return {
+        "status": clean_text(
+            status_el.get("code") if isinstance(status_el, ElementType) else None
+        ),
+        "notes": extract_notes(tree, act, ns),
+    }
 
 
 def _resolve_participants(

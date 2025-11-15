@@ -500,41 +500,50 @@ def parse_medications(
         return medications
 
     seen_entries: set[MedicationKey] = set()
-    registry = existing_keys
-
     for med in medication_nodes:
-        identity = _extract_medication_identity(tree, med, ns)
-        if identity is None:
+        entry = _build_medication_entry(med, tree, ns, context)
+        if entry is None:
             continue
-        encounter = _resolve_medication_encounter(med, ns, context)
-        timing = _extract_medication_timing(med, ns)
-        dose = _extract_medication_dose(med, ns)
-        status = _extract_medication_status(med, ns)
-
-        entry: MedicationEntry = MedicationEntry(
-            name=identity.name,
-            rxnorm=identity.rxnorm,
-            dose=dose.dose,
-            route=dose.route,
-            frequency=dose.frequency,
-            start=timing.start,
-            end=timing.end,
-            status=status,
-            notes=identity.notes,
-            provider=identity.provider,
-            author_time=identity.author_time,
-            source_id=identity.source_id,
-            encounter_source_id=encounter.source_id,
-            encounter_start=encounter.start,
-            encounter_end=encounter.end,
-            patient_id=context.patient_id,
-            start_bucket=timing.start_bucket,
-            end_bucket=timing.end_bucket,
-        )
-
         dedupe_key = _medication_key(entry)
-        if not _register_entry(dedupe_key, seen_entries, registry):
+        if not _register_entry(dedupe_key, seen_entries, existing_keys):
             continue
         medications.append(entry)
 
     return medications
+
+
+def _build_medication_entry(
+    med: ElementType,
+    tree: ElementTreeType,
+    ns: dict[str, str],
+    context: DocumentContext,
+) -> MedicationEntry | None:
+    """Construct a MedicationEntry from the CCD node."""
+    identity = _extract_medication_identity(tree, med, ns)
+    if identity is None:
+        return None
+    encounter = _resolve_medication_encounter(med, ns, context)
+    timing = _extract_medication_timing(med, ns)
+    dose = _extract_medication_dose(med, ns)
+    status = _extract_medication_status(med, ns)
+
+    return MedicationEntry(
+        name=identity.name,
+        rxnorm=identity.rxnorm,
+        dose=dose.dose,
+        route=dose.route,
+        frequency=dose.frequency,
+        start=timing.start,
+        end=timing.end,
+        status=status,
+        notes=identity.notes,
+        provider=identity.provider,
+        author_time=identity.author_time,
+        source_id=identity.source_id,
+        encounter_source_id=encounter.source_id,
+        encounter_start=encounter.start,
+        encounter_end=encounter.end,
+        patient_id=context.patient_id,
+        start_bucket=timing.start_bucket,
+        end_bucket=timing.end_bucket,
+    )
