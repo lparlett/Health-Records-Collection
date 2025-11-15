@@ -3,6 +3,8 @@
 # Date: 2025-10-27
 # Tests: Manual Streamlit validation; automated frontend coverage pending.
 # AI-assisted: Module generated with AI assistance.
+"""Streamlit helpers to document the database schema and ER relationships."""
+
 from __future__ import annotations
 
 from pathlib import Path

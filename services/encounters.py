@@ -182,50 +182,62 @@ class EncounterData:
 
     @property
     def provider_name(self) -> Optional[str]:
+        """Get or set the provider name."""
         return self.provider.name
 
     @provider_name.setter
     def provider_name(self, value: Optional[str]) -> None:
+        """Set the provider name."""
         self.provider.name = value
 
     @property
     def provider_id(self) -> Optional[int]:
+        """Get or set the provider ID."""
         return self.provider.id
 
     @provider_id.setter
     def provider_id(self, value: Optional[int]) -> None:
+        """Set the provider ID."""
         self.provider.id = value
 
     @property
     def organization_id(self) -> Optional[int]:
+        """Get or set the organization ID."""
         return self.provider.organization_id
 
     @organization_id.setter
     def organization_id(self, value: Optional[int]) -> None:
+        """Set the organization ID."""
         self.provider.organization_id = value
 
     @property
     def encounter_type(self) -> Optional[str]:
+        """Get or set the encounter type."""
         return self.details.encounter_type
 
     @encounter_type.setter
     def encounter_type(self, value: Optional[str]) -> None:
+        """Set the encounter type."""
         self.details.encounter_type = value
 
     @property
     def reason_for_visit(self) -> Optional[str]:
+        """Get or set the reason for visit."""
         return self.details.reason_for_visit
 
     @reason_for_visit.setter
     def reason_for_visit(self, value: Optional[str]) -> None:
+        """Set the reason for visit."""
         self.details.reason_for_visit = value
 
     @property
     def notes(self) -> Optional[str]:
+        """Get or set the encounter notes."""
         return self.details.notes
 
     @notes.setter
     def notes(self, value: Optional[str]) -> None:
+        """Set the encounter notes."""
         self.details.notes = value
 
 

@@ -48,6 +48,15 @@ class ParticipantRole:
     end: Optional[str] = None
 
 
+@dataclass(slots=True)
+class ParticipantRoles:
+    """Bundle of coverage, subscriber, and holder participants."""
+
+    coverage: ParticipantRole
+    subscriber: ParticipantRole
+    holder: ParticipantRole
+
+
 def _insurance_sections(tree: ElementTreeType, ns: dict[str, str]) -> list[ElementType]:
     """Return CCD sections describing insurance coverage."""
     root = tree.getroot()
@@ -450,12 +459,12 @@ def _resolve_participants(
     tree: ElementTreeType,
     act: ElementType,
     ns: dict[str, str],
-) -> tuple[ParticipantRole, ParticipantRole, ParticipantRole]:
+) -> ParticipantRoles:
     """Return (coverage, subscriber, holder) participant roles."""
     coverage = _extract_coverage_participant(tree, act, ns)
     subscriber = _extract_participant_role(act, ns, type_code="SUB")
     holder = _extract_participant_role(act, ns, type_code="HLD")
-    return coverage, subscriber, holder
+    return ParticipantRoles(coverage=coverage, subscriber=subscriber, holder=holder)
 
 
 def _resolve_dates(
@@ -463,7 +472,7 @@ def _resolve_dates(
     defaults: dict[str, Optional[str]],
     coverage: ParticipantRole,
     ns: dict[str, str],
-) -> tuple[Optional[str], Optional[str]]:
+) -> dict[str, Optional[str]]:
     """Resolve effective and expiration dates from act/coverage/defaults."""
     effective, expiration = extract_effective_time(
         act.find("hl7:effectiveTime", namespaces=ns),
@@ -477,32 +486,85 @@ def _resolve_dates(
     )
     if expiration and effective and expiration == effective:
         expiration = None
-    return effective, expiration
+    return {"effective_date": effective, "expiration_date": expiration}
 
 
 def _resolve_member_details(
-    coverage: ParticipantRole,
-    subscriber: ParticipantRole,
-    holder: ParticipantRole,
+    participants: ParticipantRoles,
     defaults: dict[str, Optional[str]],
-) -> tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
+) -> dict[str, Optional[str]]:
     """Return member and subscriber identifiers, name, and relationship."""
     member_id = first_non_empty(
-        coverage.identifier, holder.identifier, defaults.get("member_id")
+        participants.coverage.identifier,
+        participants.holder.identifier,
+        defaults.get("member_id"),
     )
     subscriber_id = first_non_empty(
-        subscriber.identifier, coverage.identifier, defaults.get("subscriber_id")
+        participants.subscriber.identifier,
+        participants.coverage.identifier,
+        defaults.get("subscriber_id"),
     )
     subscriber_name = first_non_empty(
-        subscriber.name, coverage.name, holder.name, defaults.get("subscriber_name")
+        participants.subscriber.name,
+        participants.coverage.name,
+        participants.holder.name,
+        defaults.get("subscriber_name"),
     )
     relationship = first_non_empty(
-        coverage.relationship,
-        subscriber.relationship,
-        holder.relationship,
+        participants.coverage.relationship,
+        participants.subscriber.relationship,
+        participants.holder.relationship,
         defaults.get("relationship"),
     )
-    return member_id, subscriber_id, subscriber_name, relationship
+    return {
+        "member_id": member_id,
+        "subscriber_id": subscriber_id,
+        "subscriber_name": subscriber_name,
+        "relationship": relationship,
+    }
+
+
+def _extract_status_code(act: ElementType, ns: dict[str, str]) -> Optional[str]:
+    """Return the normalized status code for a coverage act."""
+    status_el = act.find("hl7:statusCode", namespaces=ns)
+    return clean_text(
+        status_el.get("code") if isinstance(status_el, ElementType) else None
+    )
+
+
+def _extract_group_number(act: ElementType, ns: dict[str, str]) -> Optional[str]:
+    """Return the fallback group number encoded on the act itself."""
+    id_el = act.find("hl7:id", namespaces=ns)
+    return clean_text(
+        id_el.get("extension") if isinstance(id_el, ElementType) else None
+    )
+
+
+def _collect_plan_details(
+    tree: ElementTreeType,
+    act: ElementType,
+    defaults: dict[str, Optional[str]],
+    ns: dict[str, str],
+) -> dict[str, Optional[str]]:
+    """Collect payer and plan metadata for a policy dictionary."""
+    payer_name, payer_identifier, plan_name = _extract_payer_details(
+        tree, act, defaults, ns
+    )
+    coverage_type = _extract_coverage_type(act, defaults, ns)
+    policy_type = _extract_policy_type(act, defaults)
+    source_policy_id = first_non_empty(defaults.get("source_policy_id"))
+    group_number = first_non_empty(
+        defaults.get("group_number"), _extract_group_number(act, ns)
+    )
+    return {
+        "payer_name": payer_name,
+        "payer_identifier": payer_identifier,
+        "plan_name": plan_name,
+        "coverage_type": coverage_type,
+        "policy_type": policy_type,
+        "source_policy_id": source_policy_id,
+        "group_number": group_number,
+    }
 
 
 def _build_policy(
@@ -512,56 +574,18 @@ def _build_policy(
     defaults: dict[str, Optional[str]],
 ) -> Optional[dict[str, Optional[str]]]:
     """Construct a policy dictionary from a coverage act."""
-    payer_name, payer_identifier, plan_name = _extract_payer_details(
-        tree, act, defaults, ns
-    )
-    coverage_type = _extract_coverage_type(act, defaults, ns)
-    policy_type = _extract_policy_type(act, defaults)
-    source_policy_id = first_non_empty(defaults.get("source_policy_id"))
-    group_number = defaults.get("group_number")
-    if not group_number:
-        id_el = act.find("hl7:id", namespaces=ns)
-        group_number = clean_text(
-            id_el.get("extension") if isinstance(id_el, ElementType) else None
-        )
-
-    coverage_participant, subscriber_participant, holder_participant = (
-        _resolve_participants(tree, act, ns)
-    )
-    effective_date, expiration_date = _resolve_dates(
-        act, defaults, coverage_participant, ns
-    )
-    member_id, subscriber_id, subscriber_name, relationship = _resolve_member_details(
-        coverage_participant,
-        subscriber_participant,
-        holder_participant,
-        defaults,
-    )
-
-    status_el = act.find("hl7:statusCode", namespaces=ns)
-    status_code = first_non_empty(
-        clean_text(
-            status_el.get("code") if isinstance(status_el, ElementType) else None
-        ),
-        defaults.get("status"),
-    )
+    plan_details = _collect_plan_details(tree, act, defaults, ns)
+    participants = _resolve_participants(tree, act, ns)
+    date_info = _resolve_dates(act, defaults, participants.coverage, ns)
+    member_details = _resolve_member_details(participants, defaults)
+    status_code = first_non_empty(_extract_status_code(act, ns), defaults.get("status"))
     notes = first_non_empty(extract_notes(tree, act, ns), defaults.get("notes"))
 
     policy = {
-        "payer_name": payer_name,
-        "payer_identifier": payer_identifier,
-        "plan_name": plan_name,
-        "coverage_type": coverage_type,
-        "policy_type": policy_type,
-        "member_id": member_id,
-        "group_number": group_number,
-        "subscriber_id": subscriber_id,
-        "subscriber_name": subscriber_name,
-        "relationship": relationship,
-        "effective_date": effective_date,
-        "expiration_date": expiration_date,
+        **plan_details,
+        **member_details,
+        **date_info,
         "status": status_code,
-        "source_policy_id": source_policy_id,
         "notes": notes,
     }
 
