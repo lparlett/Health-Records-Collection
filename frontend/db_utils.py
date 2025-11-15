@@ -305,9 +305,10 @@ def _encounter_metadata(
         raise ValueError(f"Encounter {encounter_id} not found.")
 
     meta_row = meta_df.iloc[0].to_dict()
-    metadata = {
+    patient_id = int(meta_row["patient_id"])
+    metadata: dict[str, Any] = {
         "encounter_id": encounter_id,
-        "patient_id": int(meta_row["patient_id"]),
+        "patient_id": patient_id,
         "encounter_date": meta_row.get("encounter_date"),
         "encounter_type": meta_row.get("encounter_type"),
         "notes": meta_row.get("notes"),
@@ -338,7 +339,7 @@ def _encounter_metadata(
             "mime_type": meta_row.get("attachment_mime_type"),
         },
     }
-    return metadata, metadata["patient_id"]
+    return metadata, patient_id
 
 
 def _encounter_sections(
