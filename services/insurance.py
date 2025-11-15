@@ -263,9 +263,10 @@ def _build_insurance_update_queries(
             updates.append(f"{column} = ?")
             params.append(new_value)
 
-    if record.data_source_id is not None and (
-        existing.data_source_id or 0
-    ) != record.data_source_id:
+    if (
+        record.data_source_id is not None
+        and (existing.data_source_id or 0) != record.data_source_id
+    ):
         updates.append("data_source_id = ?")
         params.append(record.data_source_id)
 

@@ -346,9 +346,7 @@ class DiagramBuilder:
         rel_lines, _ = self._render_relationship_section(
             title="Referenced by",
             edges=incoming,
-            layout=RelationshipLayout(
-                x=x, width=width, cursor=cursor, top_margin=gap
-            ),
+            layout=RelationshipLayout(x=x, width=width, cursor=cursor, top_margin=gap),
             formatter=self._format_incoming_label,
         )
         node_lines.extend(rel_lines)
@@ -449,16 +447,12 @@ class DiagramBuilder:
     @staticmethod
     def _format_outgoing_label(edge: EdgeSpec) -> str:
         """Return formatted text for outgoing relationships."""
-        return (
-            f"- {html.escape(edge.label)} \u2192 {html.escape(edge.target)}"
-        )
+        return f"- {html.escape(edge.label)} \u2192 {html.escape(edge.target)}"
 
     @staticmethod
     def _format_incoming_label(edge: EdgeSpec) -> str:
         """Return formatted text for incoming relationships."""
-        return (
-            f"- {html.escape(edge.source)} \u2190 {html.escape(edge.label)}"
-        )
+        return f"- {html.escape(edge.source)} \u2190 {html.escape(edge.label)}"
 
     def _anchor_point(
         self,

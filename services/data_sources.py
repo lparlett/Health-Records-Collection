@@ -197,6 +197,6 @@ def _coerce_optional_int(value: object) -> Optional[int]:
     if isinstance(value, str) and value.strip().isdigit():
         return int(value.strip())
     try:
-        return int(value)  # type: ignore[arg-type]
+        return int(str(value))  # type: ignore[arg-type]
     except (TypeError, ValueError):
         return None

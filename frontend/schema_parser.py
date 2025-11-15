@@ -30,6 +30,7 @@ class TableDefinition:
     columns: tuple[str, ...]
     foreign_keys: tuple[ForeignKey, ...]
 
+
 # pylint: disable=too-few-public-methods
 class SchemaParser:
     """Parse schema.sql into structured table and relationship metadata."""

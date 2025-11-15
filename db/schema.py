@@ -106,7 +106,7 @@ def ensure_encounter_schema(conn: sqlite3.Connection) -> None:
 
 
 def ensure_medication_constraints(conn: sqlite3.Connection) -> None:
-    """Enforce uniqueness of medications by patient, encounter, name, dose, 
+    """Enforce uniqueness of medications by patient, encounter, name, dose,
     and start date."""
     conn.execute(
         """
