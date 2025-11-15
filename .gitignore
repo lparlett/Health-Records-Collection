@@ -15,6 +15,7 @@ __pycache__/
 # Ignore logs
 logs/
 .coverage
+*.egg-info/
 
 # Ignore troubleshooting
 AI_tests_reports/

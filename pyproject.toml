@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=69.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "health-records-collection"
+version = "0.0.0"
+description = "Utilities for ingesting and visualizing consolidated health record data."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { file = "LICENSE" }
+authors = [
+  { name = "Lauren Parlett" }
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+  "black",
+  "pylint",
+  "bandit",
+  "mypy",
+  "coverage[toml]"
+]
+
+[tool.setuptools.packages.find]
+include = ["health_records_collection*"]
