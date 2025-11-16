@@ -1,16 +1,22 @@
 from __future__ import annotations
 
 from pathlib import Path
-import zipfile
 import hashlib
-
 import logging
-from unittest import mock
+import shutil
+import sqlite3
+import tempfile
+import unittest
+import zipfile
+from unittest.mock import patch
 
-import ingest
+from health_records_collection import ingest
+from health_records_collection.db.schema import ensure_schema
+from health_records_collection.tests import helpers
 
 
 def _create_sample_archive(tmp_path: Path, filename: str = "sample.zip") -> Path:
+    """Helper to create a sample archive for testing."""
     xml_content = """
     <ClinicalDocument xmlns="urn:hl7-org:v3">
       <recordTarget>
@@ -74,364 +80,284 @@ def _create_sample_archive(tmp_path: Path, filename: str = "sample.zip") -> Path
     return archive_path
 
 
-def test_ingest_archive_records_data_source(
-    tmp_path, schema_conn, monkeypatch
-) -> None:
-    archive_path = _create_sample_archive(tmp_path, "sample.zip")
+class TestIngest(unittest.TestCase):
+    """Test suite for ingest module."""
 
-    parsed_dir = tmp_path / "parsed"
-    raw_dir = tmp_path / "raw"
-    raw_dir.mkdir()
-    parsed_dir.mkdir()
+    def setUp(self) -> None:
+        """Set up temporary directory for ingest testing."""
+        self.tmp_path = Path(tempfile.mkdtemp())
 
-    db_path = tmp_path / "db" / "health_records.db"
+        # Create schema_conn for database testing
+        self.schema_conn = sqlite3.connect(":memory:")
+        self.schema_conn.execute("PRAGMA foreign_keys = ON;")
+        schema_path = Path(__file__).parent.parent / "schema.sql"
+        schema_sql = schema_path.read_text(encoding="utf-8")
+        self.schema_conn.executescript(schema_sql)
+        ensure_schema(self.schema_conn)
 
-    def _fake_load_paths():
-        return {
-            "raw_dir": raw_dir,
-            "parsed_dir": parsed_dir,
-            "db_path": db_path,
-        }
+    def tearDown(self) -> None:
+        """Clean up temporary directory and database connection after testing."""
+        # Close all log handlers to release file locks before cleanup
+        logger = logging.getLogger()
+        for handler in logger.handlers[:]:
+            handler.close()
+            logger.removeHandler(handler)
 
-    monkeypatch.setattr(ingest.settings, "load_paths", _fake_load_paths)
+        # Close database connection
+        if hasattr(self, "schema_conn"):
+            self.schema_conn.close()
 
-    ingest.ingest_archive(schema_conn, archive_path)
+        shutil.rmtree(self.tmp_path, ignore_errors=True)
 
-    ds_row = schema_conn.execute(
-        """
-        SELECT
-            ds.id,
-            ds.original_filename,
-            ds.source_archive_id,
-            ia.archive_name,
-            ia.ingest_count,
-            ds.document_created,
-            ds.repository_unique_id,
-            ds.document_hash,
-            ds.document_size,
-            ds.author_institution,
-            ds.attachment_id
-          FROM data_source ds
-          LEFT JOIN ingested_archive ia ON ds.source_archive_id = ia.id
-        """
-    ).fetchone()
-    assert ds_row is not None
-    (
-        data_source_id,
-        original_filename,
-        source_archive_id,
-        source_archive_name,
-        source_archive_ingest_count,
-        document_created,
-        repository_unique_id,
-        document_hash,
-        document_size,
-        author_institution,
-        ds_attachment_id,
-    ) = ds_row
-    assert original_filename == "DOC0001.XML"
-    assert source_archive_name == "sample.zip"
-    assert source_archive_id is not None
-    assert source_archive_ingest_count == 1
-    assert document_created == "2025-01-01T12:34:56Z"
-    assert repository_unique_id == "urn:repository:123"
-    assert document_hash == "abc123hash"
-    assert document_size == 512
-    assert author_institution == "Unit Test Hospital"
+    def test_ingest_archive_records_data_source(self) -> None:
+        """Test that ingest_archive records data_source."""
+        archive_path = _create_sample_archive(self.tmp_path, "sample.zip")
 
-    patient_row = schema_conn.execute(
-        "SELECT data_source_id FROM patient"
-    ).fetchone()
-    assert patient_row == (data_source_id,)
+        parsed_dir = self.tmp_path / "parsed"
+        raw_dir = self.tmp_path / "raw"
+        raw_dir.mkdir()
+        parsed_dir.mkdir()
 
-    patient_count = schema_conn.execute(
-        "SELECT COUNT(*) FROM patient"
-    ).fetchone()[0]
-    assert patient_count == 1
+        db_path = self.tmp_path / "db" / "health_records.db"
 
-    attachment_row = schema_conn.execute(
-        """
-        SELECT id, patient_id, file_path, data_source_id, mime_type
-          FROM attachment
-        """
-    ).fetchone()
-    assert attachment_row is not None
-    attachment_id, attachment_patient_id, attachment_path, attachment_ds_id, attachment_mime = attachment_row
-    assert attachment_patient_id == schema_conn.execute("SELECT id FROM patient").fetchone()[0]
-    assert attachment_path.endswith("DOC0001.XML")
-    assert attachment_ds_id == data_source_id
-    assert attachment_mime in ("text/xml", "application/xml")
-    assert ds_attachment_id == attachment_id
+        def _fake_load_paths():
+            return {
+                "raw_dir": raw_dir,
+                "parsed_dir": parsed_dir,
+                "db_path": db_path,
+            }
 
-    attachment_count = schema_conn.execute(
-        "SELECT COUNT(*) FROM attachment"
-    ).fetchone()[0]
-    assert attachment_count == 1
+        with patch.object(ingest.settings, "load_paths", _fake_load_paths):
+            ingest.ingest_archive(self.schema_conn, archive_path)
 
-    registry_row = schema_conn.execute(
-        """
-        SELECT id, archive_name, archive_sha256, ingest_count
-          FROM ingested_archive
-        """
-    ).fetchone()
-    assert registry_row is not None
-    archive_id, archive_name, archive_hash, ingest_count = registry_row
-    assert archive_name == "sample.zip"
-    assert ingest_count == 1
-    expected_hash = hashlib.sha256(archive_path.read_bytes()).hexdigest()
-    assert archive_hash == expected_hash
-    assert archive_id == source_archive_id
+        ds_row = self.schema_conn.execute(
+            """
+            SELECT
+                ds.id,
+                ds.original_filename,
+                ds.source_archive_id,
+                ia.archive_name,
+                ia.ingest_count,
+                ds.document_created,
+                ds.repository_unique_id,
+                ds.document_hash,
+                ds.document_size,
+                ds.author_institution,
+                ds.attachment_id
+              FROM data_source ds
+              LEFT JOIN ingested_archive ia ON ds.source_archive_id = ia.id
+            """
+        ).fetchone()
+        self.assertIsNotNone(ds_row)
+        ds_columns = (
+            "id",
+            "original_filename",
+            "source_archive_id",
+            "archive_name",
+            "archive_ingest_count",
+            "document_created",
+            "repository_unique_id",
+            "document_hash",
+            "document_size",
+            "author_institution",
+            "attachment_id",
+        )
+        ds_data = dict(zip(ds_columns, ds_row))
+        self.assertEqual(ds_data["original_filename"], "DOC0001.XML")
+        self.assertEqual(ds_data["archive_name"], "sample.zip")
+        self.assertIsNotNone(ds_data["source_archive_id"])
+        self.assertEqual(ds_data["archive_ingest_count"], 1)
+        self.assertEqual(ds_data["document_created"], "2025-01-01T12:34:56Z")
+        self.assertEqual(ds_data["repository_unique_id"], "urn:repository:123")
+        self.assertEqual(ds_data["document_hash"], "abc123hash")
+        self.assertEqual(ds_data["document_size"], 512)
+        self.assertEqual(ds_data["author_institution"], "Unit Test Hospital")
 
+        self.assertEqual(
+            self.schema_conn.execute("SELECT data_source_id FROM patient").fetchone(),
+            (ds_data["id"],),
+        )
+        self.assertEqual(
+            self.schema_conn.execute("SELECT COUNT(*) FROM patient").fetchone()[0], 1
+        )
 
-def test_ingest_archive_skips_duplicate_hash(
-    tmp_path, schema_conn, monkeypatch
-) -> None:
-    archive_path = _create_sample_archive(tmp_path, "duplicate.zip")
+        attachment_row = self.schema_conn.execute(
+            """
+            SELECT id, patient_id, file_path, data_source_id, mime_type
+              FROM attachment
+            """
+        ).fetchone()
+        self.assertIsNotNone(attachment_row)
+        attachment_columns = (
+            "id",
+            "patient_id",
+            "file_path",
+            "data_source_id",
+            "mime_type",
+        )
+        attachment_data = dict(zip(attachment_columns, attachment_row))
+        self.assertEqual(
+            attachment_data["patient_id"],
+            self.schema_conn.execute("SELECT id FROM patient").fetchone()[0],
+        )
+        self.assertTrue(attachment_data["file_path"].endswith("DOC0001.XML.enc"))
+        self.assertEqual(attachment_data["data_source_id"], ds_data["id"])
+        self.assertIn(
+            attachment_data["mime_type"],
+            ("application/octet-stream", "application/xml"),
+        )
+        self.assertEqual(ds_data["attachment_id"], attachment_data["id"])
+        self.assertEqual(
+            self.schema_conn.execute("SELECT COUNT(*) FROM attachment").fetchone()[0],
+            1,
+        )
 
-    parsed_dir = tmp_path / "parsed"
-    raw_dir = tmp_path / "raw"
-    raw_dir.mkdir()
-    parsed_dir.mkdir()
+        registry_row = self.schema_conn.execute(
+            """
+            SELECT id, archive_name, archive_sha256, ingest_count
+              FROM ingested_archive
+            """
+        ).fetchone()
+        self.assertIsNotNone(registry_row)
+        registry_columns = ("id", "archive_name", "archive_sha256", "ingest_count")
+        registry_data = dict(zip(registry_columns, registry_row))
+        self.assertEqual(registry_data["archive_name"], "sample.zip")
+        self.assertEqual(registry_data["ingest_count"], 1)
+        self.assertEqual(
+            registry_data["archive_sha256"],
+            hashlib.sha256(archive_path.read_bytes()).hexdigest(),
+        )
+        self.assertEqual(registry_data["id"], ds_data["source_archive_id"])
 
-    db_path = tmp_path / "db" / "records.db"
+    def test_ingest_archive_skips_duplicate_hash(self) -> None:
+        """Test that ingest_archive skips duplicate hash."""
+        archive_path = _create_sample_archive(self.tmp_path, "duplicate.zip")
 
-    def _fake_load_paths():
-        return {
-            "raw_dir": raw_dir,
-            "parsed_dir": parsed_dir,
-            "db_path": db_path,
-        }
+        parsed_dir = self.tmp_path / "parsed"
+        raw_dir = self.tmp_path / "raw"
+        raw_dir.mkdir()
+        parsed_dir.mkdir()
 
-    monkeypatch.setattr(ingest.settings, "load_paths", _fake_load_paths)
+        db_path = self.tmp_path / "db" / "records.db"
 
-    ingest.ingest_archive(schema_conn, archive_path)
+        def _fake_load_paths():
+            return {
+                "raw_dir": raw_dir,
+                "parsed_dir": parsed_dir,
+                "db_path": db_path,
+            }
 
-    ds_count, ingest_count = schema_conn.execute(
-        "SELECT COUNT(*), MAX(ingest_count) FROM data_source CROSS JOIN ingested_archive"
-    ).fetchone()
-    assert ds_count == 1
-    assert ingest_count == 1
+        with patch.object(ingest.settings, "load_paths", _fake_load_paths):
+            ingest.ingest_archive(self.schema_conn, archive_path)
 
-    ingest.ingest_archive(schema_conn, archive_path)
+            ds_count, ingest_count = self.schema_conn.execute(
+                "SELECT COUNT(*), MAX(ingest_count) FROM data_source "
+                "CROSS JOIN ingested_archive"
+            ).fetchone()
+            self.assertEqual(ds_count, 1)
+            self.assertEqual(ingest_count, 1)
 
-    ds_count_after = schema_conn.execute("SELECT COUNT(*) FROM data_source").fetchone()[0]
-    ingest_count_after = schema_conn.execute(
-        "SELECT ingest_count FROM ingested_archive WHERE archive_name = ?",
-        ("duplicate.zip",),
-    ).fetchone()[0]
-    assert ds_count_after == 1
-    assert ingest_count_after == 1
+            ingest.ingest_archive(self.schema_conn, archive_path)
 
-def test_ingest_archive_persists_allergies_and_insurance(
-    tmp_path,
-    schema_conn,
-    monkeypatch,
-) -> None:
-    xml_content = """
-    <ClinicalDocument xmlns="urn:hl7-org:v3"
-                      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-                      xmlns:sdtc="urn:hl7-org:sdtc">
-      <recordTarget>
-        <patientRole>
-          <patient>
-            <name>
-              <given>Alex</given>
-              <family>Smith</family>
-            </name>
-          </patient>
-        </patientRole>
-      </recordTarget>
-      <component>
-        <structuredBody>
-          <component>
-            <section>
-              <code code="48765-2"/>
-              <text>
-                <paragraph ID="allergyNote">Patient reported penicillin reaction.</paragraph>
-              </text>
-              <entry>
-                <act classCode="ACT" moodCode="EVN">
-                  <entryRelationship typeCode="SUBJ">
-                    <observation classCode="OBS" moodCode="EVN">
-                      <templateId root="2.16.840.1.113883.10.20.22.4.8"/>
-                      <statusCode code="active"/>
-                      <effectiveTime value="20250105"/>
-                      <value xsi:type="CD" code="70618" codeSystem="2.16.840.1.113883.6.88" displayName="Penicillin"/>
-                      <text>
-                        <reference value="#allergyNote"/>
-                      </text>
-                      <entryRelationship typeCode="SUBJ">
-                        <observation classCode="OBS" moodCode="EVN">
-                          <templateId root="2.16.840.1.113883.10.20.22.4.9"/>
-                          <value xsi:type="CD" code="39579001" displayName="Anaphylaxis"/>
-                        </observation>
-                      </entryRelationship>
-                      <author>
-                        <assignedAuthor>
-                          <assignedPerson>
-                            <name>Dr Allergy Tester</name>
-                          </assignedPerson>
-                        </assignedAuthor>
-                      </author>
-                    </observation>
-                  </entryRelationship>
-                </act>
-              </entry>
-            </section>
-          </component>
-          <component>
-            <section>
-              <code code="48768-6"/>
-              <text>
-                <list>
-                  <item ID="coverage100">Plan: BCBS PPO</item>
-                  <item ID="coverage100PlanName">BCBS PPO</item>
-                  <item ID="coverage100relToSub">Self</item>
-                </list>
-              </text>
-              <entry>
-                <act classCode="ACT" moodCode="EVN">
-                  <templateId root="2.16.840.1.113883.10.20.22.4.60"/>
-                  <id root="1.2.840.114350.1.13.470.2.7.2.678671" extension="816442"/>
-                  <code code="48768-6" displayName="Payment sources"/>
-                  <statusCode code="completed"/>
-                  <effectiveTime value="20240303"/>
-                  <entryRelationship typeCode="COMP">
-                    <act classCode="ACT" moodCode="EVN">
-                      <templateId root="2.16.840.1.113883.10.20.22.4.61"/>
-                      <id root="1.2.840.114350.1.13.470.2.7.3.678671.210" extension="1871VH"/>
-                      <code code="612" codeSystem="2.16.840.1.113883.3.221.5"/>
-                      <text>
-                        <reference value="#coverage100"/>
-                      </text>
-                      <statusCode code="completed"/>
-                      <performer typeCode="PRF">
-                        <assignedEntity>
-                          <id root="2.16.840.1.113883.6.300" extension="758"/>
-                          <representedOrganization>
-                            <name>BCBS PPO</name>
-                          </representedOrganization>
-                        </assignedEntity>
-                      </performer>
-                      <participant typeCode="COV">
-                        <participantRole>
-                          <id extension="WLU768M83547"/>
-                          <code codeSystem="2.16.840.1.113883.5.111">
-                            <originalText>Self<reference value="#coverage100relToSub"/></originalText>
-                          </code>
-                          <time>
-                            <low value="20200101000000"/>
-                            <high nullFlavor="NA"/>
-                          </time>
-                          <playingEntity>
-                            <name nullFlavor="NI"/>
-                            <sdtc:birthTime nullFlavor="UNK"/>
-                          </playingEntity>
-                        </participantRole>
-                      </participant>
-                      <entryRelationship typeCode="REFR">
-                        <act classCode="ACT" moodCode="DEF">
-                          <text>
-                            <reference value="#coverage100PlanName"/>
-                          </text>
-                        </act>
-                      </entryRelationship>
-                    </act>
-                  </entryRelationship>
-                </act>
-              </entry>
-            </section>
-          </component>
-        </structuredBody>
-      </component>
-    </ClinicalDocument>
-    """
+            ds_count_after = self.schema_conn.execute(
+                "SELECT COUNT(*) FROM data_source"
+            ).fetchone()[0]
+            ingest_count_after = self.schema_conn.execute(
+                "SELECT ingest_count FROM ingested_archive WHERE archive_name = ?",
+                ("duplicate.zip",),
+            ).fetchone()[0]
+            self.assertEqual(ds_count_after, 1)
+            self.assertEqual(ingest_count_after, 1)
 
-    archive_path = tmp_path / "sample_insurance.zip"
-    with zipfile.ZipFile(archive_path, "w") as zf:
-        zf.writestr("IHE_XDM/Alex/DOC0001.XML", xml_content)
+    def test_ingest_archive_persists_allergies_and_insurance(self) -> None:
+        """Test that ingest_archive persists allergies and insurance."""
+        xml_content = helpers.SAMPLE_INSURANCE_XML
 
-    parsed_dir = tmp_path / "parsed"
-    raw_dir = tmp_path / "raw"
-    raw_dir.mkdir()
-    parsed_dir.mkdir()
+        archive_path = self.tmp_path / "sample_insurance.zip"
+        with zipfile.ZipFile(archive_path, "w") as zf:
+            zf.writestr("IHE_XDM/Alex/DOC0001.XML", xml_content)
 
-    db_path = tmp_path / "db" / "health_records_ins.db"
+        parsed_dir = self.tmp_path / "parsed"
+        raw_dir = self.tmp_path / "raw"
+        raw_dir.mkdir()
+        parsed_dir.mkdir()
 
-    def _fake_load_paths():
-        return {
-            "raw_dir": raw_dir,
-            "parsed_dir": parsed_dir,
-            "db_path": db_path,
-        }
+        db_path = self.tmp_path / "db" / "health_records_ins.db"
 
-    monkeypatch.setattr(ingest.settings, "load_paths", _fake_load_paths)
+        def _fake_load_paths():
+            return {
+                "raw_dir": raw_dir,
+                "parsed_dir": parsed_dir,
+                "db_path": db_path,
+            }
 
-    ingest.ingest_archive(schema_conn, archive_path)
+        with patch.object(ingest.settings, "load_paths", _fake_load_paths):
+            ingest.ingest_archive(self.schema_conn, archive_path)
 
-    allergy_row = schema_conn.execute(
-        """
-        SELECT substance_code, status
-          FROM allergy
-        """
-    ).fetchone()
-    assert allergy_row == ("70618", "active")
+            allergy_row = self.schema_conn.execute(
+                """
+                SELECT substance_code, status
+                  FROM allergy
+                """
+            ).fetchone()
+            self.assertEqual(allergy_row, ("70618", "active"))
 
-    insurance_row = schema_conn.execute(
-        """
-        SELECT
-            payer_name,
-            payer_identifier,
-            plan_name,
-            group_number,
-            member_id,
-            subscriber_id,
-            relationship,
-            effective_date,
-            status
-          FROM insurance
-        """
-    ).fetchone()
-    assert insurance_row == (
-        "BCBS PPO",
-        "758",
-        "Plan: BCBS PPO",
-        "1871VH",
-        "WLU768M83547",
-        "WLU768M83547",
-        "Self",
-        "20200101000000",
-        "completed",
-    )
+            insurance_row = self.schema_conn.execute(
+                """
+                SELECT
+                    payer_name,
+                    payer_identifier,
+                    plan_name,
+                    group_number,
+                    member_id,
+                    subscriber_id,
+                    relationship,
+                    effective_date,
+                    status
+                  FROM insurance
+                """
+            ).fetchone()
+            self.assertEqual(
+                insurance_row,
+                (
+                    "BCBS PPO",
+                    "758",
+                    "Plan: BCBS PPO",
+                    "1871VH",
+                    "WLU768M83547",
+                    "WLU768M83547",
+                    "Self",
+                    "20200101000000",
+                    "completed",
+                ),
+            )
 
+    def test_configure_logging_respects_cli_options(self) -> None:
+        """Test that configure_logging respects CLI options."""
+        log_file = self.tmp_path / "ingest.log"
 
-def test_configure_logging_respects_cli_options(tmp_path, monkeypatch):
-    """Ensure CLI logging configuration respects verbosity settings."""
-    log_file = tmp_path / "ingest.log"
+        # Force existing handlers to make sure configure_logging replaces them.
+        root_logger = logging.getLogger()
+        root_logger.handlers.clear()
+        dummy_handler = logging.StreamHandler()
+        dummy_handler.setLevel(logging.CRITICAL)
+        root_logger.addHandler(dummy_handler)
 
-    # Force existing handlers to make sure configure_logging replaces them.
-    root_logger = logging.getLogger()
-    root_logger.handlers.clear()
-    dummy_handler = logging.StreamHandler()
-    dummy_handler.setLevel(logging.CRITICAL)
-    root_logger.addHandler(dummy_handler)
+        args = ingest.parse_args(["--log-level", "debug", "--log-file", str(log_file)])
+        self.assertEqual(args.log_level, "debug")
+        self.assertEqual(args.log_file, log_file)
 
-    args = ingest.parse_args(
-        ["--log-level", "debug", "--log-file", str(log_file)]
-    )
-    assert args.log_level == "debug"
-    assert args.log_file == log_file
+        ingest.configure_logging(args.log_level, args.log_file)
 
-    ingest.configure_logging(args.log_level, args.log_file)
+        logger = logging.getLogger("ingest")
+        logger.debug("debug message")
+        logger.info("info message")
+        logger.warning("warning message")
 
-    logger = logging.getLogger("ingest")
-    logger.debug("debug message")
-    logger.info("info message")
-    logger.warning("warning message")
-
-    # Stream handler (stderr) is harder to capture reliably; ensure file logging works.
-    assert log_file.exists()
-    contents = log_file.read_text(encoding="utf-8")
-    assert "debug message" in contents
-    assert "info message" in contents
-    assert "warning message" in contents
+        # Stream handler (stderr) is harder to capture reliably;
+        # ensure file logging works.
+        self.assertTrue(log_file.exists())
+        contents = log_file.read_text(encoding="utf-8")
+        self.assertIn("debug message", contents)
+        self.assertIn("info message", contents)
+        self.assertIn("warning message", contents)

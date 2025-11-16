@@ -1,0 +1,112 @@
+# Purpose: Enforce linting, static analysis, tests, and coverage reporting for Health-Records-Collection.
+# Author: Codex + Lauren
+# Date: 2025-10-29
+# Related tests: GitHub Actions lint-and-test job (pytest suite)
+# AI-assisted: Generated with AI support (GPT-5 Codex)
+name: Quality Checks
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - release/**
+      - feature/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+  id-token: write
+
+jobs:
+  lint-and-test:
+    name: Lint, Static Analysis, and Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Expose package import path
+        run: |
+          parent_dir="$(dirname "${GITHUB_WORKSPACE}")"
+          if [ ! -e "$parent_dir/health_records_collection" ]; then
+            ln -s "${GITHUB_WORKSPACE}" "$parent_dir/health_records_collection"
+          fi
+          if [ -n "$PYTHONPATH" ]; then
+            echo "PYTHONPATH=$parent_dir:$PYTHONPATH" >> "${GITHUB_ENV}"
+          else
+            echo "PYTHONPATH=$parent_dir" >> "${GITHUB_ENV}"
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: |
+            requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e .
+          pip install black pylint bandit mypy "coverage[toml]"
+
+      - name: Check formatting with Black
+        run: black --check --diff --exclude '/(\.venv|\.git|build|dist|data|db|docs\/_build)/' .
+
+      - name: Lint with pylint
+        run: |
+          pylint \
+            db \
+            parsers \
+            frontend \
+            security \
+            services \
+            *.py
+
+      - name: Type check with mypy
+        run: |
+          if [ -d health_records_collection ] && [ -f health_records_collection/mypy.ini ]; then
+            TARGET="health_records_collection"
+            CONFIG="health_records_collection/mypy.ini"
+          elif [ -d ../health_records_collection ] && [ -f ../health_records_collection/mypy.ini ]; then
+            TARGET="../health_records_collection"
+            CONFIG="../health_records_collection/mypy.ini"
+          else
+            TARGET="."
+            CONFIG="mypy.ini"
+          fi
+          echo "Running mypy on ${TARGET} using config ${CONFIG}"
+          mypy --install-types --non-interactive --exclude 'tests|.venv' --config-file "${CONFIG}" "${TARGET}"
+
+      - name: Run Bandit security scan
+        run: |
+          if [ ! -d .git ] && [ -d health_records_collection/.git ]; then
+            cd health_records_collection
+          elif [ ! -d .git ] && [ -d ../health_records_collection/.git ]; then
+            cd ../health_records_collection
+          fi
+          bandit -r parsers services frontend db security ingest.py -x tests,.venv
+
+      - name: Run tests with coverage
+        run: |
+          if [ ! -d .git ] && [ -d health_records_collection/.git ]; then
+            cd health_records_collection
+          elif [ ! -d .git ] && [ -d ../health_records_collection/.git ]; then
+            cd ../health_records_collection
+          fi
+          coverage run -m pytest
+          coverage xml
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: ./coverage.xml
+          flags: unit
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: true

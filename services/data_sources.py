@@ -12,11 +12,24 @@ import logging
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
+from dataclasses import dataclass
 from typing import Optional
 
 __all__ = ["upsert_data_source", "link_attachment"]
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class NormalizedMetadata:
+    """Structured metadata fields for a data source record."""
+
+    document_created: Optional[str]
+    repository_unique_id: Optional[str]
+    document_hash: Optional[str]
+    document_size: Optional[int]
+    author_institution: Optional[str]
+    attachment_id: Optional[int]
 
 
 def upsert_data_source(
@@ -32,6 +45,14 @@ def upsert_data_source(
         conn: Active SQLite connection with foreign keys enabled.
         file_path: Path to the CCD XML file being persisted.
         archive_id: Optional ingested_archive primary key for the containing archive.
+        metadata: Optional additional metadata dictionary with any of the
+            following keys:
+            - document_created: str | None
+            - repository_unique_id: str | None
+            - document_hash: str | None
+            - document_size: int | None
+            - author_institution: str | None
+            - attachment_id: int | None
 
     Returns:
         int: The primary key of the corresponding `data_source` row.
@@ -40,48 +61,10 @@ def upsert_data_source(
         sqlite3.DatabaseError: If persistence fails.
         OSError: If the file cannot be read to compute its hash.
     """
-    try:
-        file_bytes = file_path.read_bytes()
-    except OSError as exc:
-        logger.warning("Unable to read %s for provenance: %s", file_path, exc)
-        raise
-
-    file_sha256 = hashlib.sha256(file_bytes).hexdigest()
-    ingested_at = (
-        datetime.now(timezone.utc)
-        .replace(microsecond=0)
-        .isoformat()
-        .replace("+00:00", "Z")
-    )
-
-    curated_archive_id = int(archive_id) if archive_id is not None else None
-    metadata = metadata or {}
-    document_created = metadata.get("document_created")
-    repository_unique_id = metadata.get("repository_unique_id")
-    document_hash = metadata.get("document_hash")
-    document_size = metadata.get("document_size")
-    author_institution = metadata.get("author_institution")
-    attachment_metadata_id = metadata.get("attachment_id")
-    if isinstance(document_size, str) and document_size.isdigit():
-        document_size = int(document_size)
-    elif not isinstance(document_size, int):
-        document_size = None
-    if attachment_metadata_id is not None:
-        try:
-            attachment_metadata_id = int(attachment_metadata_id)
-        except (TypeError, ValueError):
-            attachment_metadata_id = None
-
-    document_created_text = (
-        str(document_created) if document_created is not None else None
-    )
-    repository_unique_id_text = (
-        str(repository_unique_id) if repository_unique_id is not None else None
-    )
-    document_hash_text = str(document_hash) if document_hash is not None else None
-    author_institution_text = (
-        str(author_institution) if author_institution is not None else None
-    )
+    file_sha256 = _compute_file_hash(file_path)
+    ingested_at = _current_ingested_timestamp()
+    curated_archive_id = _coerce_optional_int(archive_id)
+    normalized_metadata = _normalize_metadata(metadata or {})
 
     cur = conn.cursor()
     cur.execute(
@@ -100,12 +83,20 @@ def upsert_data_source(
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(file_sha256) DO UPDATE SET
             original_filename = excluded.original_filename,
-            source_archive_id = COALESCE(excluded.source_archive_id, data_source.source_archive_id),
-            document_created = COALESCE(excluded.document_created, data_source.document_created),
-            repository_unique_id = COALESCE(excluded.repository_unique_id, data_source.repository_unique_id),
+            source_archive_id = COALESCE(
+                excluded.source_archive_id, data_source.source_archive_id
+            ),
+            document_created = COALESCE(
+                excluded.document_created, data_source.document_created
+            ),
+            repository_unique_id = COALESCE(
+                excluded.repository_unique_id, data_source.repository_unique_id
+            ),
             document_hash = COALESCE(excluded.document_hash, data_source.document_hash),
             document_size = COALESCE(excluded.document_size, data_source.document_size),
-            author_institution = COALESCE(excluded.author_institution, data_source.author_institution),
+            author_institution = COALESCE(
+                excluded.author_institution, data_source.author_institution
+            ),
             attachment_id = COALESCE(data_source.attachment_id, excluded.attachment_id)
         """,
         (
@@ -113,12 +104,12 @@ def upsert_data_source(
             ingested_at,
             file_sha256,
             curated_archive_id,
-            document_created_text,
-            repository_unique_id_text,
-            document_hash_text,
-            document_size,
-            author_institution_text,
-            attachment_metadata_id,
+            normalized_metadata.document_created,
+            normalized_metadata.repository_unique_id,
+            normalized_metadata.document_hash,
+            normalized_metadata.document_size,
+            normalized_metadata.author_institution,
+            normalized_metadata.attachment_id,
         ),
     )
 
@@ -151,6 +142,61 @@ def link_attachment(
     )
     if cur.rowcount != 1:
         raise sqlite3.DatabaseError(
-            f"Unable to link attachment {attachment_id} to data_source {data_source_id}."
+            f"Unable to link attachment {attachment_id} to "
+            f"data_source {data_source_id}."
         )
     conn.commit()
+
+
+def _compute_file_hash(file_path: Path) -> str:
+    """Return SHA-256 hash of the file contents."""
+    try:
+        file_bytes = file_path.read_bytes()
+    except OSError as exc:
+        logger.warning("Unable to read %s for provenance: %s", file_path, exc)
+        raise
+    return hashlib.sha256(file_bytes).hexdigest()
+
+
+def _current_ingested_timestamp() -> str:
+    """Return the current UTC timestamp formatted for storage."""
+    return (
+        datetime.now(timezone.utc)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
+
+
+def _normalize_metadata(raw: dict[str, object]) -> NormalizedMetadata:
+    """Return sanitized metadata fields."""
+    return NormalizedMetadata(
+        document_created=_optional_str(raw.get("document_created")),
+        repository_unique_id=_optional_str(raw.get("repository_unique_id")),
+        document_hash=_optional_str(raw.get("document_hash")),
+        document_size=_coerce_optional_int(raw.get("document_size")),
+        author_institution=_optional_str(raw.get("author_institution")),
+        attachment_id=_coerce_optional_int(raw.get("attachment_id")),
+    )
+
+
+def _optional_str(value: object) -> Optional[str]:
+    """Return a stripped string or None."""
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _coerce_optional_int(value: object) -> Optional[int]:
+    """Return integer value when possible; otherwise None."""
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.strip().isdigit():
+        return int(value.strip())
+    try:
+        return int(str(value))  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None

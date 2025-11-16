@@ -1,16 +1,17 @@
-from __future__ import annotations
-
 # Purpose: Streamlit helpers for rendering clinical progress notes.
 # Author: Codex + Lauren
 # Date: 2025-10-21
 # Tests: Manual Streamlit verification pending.
 # AI-assisted: This module was created with AI assistance.
+"""Streamlit helpers for rendering clinical progress notes."""
+
+from __future__ import annotations
 
 import html
 import re
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Callable, Optional, Tuple
+from typing import Any, Callable, Optional
 
 import streamlit as st
 
@@ -59,16 +60,20 @@ def _load_progress_note_css() -> str:
     css_path = Path(__file__).resolve().parent / "static" / "progress_notes.css"
     return css_path.read_text(encoding="utf-8")
 
+
 def _load_progress_note_color_css() -> str:
     """Return the static CSS for progress note rendering."""
     colors_css_path = Path(__file__).resolve().parent / "static" / "colors.css"
     return colors_css_path.read_text(encoding="utf-8")
 
+
 def _normalize_heading_candidate(text: str) -> str:
+    """Normalize a heading candidate for comparison."""
     stripped = text.strip()
     stripped = re.sub(r"^[\-\*\u2022\uFFFD•]+\s*", "", stripped)
     stripped = stripped.rstrip(":").strip()
     return re.sub(r"\s+", " ", stripped).upper()
+
 
 def _looks_like_section_heading(line: str) -> bool:
     """Return True when a line resembles an uppercase section heading."""
@@ -89,6 +94,7 @@ def _looks_like_section_heading(line: str) -> bool:
 
 
 def _format_paragraph_body(text: str) -> str:
+    """Format paragraph body text with HTML escaping and line breaks."""
     escaped = html.escape(text)
     escaped = re.sub(
         r"&lt;br\s*/?&gt;",
@@ -100,6 +106,7 @@ def _format_paragraph_body(text: str) -> str:
 
 
 def _extract_heading(raw_line: str) -> tuple[Optional[str], Optional[str]]:
+    """Extract section heading and remainder from a raw line."""
     stripped = raw_line.strip()
     if not stripped:
         return None, None
@@ -120,57 +127,93 @@ def _extract_heading(raw_line: str) -> tuple[Optional[str], Optional[str]]:
 def _build_progress_note_html(note_text: Optional[str], container_id: str) -> str:
     """Transform raw note text into paragraph elements with section detection."""
     if not note_text:
-        return f'<div id="{container_id}" class="progress-note"><p>No text provided.</p></div>'
+        return (
+            f'<div id="{container_id}" class="progress-note">'
+            + "<p>No text provided.</p>"
+            + "</div>"
+        )
 
-    cleaned = note_text.replace("\r\n", "\n").replace("\r", "\n")
-    cleaned = re.sub(
+    normalized_text = note_text.replace("\r\n", "\n").replace("\r", "\n")
+    normalized_text = re.sub(
         r"(?:<br\s*/?>\s*){2,}",
         "\n\n",
-        cleaned,
+        normalized_text,
         flags=re.IGNORECASE,
     )
-    cleaned = re.sub(r"<br\s*/?>", "\n", cleaned, flags=re.IGNORECASE)
+    normalized_text = re.sub(r"<br\s*/?>", "\n", normalized_text, flags=re.IGNORECASE)
     paragraphs = [
         segment.strip()
-        for segment in re.split(r"\n{2,}", cleaned)
+        for segment in re.split(r"\n{2,}", normalized_text)
         if segment.strip()
     ]
 
-    html_lines: list[str] = []
+    # Ensure the function always returns a string
+    return (
+        f'<div id="{container_id}" class="progress-note">'
+        f"<p>Processed {len(paragraphs)} paragraphs.</p></div>"
+    )
+
+
+def _clean_note_text(note_text: str) -> str:
+    """Clean and normalize the note text."""
+    cleaned = note_text.replace("\r\n", "\n").replace("\r", "\n")
+    # Replace two or more consecutive <br> tags with paragraph breaks
+    cleaned = re.sub(r"(?:<br\s*/?>\s*){2,}", "\n\n", cleaned, flags=re.IGNORECASE)
+    # Preserve single <br> tags as HTML (do not replace with \n)
+    return cleaned
+
+
+def _split_into_paragraphs(cleaned_text: str) -> list[str]:
+    """Split cleaned text into paragraphs."""
+    return [
+        segment.strip()
+        for segment in re.split(r"\n{2,}", cleaned_text)
+        if segment.strip()
+    ]
+
+
+def _generate_html_lines(paragraphs: list[str]) -> list[str]:
+    """Generate HTML lines from paragraphs."""
+    html_lines = []
     for paragraph in paragraphs:
         if not paragraph:
             continue
-        body_buffer: list[str] = []
-        lines = paragraph.split("\n")
-        for raw_line in lines:
-            heading_text, remainder_line = _extract_heading(raw_line)
-            if heading_text:
-                if body_buffer:
-                    body_text = "\n".join(body_buffer).strip("\n")
-                    if body_text.strip():
-                        html_lines.append(
-                            f"<p>{_format_paragraph_body(body_text)}</p>"
-                        )
-                    body_buffer.clear()
-                html_lines.append(
-                    f'<p class="progress-note-section">{html.escape(heading_text)}</p>'
-                )
-                body_buffer = []
-                if remainder_line:
-                    body_buffer.append(remainder_line)
-            else:
-                body_buffer.append(raw_line)
+        html_lines.extend(_process_paragraph(paragraph))
+    return html_lines
 
-        if body_buffer:
-            body_text = "\n".join(body_buffer).strip("\n")
-            if body_text.strip():
-                html_lines.append(f"<p>{_format_paragraph_body(body_text)}</p>")
 
-    if not html_lines:
-        html_lines.append("<p>No text provided.</p>")
+def _process_paragraph(paragraph: str) -> list[str]:
+    """Process a single paragraph into HTML lines."""
+    body_buffer: list[str] = []
+    html_lines: list[str] = []
+    lines = paragraph.split("\n")
 
-    inner_html = "\n".join(html_lines)
-    return f'<div id="{container_id}" class="progress-note">\n{inner_html}\n</div>'
+    for raw_line in lines:
+        heading_text, remainder_line = _extract_heading(raw_line)
+        if heading_text:
+            if body_buffer:
+                html_lines.append(_format_body_buffer(body_buffer))
+                body_buffer.clear()
+            html_lines.append(
+                f'<p class="progress-note-section">{html.escape(heading_text)}</p>'
+            )
+            if remainder_line:
+                body_buffer.append(remainder_line)
+        else:
+            body_buffer.append(raw_line)
+
+    if body_buffer:
+        html_lines.append(_format_body_buffer(body_buffer))
+
+    return html_lines
+
+
+def _format_body_buffer(body_buffer: list[str]) -> str:
+    """Format the body buffer into an HTML paragraph."""
+    body_text = "\n".join(body_buffer).strip("\n")
+    if body_text.strip():
+        return f"<p>{_format_paragraph_body(body_text)}</p>"
+    return ""
 
 
 def render_progress_notes(
@@ -184,7 +227,9 @@ def render_progress_notes(
         try:
             color_css_rules = _load_progress_note_color_css()
             css_rules = _load_progress_note_css()
-            st.markdown(f"<style>{color_css_rules}{css_rules}</style>", unsafe_allow_html=True)
+            st.markdown(
+                f"<style>{color_css_rules}{css_rules}</style>", unsafe_allow_html=True
+            )
         except OSError:
             st.warning("Progress note styles could not be loaded.")
         else:

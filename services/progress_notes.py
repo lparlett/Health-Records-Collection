@@ -10,18 +10,37 @@ from __future__ import annotations
 
 import hashlib
 import sqlite3
-from typing import Mapping, Sequence, Tuple
+from dataclasses import dataclass
+from typing import Mapping, Optional, Sequence, Tuple
 
-from services.common import clean_str, coerce_int
-from services.encounters import find_encounter_id
-from services.providers import get_or_create_provider
+from health_records_collection.services.common import clean_str, coerce_int
+from health_records_collection.services.encounters import (
+    EncounterLookup,
+    find_encounter_id,
+)
+from health_records_collection.services.providers import get_or_create_provider
 
 __all__ = ["insert_progress_notes"]
 
 
+@dataclass
+class ProgressNoteRecord:
+    """Normalized progress note data ready for persistence."""
+
+    patient_id: int
+    encounter_id: Optional[int]
+    provider_id: Optional[int]
+    title: Optional[str]
+    note_datetime: Optional[str]
+    text: str
+    note_hash: str
+    source_note_id: Optional[str]
+    data_source_id: Optional[int]
+
+
 def _hash_text(value: str) -> str:
     """Return a SHA1 hash for duplicate detection."""
-    return hashlib.sha1(value.encode("utf-8")).hexdigest()
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
 def insert_progress_notes(
@@ -47,32 +66,9 @@ def insert_progress_notes(
     duplicates = 0
 
     for note in notes:
-        raw_text = clean_str(note.get("text"))
-        if not raw_text:
+        record = _build_progress_note_record(conn, patient_id, note)
+        if record is None:
             continue
-
-        note_hash = _hash_text(raw_text)
-        provider_name = clean_str(note.get("provider"))
-        provider_id = get_or_create_provider(conn, provider_name) if provider_name else None
-
-        encounter_hint = (
-            clean_str(note.get("encounter_date"))
-            or clean_str(note.get("note_datetime"))
-        )
-        encounter_id = find_encounter_id(
-            conn,
-            patient_id,
-            encounter_date=encounter_hint,
-            provider_name=provider_name,
-            provider_id=provider_id,
-            source_encounter_id=clean_str(note.get("encounter_source_id")),
-        )
-
-        title = clean_str(note.get("title"))
-        note_datetime = clean_str(note.get("note_datetime"))
-        source_note_id = clean_str(note.get("source_id"))
-
-        ds_id = coerce_int(note.get("data_source_id"))
 
         cur.execute(
             """
@@ -89,39 +85,104 @@ def insert_progress_notes(
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                patient_id,
-                encounter_id,
-                provider_id,
-                title,
-                note_datetime,
-                raw_text,
-                note_hash,
-                source_note_id,
-                ds_id,
+                record.patient_id,
+                record.encounter_id,
+                record.provider_id,
+                record.title,
+                record.note_datetime,
+                record.text,
+                record.note_hash,
+                record.source_note_id,
+                record.data_source_id,
             ),
         )
         if cur.rowcount == 1:
             inserted += 1
         else:
             duplicates += 1
-            if ds_id is not None:
-                cur.execute(
-                    """
-                    UPDATE progress_note
-                       SET data_source_id = COALESCE(data_source_id, ?)
-                     WHERE patient_id = ?
-                       AND COALESCE(encounter_id, -1) = COALESCE(?, -1)
-                       AND COALESCE(provider_id, -1) = COALESCE(?, -1)
-                       AND note_hash = ?
-                    """,
-                    (
-                        ds_id,
-                        patient_id,
-                        encounter_id,
-                        provider_id,
-                        note_hash,
-                    ),
-                )
+            _update_existing_note(cur, record)
 
     conn.commit()
     return inserted, duplicates
+
+
+def _build_progress_note_record(
+    conn: sqlite3.Connection,
+    patient_id: int,
+    note: Mapping[str, object],
+) -> Optional[ProgressNoteRecord]:
+    """Normalize a raw note entry into a record."""
+    raw_text = clean_str(note.get("text"))
+    if not raw_text:
+        return None
+
+    note_hash = _hash_text(raw_text)
+    provider_name = clean_str(note.get("provider"))
+    provider_id = get_or_create_provider(conn, provider_name) if provider_name else None
+
+    encounter_hint = clean_str(note.get("encounter_date")) or clean_str(
+        note.get("note_datetime")
+    )
+    encounter_id = _resolve_encounter(
+        conn,
+        patient_id,
+        encounter_hint,
+        provider_name,
+        provider_id,
+    )
+
+    return ProgressNoteRecord(
+        patient_id=patient_id,
+        encounter_id=encounter_id,
+        provider_id=provider_id,
+        title=clean_str(note.get("title")),
+        note_datetime=clean_str(note.get("note_datetime")),
+        text=raw_text,
+        note_hash=note_hash,
+        source_note_id=clean_str(note.get("source_id")),
+        data_source_id=coerce_int(note.get("data_source_id")),
+    )
+
+
+def _resolve_encounter(
+    conn: sqlite3.Connection,
+    patient_id: int,
+    encounter_hint: Optional[str],
+    provider_name: Optional[str],
+    provider_id: Optional[int],
+) -> Optional[int]:
+    """Return encounter id based on note metadata."""
+    lookup = EncounterLookup(
+        patient_id=patient_id,
+        encounter_date=encounter_hint,
+        provider_name=provider_name,
+        provider_id=provider_id,
+    )
+    return find_encounter_id(conn, lookup)
+
+
+def _update_existing_note(
+    cur: sqlite3.Cursor,
+    record: ProgressNoteRecord,
+) -> None:
+    """Update existing progress note with missing data source id."""
+    if record.data_source_id is None:
+        return
+
+    cur.execute(
+        """
+        UPDATE progress_note
+           SET data_source_id = COALESCE(data_source_id, ?)
+         WHERE patient_id = ?
+           AND COALESCE(encounter_id, -1) = COALESCE(?, -1)
+           AND COALESCE(provider_id, -1) = COALESCE(?, -1)
+           AND note_hash = ?
+        """,
+        (
+            record.data_source_id,
+            record.patient_id,
+            record.encounter_id,
+            record.provider_id,
+            record.note_hash,
+        ),
+    )

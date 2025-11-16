@@ -1,16 +1,39 @@
-from pathlib import Path
+# Purpose: Provide SQLCipher-backed database helpers for the frontend.
+# Author: Codex + Lauren
+# Date: 2025-10-29
+# Tests: tests/test_db_utils.py
+# AI-assisted: Module updated with AI assistance.
+"""Helpers for working with the encrypted application database."""
 
+from __future__ import annotations
+
+import logging
 import sqlite3
+from pathlib import Path
+from typing import Any, TypeAlias, cast, TYPE_CHECKING
 
-import pandas as pd
-import yaml
+import pandas as pd  # type: ignore
+import sqlcipher3.dbapi2 as sqlcipher  # type: ignore
+import yaml  # type: ignore
 
-from db.schema import ensure_schema
-import settings
+from health_records_collection.db.schema import ensure_schema
+from health_records_collection import settings
+from health_records_collection.security import sqlcipher_support
+
+if TYPE_CHECKING:
+    # This block is only used for type checking
+    from sqlite3 import Connection as SQLite3Connection
+
+    SQLCipherConnection = SQLite3Connection
+else:
+    # Runtime definition
+    SQLCipherConnection: TypeAlias = sqlite3.Connection
+
+logger = logging.getLogger(__name__)
 
 # Load config
 CONFIG_PATH = Path(__file__).parent / "config.yaml"
-with open(CONFIG_PATH, "r") as f:
+with open(CONFIG_PATH, "r", encoding="utf-8") as f:
     CONFIG = yaml.safe_load(f)
 
 DEFAULT_DB_PATH = Path(CONFIG["db_path"]).expanduser()
@@ -20,12 +43,16 @@ SCHEMA_SQL_PATH = Path(__file__).resolve().parents[1] / "schema.sql"
 def _resolve_db_path() -> Path:
     try:
         paths = settings.load_paths()
-        return paths["db_path"]
-    except Exception:  # pragma: no cover - defensive fallback
+        db_path = paths["db_path"]
+        return Path(db_path) if not isinstance(db_path, Path) else db_path
+    except (KeyError, FileNotFoundError, yaml.YAMLError):  # pragma: defensive fallback
+        # KeyError: Missing db_path in settings
+        # FileNotFoundError: Settings file not found
+        # YAMLError: Invalid YAML format
         return DEFAULT_DB_PATH
 
 
-def _database_has_patient_table(conn: sqlite3.Connection) -> bool:
+def _database_has_patient_table(conn: Any) -> bool:
     query = (
         "SELECT 1 FROM sqlite_master "
         "WHERE type = 'table' AND name = 'patient' LIMIT 1"
@@ -33,7 +60,7 @@ def _database_has_patient_table(conn: sqlite3.Connection) -> bool:
     return conn.execute(query).fetchone() is not None
 
 
-def _ensure_database_ready(conn: sqlite3.Connection) -> None:
+def _ensure_database_ready(conn: Any) -> None:
     """Create base schema when the database file is empty."""
     # AI-assisted change: bootstrap schema for fresh database files.
     if _database_has_patient_table(conn):
@@ -52,31 +79,108 @@ def _ensure_database_ready(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
-def get_connection(db_path: Path | str | None = None):
+def _open_encrypted_connection(
+    db_path: Path, *, passphrase: str
+) -> SQLCipherConnection:
+    """Return an SQLCipher connection initialised with hardening pragmas."""
+    conn = cast(
+        SQLCipherConnection,
+        sqlcipher.Connection(str(db_path)),  # pylint: disable=no-member
+    )
+    sqlcipher_support.configure_connection(conn, passphrase)
+    return conn
+
+
+def get_connection(
+    db_path: Path | str | None = None, *, passphrase: str | None = None
+) -> Any:
+    """
+    Return an SQLCipher-encrypted database connection, ensuring schema exists.
+
+    Args:
+        db_path: Explicit path to the database file. Defaults to configured path.
+        passphrase: Optional SQLCipher passphrase override. When omitted, the
+            value is sourced via `security.sqlcipher_support.get_passphrase()`.
+
+    Returns:
+        An initialised SQLCipher connection ready for use.
+
+    Raises:
+        RuntimeError: If the connection cannot be unlocked with the passphrase.
+    """
     if db_path is None:
         db_path = _resolve_db_path()
-    conn = sqlite3.connect(str(db_path))
+    db_path = Path(db_path)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if passphrase:
+        key = sqlcipher_support.cache_passphrase(passphrase)
+    else:
+        key = sqlcipher_support.get_passphrase()
+    try:
+        conn = _open_encrypted_connection(db_path, passphrase=key)
+    except sqlite3.DatabaseError as exc:  # pragma: no cover - defensive
+        logger.error("Unable to unlock encrypted database %s: %s", db_path, exc)
+        raise RuntimeError("Invalid SQLCipher passphrase supplied.") from exc
+
     _ensure_database_ready(conn)
     return conn
 
 
-def list_tables(conn):
+def list_tables(conn: SQLCipherConnection) -> list[str]:
+    """List all table names in the database."""
     query = "SELECT name FROM sqlite_master WHERE type='table';"
     return [row[0] for row in conn.execute(query).fetchall()]
 
 
-def get_table_preview(conn, table_name, limit=None):
-    if limit is None:
-        limit = CONFIG["default_row_limit"]
-    query = f"SELECT * FROM {table_name} LIMIT {limit};"
-    return pd.read_sql(query, conn)
+def get_table_preview(
+    conn: SQLCipherConnection, table_name: str, limit: int | None = None
+) -> pd.DataFrame:
+    """Get a preview of table contents with SQL injection protection.
+
+    Args:
+        conn: Database connection
+        table_name: Name of the table to preview (must be a valid SQL identifier)
+        limit: Maximum number of rows to return, defaults to CONFIG["default_row_limit"]
+
+    Returns:
+        DataFrame containing the table preview
+
+    Raises:
+        ValueError: If table_name is not a valid SQL identifier
+    """
+    # Validate table name is a safe identifier
+    if not (table_name.isidentifier() and table_name.isascii()):
+        raise ValueError("Invalid table name")
+
+    # Check if table exists to prevent SQL injection
+    table_names = [
+        row[0]
+        for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()
+    ]
+    if table_name not in table_names:
+        raise ValueError(f"Table '{table_name}' does not exist")
+
+    # Ensure we have a valid integer limit
+    row_limit = CONFIG["default_row_limit"] if limit is None else limit
+    if not isinstance(row_limit, int) or row_limit < 1:
+        raise ValueError("Limit must be a positive integer")
+
+    # Table name is now verified to exist and be safe
+    query = f"SELECT * FROM {table_name} LIMIT ?"  # nosec B608
+    return pd.read_sql(query, conn, params=(row_limit,))
 
 
-def run_query(conn, sql):
+def run_query(conn: SQLCipherConnection, sql: str) -> pd.DataFrame:
+    """Run an arbitrary SQL query and return the results as a DataFrame."""
     return pd.read_sql(sql, conn)
 
 
-def _format_person_name(primary, given, family, fallback_label):
+def _format_person_name(
+    primary: str | None, given: str | None, family: str | None, fallback_label: str
+) -> str:
     """Return a human friendly display name with sensible fallbacks."""
     for value in (primary,):
         if isinstance(value, str):
@@ -94,15 +198,13 @@ def _format_person_name(primary, given, family, fallback_label):
     return fallback_label
 
 
-def get_patients(conn):
+def get_patients(conn: SQLCipherConnection) -> pd.DataFrame:
     """Return a DataFrame of patients with a display name column."""
-    query = (
-        """
+    query = """
         SELECT id, given_name, family_name, birth_date
           FROM patient
          ORDER BY COALESCE(family_name, ''), COALESCE(given_name, ''), id
         """
-    )
     df = pd.read_sql(query, conn)
     if df.empty:
         df["display_name"] = []
@@ -122,10 +224,9 @@ def get_patients(conn):
     return df[cols]
 
 
-def get_patient_encounters(conn, patient_id):
+def get_patient_encounters(conn: SQLCipherConnection, patient_id: int) -> pd.DataFrame:
     """Fetch encounter summary data for a patient."""
-    encounters_query = (
-        """
+    encounters_query = """
         SELECT e.id AS encounter_id,
                e.encounter_date,
                e.encounter_type,
@@ -138,7 +239,6 @@ def get_patient_encounters(conn, patient_id):
          WHERE e.patient_id = ?
          ORDER BY COALESCE(e.encounter_date, '' ) DESC, e.id DESC
         """
-    )
     encounters = pd.read_sql(encounters_query, conn, params=(patient_id,))
     if encounters.empty:
         encounters["provider_display_name"] = []
@@ -156,19 +256,25 @@ def get_patient_encounters(conn, patient_id):
     return encounters
 
 
-def _fetch_records(conn, query, params, drop=None):
+def _fetch_records(
+    conn: SQLCipherConnection,
+    query: str,
+    params: tuple,
+    drop: list[str] | None = None,
+) -> list[dict[str, Any]]:
     df = pd.read_sql(query, conn, params=params)
     if df.empty:
         return []
     if drop:
         df = df.drop(columns=drop)
-    return df.to_dict("records")
+    return cast("list[dict[str, Any]]", df.to_dict("records"))
 
 
-def get_encounter_detail(conn, encounter_id):
-    """Return a dictionary containing the complete encounter detail."""
-    meta_query = (
-        """
+def _encounter_metadata(
+    conn: SQLCipherConnection, encounter_id: int
+) -> tuple[dict[str, Any], int]:
+    """Fetch metadata details for an encounter."""
+    meta_query = """
         SELECT e.id AS encounter_id,
                e.patient_id,
                e.encounter_date,
@@ -198,15 +304,13 @@ def get_encounter_detail(conn, encounter_id):
           LEFT JOIN attachment a ON ds.attachment_id = a.id
          WHERE e.id = ?
         """
-    )
     meta_df = pd.read_sql(meta_query, conn, params=(encounter_id,))
     if meta_df.empty:
         raise ValueError(f"Encounter {encounter_id} not found.")
 
     meta_row = meta_df.iloc[0].to_dict()
     patient_id = int(meta_row["patient_id"])
-
-    metadata = {
+    metadata: dict[str, Any] = {
         "encounter_id": encounter_id,
         "patient_id": patient_id,
         "encounter_date": meta_row.get("encounter_date"),
@@ -224,7 +328,9 @@ def get_encounter_detail(conn, encounter_id):
             "source_archive_id": meta_row.get("source_archive_id"),
             "source_archive": meta_row.get("source_archive"),
             "source_archive_ingest_count": meta_row.get("source_archive_ingest_count"),
-            "source_archive_last_ingested_at": meta_row.get("source_archive_last_ingested_at"),
+            "source_archive_last_ingested_at": meta_row.get(
+                "source_archive_last_ingested_at"
+            ),
             "document_created": meta_row.get("document_created"),
             "repository_unique_id": meta_row.get("repository_unique_id"),
             "document_hash": meta_row.get("document_hash"),
@@ -237,106 +343,93 @@ def get_encounter_detail(conn, encounter_id):
             "mime_type": meta_row.get("attachment_mime_type"),
         },
     }
+    return metadata, patient_id
 
-    conditions = _fetch_records(
-        conn,
-        """
-        SELECT name,
-               status,
-               COALESCE(code, '') AS code,
-               COALESCE(code_display, '') AS code_display,
-               onset_date,
-               notes
-          FROM condition
-         WHERE encounter_id = ?
-         ORDER BY name
+
+def _encounter_sections(
+    conn: SQLCipherConnection, encounter_id: int
+) -> dict[str, list[dict]]:
+    """Collect encounter-related records grouped by section."""
+    queries = {
+        "conditions": """
+            SELECT name,
+                   status,
+                   COALESCE(code, '') AS code,
+                   COALESCE(code_display, '') AS code_display,
+                   onset_date,
+                   notes
+              FROM condition
+             WHERE encounter_id = ?
+             ORDER BY name
         """,
-        (encounter_id,),
-    )
-
-    medications = _fetch_records(
-        conn,
-        """
-        SELECT name,
-               dose,
-               route,
-               frequency,
-               start_date,
-               end_date,
-               status,
-               notes
-          FROM medication
-         WHERE encounter_id = ?
-         ORDER BY name
+        "medications": """
+            SELECT name,
+                   dose,
+                   route,
+                   frequency,
+                   start_date,
+                   end_date,
+                   status,
+                   notes
+              FROM medication
+             WHERE encounter_id = ?
+             ORDER BY name
         """,
-        (encounter_id,),
-    )
-
-    lab_results = _fetch_records(
-        conn,
-        """
-        SELECT loinc_code,
-               test_name,
-               result_value,
-               unit,
-               reference_range,
-               abnormal_flag,
-               date
-          FROM lab_result
-         WHERE encounter_id = ?
-         ORDER BY date, test_name
+        "lab_results": """
+            SELECT loinc_code,
+                   test_name,
+                   result_value,
+                   unit,
+                   reference_range,
+                   abnormal_flag,
+                   date
+              FROM lab_result
+             WHERE encounter_id = ?
+             ORDER BY date, test_name
         """,
-        (encounter_id,),
-    )
-
-    vitals = _fetch_records(
-        conn,
-        """
-        SELECT vital_type,
-               value,
-               unit,
-               date
-          FROM vital
-         WHERE encounter_id = ?
-         ORDER BY date, vital_type
+        "vitals": """
+            SELECT vital_type,
+                   value,
+                   unit,
+                   date
+              FROM vital
+             WHERE encounter_id = ?
+             ORDER BY date, vital_type
         """,
-        (encounter_id,),
-    )
-
-    progress_notes = _fetch_records(
-        conn,
-        """
-        SELECT note_title,
-               note_datetime,
-               note_text,
-               source_note_id
-          FROM progress_note
-         WHERE encounter_id = ?
-         ORDER BY note_datetime
+        "progress_notes": """
+            SELECT note_title,
+                   note_datetime,
+                   note_text,
+                   source_note_id
+              FROM progress_note
+             WHERE encounter_id = ?
+             ORDER BY note_datetime
         """,
-        (encounter_id,),
-    )
-
-    procedures = _fetch_records(
-        conn,
-        """
-        SELECT name,
-               code,
-               code_system,
-               code_display,
-               status,
-               date,
-               notes
-          FROM procedure
-         WHERE encounter_id = ?
-         ORDER BY date, name
+        "procedures": """
+            SELECT name,
+                   code,
+                   code_system,
+                   code_display,
+                   status,
+                   date,
+                   notes
+              FROM procedure
+             WHERE encounter_id = ?
+             ORDER BY date, name
         """,
-        (encounter_id,),
-    )
+    }
+    return {
+        name: _fetch_records(conn, query, (encounter_id,))
+        for name, query in queries.items()
+    }
 
-    encounter_date = metadata["encounter_date"]
-    immunization_cutoff = encounter_date if encounter_date else None
-    immunizations_query = """
+
+def _patient_immunizations(
+    conn: SQLCipherConnection, patient_id: int, encounter_date: str | None
+) -> list[dict]:
+    """Return immunizations up to the encounter date (if provided)."""
+    cutoff = encounter_date or None
+    query = """
         SELECT vaccine_name,
                cvx_code,
                date_administered,
@@ -350,35 +443,32 @@ def get_encounter_detail(conn, encounter_id):
                  OR date_administered <= ? )
          ORDER BY date_administered
     """
-    immunizations = _fetch_records(
-        conn,
-        immunizations_query,
-        (patient_id, immunization_cutoff, immunization_cutoff),
-    )
+    return _fetch_records(conn, query, (patient_id, cutoff, cutoff))
+
+
+def get_encounter_detail(conn: SQLCipherConnection, encounter_id: int) -> dict:
+    """Return a dictionary containing the complete encounter detail."""
+    metadata, patient_id = _encounter_metadata(conn, encounter_id)
+    sections = _encounter_sections(conn, encounter_id)
+    immunizations = _patient_immunizations(conn, patient_id, metadata["encounter_date"])
 
     return {
         "patient_id": patient_id,
         "metadata": metadata,
-        "conditions": conditions,
-        "medications": medications,
-        "lab_results": lab_results,
-        "vitals": vitals,
-        "progress_notes": progress_notes,
-        "procedures": procedures,
+        **sections,
         "immunizations": immunizations,
     }
 
 
 # AI-assisted change: Implemented with help from gpt-5-codex.
 def get_patient_vitals_timeseries(
-    conn,
-    patient_id,
-    vital_type=None,
-):
+    conn: SQLCipherConnection,
+    patient_id: int,
+    vital_type: str | None = None,
+) -> pd.DataFrame:
     """Return a patient-level vital sign time series as a DataFrame."""
 
-    query = (
-        """
+    query = """
         SELECT vital_type,
                value,
                unit,
@@ -387,7 +477,6 @@ def get_patient_vitals_timeseries(
           FROM vital
          WHERE patient_id = ?
         """
-    )
     params: list = [patient_id]
     if vital_type:
         query += " AND vital_type = ?"
@@ -420,16 +509,15 @@ def get_patient_vitals_timeseries(
 
 # AI-assisted change: Implemented with help from gpt-5-codex.
 def get_patient_lab_timeseries(
-    conn,
-    patient_id,
+    conn: SQLCipherConnection,
+    patient_id: int,
     *,
-    loinc_code=None,
-    test_name=None,
-):
+    loinc_code: str | None = None,
+    test_name: str | None = None,
+) -> pd.DataFrame:
     """Return lab result time series for a patient as a DataFrame."""
 
-    query = (
-        """
+    query = """
         SELECT loinc_code,
                test_name,
                result_value,
@@ -441,7 +529,6 @@ def get_patient_lab_timeseries(
           FROM lab_result
          WHERE patient_id = ?
         """
-    )
     params: list = [patient_id]
     if loinc_code:
         query += " AND loinc_code = ?"

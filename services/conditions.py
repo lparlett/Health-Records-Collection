@@ -9,13 +9,193 @@
 from __future__ import annotations
 
 import sqlite3
-from typing import Any, Mapping, Sequence
+from dataclasses import dataclass
+from typing import Any, Mapping, Optional, Sequence, TypedDict, cast
 
-from services.common import clean_str, coerce_int, ensure_mapping_sequence
-from services.encounters import find_encounter_id
-from services.providers import get_or_create_provider
+from health_records_collection.db.utils import execute_update
+from health_records_collection.services.common import (
+    clean_str,
+    coerce_int,
+    ensure_mapping_sequence,
+    STANDARD_RECORD_UPDATE_SPECS,
+    build_updates_from_specs,
+    insert_code_mappings,
+)
+from health_records_collection.services.encounters import (
+    EncounterLookup,
+    find_encounter_id,
+)
+from health_records_collection.services.providers import get_or_create_provider
 
 __all__ = ["insert_conditions"]
+
+
+def _extract_condition_codes(
+    cond: Mapping[str, object],
+) -> list[Mapping[str, object]]:
+    """Extract and validate codes from a condition entry."""
+    raw_codes = cond.get("codes")
+    codes: list[Mapping[str, object]] = []
+    if isinstance(raw_codes, Sequence) and not isinstance(raw_codes, (str, bytes)):
+        codes = list(ensure_mapping_sequence(raw_codes))
+    return codes
+
+
+def _extract_primary_code(
+    codes: list[Mapping[str, object]],
+) -> tuple[str | None, str | None, str | None]:
+    """Extract primary code information from codes list."""
+    primary_code = codes[0] if codes else {}
+    code_value = clean_str(primary_code.get("code"))
+    code_system = clean_str(primary_code.get("system"))
+    code_display = clean_str(primary_code.get("display"))
+    return code_value, code_system, code_display
+
+
+def _extract_condition_fields(
+    cond: Mapping[str, object],
+    codes: list[Mapping[str, object]],
+    code_value: str | None,
+    code_system: str | None,
+    code_display: str | None,
+) -> ConditionData:
+    """Extract and clean all condition fields from an entry."""
+    name = clean_str(cond.get("name")) or code_display or code_value
+
+    return {
+        "name": name,
+        "code_value": code_value,
+        "code_system": code_system,
+        "code_display": code_display,
+        "onset_date": clean_str(cond.get("start")),
+        "status": clean_str(cond.get("status")),
+        "notes": clean_str(cond.get("notes")),
+        "ds_id": coerce_int(cond.get("data_source_id")),
+        "codes": codes,
+    }  # type: ignore
+
+
+def _resolve_condition_encounter(
+    conn: sqlite3.Connection,
+    patient_id: int,
+    cond: Mapping[str, object],
+    provider_name: str | None,
+    provider_id: int | None,
+) -> int | None:
+    """Resolve encounter ID with fallback logic."""
+    # Try primary date sources
+    lookup = EncounterLookup(
+        patient_id=patient_id,
+        encounter_date=clean_str(cond.get("encounter_start"))
+        or clean_str(cond.get("start"))
+        or clean_str(cond.get("author_time")),
+        provider_name=provider_name,
+        provider_id=provider_id,
+    )
+    encounter_id = find_encounter_id(conn, lookup)
+
+    # Fall back to encounter end date if needed
+    if encounter_id is None and cond.get("encounter_end"):
+        lookup = EncounterLookup(
+            patient_id=patient_id,
+            encounter_date=clean_str(cond.get("encounter_end")),
+            provider_name=provider_name,
+            provider_id=provider_id,
+        )
+        encounter_id = find_encounter_id(conn, lookup)
+
+    return encounter_id
+
+
+def _find_existing_condition(
+    cur: sqlite3.Cursor,
+    patient_id: int,
+    condition_data: ConditionData,
+) -> tuple[Any, ...] | None:
+    """Find existing condition record in database."""
+    row = cur.execute(
+        """
+        SELECT id, status, notes, provider_id, encounter_id, data_source_id
+          FROM condition
+         WHERE patient_id = ?
+           AND COALESCE(name, '') = COALESCE(?, '')
+           AND COALESCE(code, '') = COALESCE(?, '')
+           AND COALESCE(onset_date, '') = COALESCE(?, '')
+        """,
+        (
+            patient_id,
+            condition_data.get("name") or "",
+            condition_data.get("code_value") or "",
+            condition_data.get("onset_date") or "",
+        ),
+    ).fetchone()
+    return cast("tuple[Any, ...] | None", row)
+
+
+def _insert_new_condition(
+    cur: sqlite3.Cursor,
+    condition_data: ConditionData,
+) -> int:
+    """Insert a new condition record and return its ID."""
+    cur.execute(
+        """
+        INSERT INTO condition (
+            patient_id,
+            name,
+            onset_date,
+            status,
+            notes,
+            provider_id,
+            encounter_id,
+            code,
+            code_system,
+            code_display,
+            data_source_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            condition_data.get("patient_id"),
+            condition_data.get("name"),
+            condition_data.get("onset_date"),
+            condition_data.get("status"),
+            condition_data.get("notes"),
+            condition_data.get("provider_id"),
+            condition_data.get("encounter_id"),
+            condition_data.get("code_value"),
+            condition_data.get("code_system"),
+            condition_data.get("code_display"),
+            condition_data.get("ds_id"),
+        ),
+    )
+    condition_id = cur.lastrowid
+    if condition_id is None:
+        raise sqlite3.DatabaseError("Failed to insert condition; lastrowid is None.")
+    return int(condition_id)
+
+
+class ConditionData(TypedDict, total=False):
+    """Type-safe condition field dictionary."""
+
+    name: str | None
+    code_value: str | None
+    code_system: str | None
+    code_display: str | None
+    onset_date: str | None
+    status: str | None
+    notes: str | None
+    ds_id: int | None
+    patient_id: int
+    provider_id: int | None
+    encounter_id: int | None
+    codes: list[Mapping[str, object]]
+
+
+@dataclass
+class ConditionRecordBundle:
+    """Container for record data and associated codes."""
+
+    record: ConditionData
+    codes: list[Mapping[str, object]]
 
 
 def insert_conditions(
@@ -35,142 +215,66 @@ def insert_conditions(
 
     cur = conn.cursor()
     for cond in conditions:
-        provider_name = clean_str(cond.get("provider"))
-        provider_id = get_or_create_provider(conn, provider_name) if provider_name else None
-
-        encounter_id = find_encounter_id(
-            conn,
-            patient_id,
-            encounter_date=clean_str(cond.get("encounter_start"))
-            or clean_str(cond.get("start"))
-            or clean_str(cond.get("author_time")),
-            provider_name=provider_name,
-            provider_id=provider_id,
-            source_encounter_id=clean_str(cond.get("encounter_source_id")),
-        )
-
-        if encounter_id is None and cond.get("encounter_end"):
-            encounter_id = find_encounter_id(
-                conn,
-                patient_id,
-                encounter_date=clean_str(cond.get("encounter_end")),
-                provider_name=provider_name,
-                provider_id=provider_id,
-                source_encounter_id=clean_str(cond.get("encounter_source_id")),
-            )
-
-        raw_codes = cond.get("codes")
-        codes: list[Mapping[str, object]] = []
-        if isinstance(raw_codes, Sequence) and not isinstance(raw_codes, (str, bytes)):
-            codes = list(ensure_mapping_sequence(raw_codes))
-        primary_code = codes[0] if codes else {}
-        code_value = clean_str(primary_code.get("code"))
-        code_system = clean_str(primary_code.get("system"))
-        code_display = clean_str(primary_code.get("display"))
-
-        name = clean_str(cond.get("name")) or code_display or code_value
-        if not name:
+        bundle = _prepare_condition_record(conn, patient_id, cond)
+        if bundle is None:
             continue
 
-        onset_date = clean_str(cond.get("start"))
-        status = clean_str(cond.get("status"))
-        notes = clean_str(cond.get("notes"))
-
-        ds_id = coerce_int(cond.get("data_source_id"))
-
-        existing = cur.execute(
-            """
-            SELECT id, status, notes, provider_id, encounter_id, data_source_id
-              FROM condition
-             WHERE patient_id = ?
-               AND COALESCE(name, '') = COALESCE(?, '')
-               AND COALESCE(code, '') = COALESCE(?, '')
-               AND COALESCE(onset_date, '') = COALESCE(?, '')
-            """,
-            (patient_id, name or "", code_value or "", onset_date or ""),
-        ).fetchone()
+        condition_data = bundle.record
+        existing = _find_existing_condition(cur, patient_id, condition_data)
 
         if existing:
-            (
-                condition_id,
-                existing_status,
-                existing_notes,
-                existing_provider_id,
-                existing_encounter_id,
-                existing_data_source,
-            ) = existing
-            updates: list[str] = []
-            params: list[Any] = []
-            if status and (existing_status or "") != status:
-                updates.append("status = ?")
-                params.append(status)
-            if notes and (existing_notes or "") != notes:
-                updates.append("notes = ?")
-                params.append(notes)
-            if provider_id and (existing_provider_id or 0) != provider_id:
-                updates.append("provider_id = ?")
-                params.append(provider_id)
-            if encounter_id and (existing_encounter_id or 0) != encounter_id:
-                updates.append("encounter_id = ?")
-                params.append(encounter_id)
-            if ds_id is not None and (existing_data_source or 0) != ds_id:
-                updates.append("data_source_id = ?")
-                params.append(ds_id)
-            if updates:
-                params.append(condition_id)
-                cur.execute(
-                    f"UPDATE condition SET {', '.join(updates)} WHERE id = ?",
-                    params,
-                )
+            updates, params = build_updates_from_specs(
+                condition_data, existing, STANDARD_RECORD_UPDATE_SPECS
+            )
+            condition_id = existing[0]
+            execute_update(cur, "condition", updates, params, condition_id)
         else:
-            cur.execute(
-                """
-                INSERT INTO condition (
-                    patient_id,
-                    name,
-                    onset_date,
-                    status,
-                    notes,
-                    provider_id,
-                    encounter_id,
-                    code,
-                    code_system,
-                    code_display,
-                    data_source_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    patient_id,
-                    name,
-                    onset_date,
-                    status,
-                    notes,
-                    provider_id,
-                    encounter_id,
-                    code_value,
-                    code_system,
-                    code_display,
-                    ds_id,
-                ),
-            )
-            condition_id = cur.lastrowid
+            condition_id = _insert_new_condition(cur, condition_data)
 
-        for code in codes:
-            code_val = clean_str(code.get("code"))
-            if not code_val:
-                continue
-            code_system_val = clean_str(code.get("system"))
-            display_val = clean_str(code.get("display"))
-            cur.execute(
-                """
-                INSERT OR IGNORE INTO condition_code (condition_id, code, code_system, display_name)
-                VALUES (?, ?, ?, ?)
-                """,
-                (
-                    condition_id,
-                    code_val,
-                    code_system_val,
-                    display_val,
-                ),
-            )
+        insert_code_mappings(
+            cur,
+            table="condition_code",
+            ref_id=condition_id,
+            codes=bundle.codes,
+        )
+
     conn.commit()
+
+
+def _prepare_condition_record(
+    conn: sqlite3.Connection,
+    patient_id: int,
+    cond: Mapping[str, object],
+) -> Optional[ConditionRecordBundle]:
+    """Return a validated condition record bundle."""
+    codes = _extract_condition_codes(cond)
+    code_value, code_system, code_display = _extract_primary_code(codes)
+    condition_data: ConditionData = _extract_condition_fields(
+        cond,
+        codes,
+        code_value,
+        code_system,
+        code_display,
+    )
+    if not condition_data.get("name"):
+        return None
+
+    condition_data["patient_id"] = patient_id  # type: ignore
+
+    provider_name = clean_str(cond.get("provider"))
+    provider_id = None
+    if provider_name:
+        provider_id = get_or_create_provider(conn, provider_name)
+        condition_data["provider_id"] = provider_id  # type: ignore
+
+    encounter_id = _resolve_condition_encounter(
+        conn,
+        patient_id,
+        cond,
+        provider_name,
+        provider_id,
+    )
+    if encounter_id:
+        condition_data["encounter_id"] = encounter_id  # type: ignore
+
+    return ConditionRecordBundle(record=condition_data, codes=codes)

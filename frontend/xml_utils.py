@@ -1,236 +1,184 @@
-"""XML transformation utilities for CDA documents."""
-import os
+"""XML transformation utilities for CDA documents with secure XML processing.
+
+This module implements a secure XML processing pipeline using defusedxml for initial
+parsing of untrusted content and a restricted lxml configuration for XSLT processing.
+
+Security measures:
+1. All untrusted XML is first parsed using defusedxml to prevent common XML attacks
+2. XSLT processing uses a restricted lxml parser that:
+   - Disables entity resolution
+   - Disables network access
+   - Disables DTD loading
+   - Strips comments and processing instructions
+3. Stylesheet validation ensures namespace compliance
+4. All content is validated before processing
+"""
+
 from pathlib import Path
-import tempfile
 import logging
-import datetime
-import lxml.etree as ET
-from typing import Optional
-from . import static_resources
+from typing import Optional, TypeVar
+
+from defusedxml.lxml import fromstring
+from defusedxml.common import (
+    DefusedXmlException as XMLSyntaxError,
+    DTDForbidden as DocumentInvalid,
+)
+
+from lxml.etree import _Element  # nosec import_lxml
+
+from health_records_collection.frontend import html_generator
+from health_records_collection.frontend import xml_transform_helpers
+from health_records_collection.frontend.xml_constants import XSLT_NS
 
 # Set up logging
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
+
+class StylesheetValidationError(Exception):
+    """Raised when a stylesheet fails validation."""
+
+
+class TransformationError(Exception):
+    """Raised when CDA-to-HTML transformation fails."""
+
+
+T = TypeVar("T")
+
+
+def _ensure_value(value: Optional[T], message: str) -> T:
+    """Return the provided value or raise a TransformationError."""
+    if value is None:
+        raise TransformationError(message)
+    return value
+
+
 def validate_stylesheet(file_path: Path) -> bool:
     """
     Validate that a stylesheet file exists and contains valid XSLT.
-    
+
     Args:
         file_path: Path to the stylesheet file
-        
+
     Returns:
         bool: True if valid, False otherwise
     """
     try:
-        if not file_path.exists():
-            print(f"Stylesheet file not found: {file_path}")
-            return False
-            
-        content = file_path.read_text(encoding='utf-8')
-        if not content.strip():
-            print(f"Stylesheet file is empty: {file_path}")
-            return False
-            
-        if '<?xml' not in content:
-            print(f"Stylesheet lacks XML declaration: {file_path}")
-            return False
-            
-        # Try parsing as XML
-        parser = ET.XMLParser(remove_blank_text=True)
-        tree = ET.fromstring(content.encode('utf-8'), parser)
-        
-        # Verify it's an XSL stylesheet
-        if not (tree.tag == '{http://www.w3.org/1999/XSL/Transform}stylesheet' or 
-                tree.tag == '{http://www.w3.org/1999/XSL/Transform}transform'):
-            print(f"Not a valid XSLT file (root is {tree.tag}): {file_path}")
-            return False
-            
+        content = _read_stylesheet(file_path)
+        tree = fromstring(content.encode("utf-8"))
+        _validate_stylesheet_tree(tree, file_path)
         return True
-        
-    except Exception as e:
-        print(f"Error validating stylesheet {file_path}: {str(e)}")
+
+    except FileNotFoundError:
+        print(f"Stylesheet file not found: {file_path}")
+        return False
+    except StylesheetValidationError as exc:
+        print(str(exc))
+        return False
+    except (XMLSyntaxError, DocumentInvalid) as exc:  # type: ignore
+        print(f"XML parsing error in stylesheet {file_path}: {exc}")
+        return False
+    except ValueError as exc:
+        print(f"Invalid content in stylesheet {file_path}: {exc}")
         return False
 
-def transform_cda_to_html(xml_path: str) -> Optional[str]:
-    """
-    Transform a CDA XML document to HTML using the HL7 CDA.xsl stylesheet
-    with custom styling.
-    
-    Args:
-        xml_path: Path to the XML file to transform
-        
-    Returns:
-        Path to temporary HTML file or None if transformation fails
-    """
-    xml_content = ""  # Initialize for error handling
-    def debug_xml(xml_content: str, stage: str) -> None:
-        """Helper to log XML content during transformation"""
-        debug_path = Path(tempfile.gettempdir()) / f"debug_{stage}.xml"
-        with open(debug_path, 'w', encoding='utf-8') as f:
-            f.write(xml_content)
-        logger.debug(f"Debug file written: {debug_path}")
-        
-        try:
-            # Validate the XML is well-formed
-            ET.fromstring(xml_content.encode('utf-8'))
-            logger.debug(f"{stage} XML is well-formed")
-        except ET.XMLSyntaxError as e:
-            logger.error(f"{stage} XML parsing error: {str(e)}")
 
+def _read_stylesheet(file_path: Path) -> str:
+    """Return stylesheet content or raise validation error."""
+    if not file_path.exists():
+        raise FileNotFoundError
+    content = file_path.read_text(encoding="utf-8")
+    if not content.strip():
+        raise StylesheetValidationError(f"Stylesheet file is empty: {file_path}")
+    if "<?xml" not in content:
+        raise StylesheetValidationError(
+            f"Stylesheet lacks XML declaration: {file_path}"
+        )
+    return content
+
+
+def _validate_stylesheet_tree(tree: _Element, file_path: Path) -> None:
+    """Validate parsed stylesheet tree."""
+    namespace = getattr(tree, "nsmap", {}).get(None)
+    if namespace != XSLT_NS:
+        raise StylesheetValidationError(
+            f"Not a valid XSLT file (wrong namespace): {file_path}"
+        )
+    tree_tag = getattr(tree, "tag", "")
+    if not (tree_tag.endswith("stylesheet") or tree_tag.endswith("transform")):
+        raise StylesheetValidationError(
+            f"Not a valid XSLT file (root is {tree_tag}): {file_path}"
+        )
+
+
+def transform_cda_to_html(xml_path: str) -> Optional[str]:
+    """Transform a CDA XML document to HTML using HL7 CDA.xsl stylesheet.
+
+    Handles encrypted files, validates XML, performs secure XSLT transformation,
+    and embeds CSS for styling.
+
+    Args:
+        xml_path: Path to the XML file to transform.
+
+    Returns:
+        Path to temporary HTML file or None if transformation fails.
+    """
     try:
-        # Get stylesheet path using resource manager
-        xsl_path = static_resources.get_stylesheet_path()
-        if not xsl_path:
-            print("Could not get valid CDA stylesheet")
-            return None
-            
-        # Get paths for other resources
-        static_dir = Path(__file__).parent / "static"  
-        color_css_path = static_dir / "colors.css"
-        if not color_css_path.exists(): 
-            logger.error(f"Color CSS file not found: {color_css_path}")
-            return None 
-        css_path = static_dir / "cda_custom.css"
-            
-        # Log transformation details
-        logger.info(f"Transforming XML file: {xml_path}")
-        logger.info(f"Using stylesheet: {xsl_path}")
-        logger.info(f"Using CSS: {css_path}")
-        logger.info(f"Using color CSS: {color_css_path}")
-            
-        # Read and validate input XML
-        xml_content = Path(xml_path).read_text(encoding='utf-8')
-        if not xml_content.strip():
-            logger.error(f"XML file is empty: {xml_path}")
-            return None
-                
-        if '<?xml' not in xml_content:
-            logger.info("Adding XML declaration")
-            xml_content = '<?xml version="1.0" encoding="UTF-8"?>\n' + xml_content
-            
-        debug_xml(xml_content, 'input')
-        
-        # Log XML content size for debugging
-        logger.debug(f"XML content size: {len(xml_content)} bytes")
-        
-        # Parse XML and XSL
-        parser = ET.XMLParser(remove_blank_text=True)
-        xml_doc = ET.fromstring(xml_content.encode('utf-8'), parser)
-        xsl_doc = ET.parse(str(xsl_path))
-        
-        # Create transformer and transform with error handling
-        logger.debug("Creating XSLT transformer")
-        transform = ET.XSLT(xsl_doc)
-        
-        # Log XSL document details
-        logger.debug(f"XSL document root tag: {xsl_doc.getroot().tag}")
-        logger.debug(f"XSL document size: {len(ET.tostring(xsl_doc))}")
-        
-        # Transform and capture any errors
-        try:
-            logger.debug("Performing XSLT transformation")
-            html = transform(xml_doc)
-            
-            # Log transformation result details
-            result_str = str(html)
-            logger.debug(f"Transformation result size: {len(result_str)} bytes")
-            logger.debug(f"Result preview: {result_str[:200]}...")
-            
-            if not result_str.strip():
-                logger.error("Transformation produced empty result")
-                return None
-                
-        except ET.XSLTError as e:
-            logger.error(f"XSLT transformation failed: {str(e)}")
-            return None
-        except Exception as e:
-            logger.error(f"Unexpected error during transformation: {str(e)}")
-            return None
-            
-        # Log success
-        logger.debug("XSLT transformation completed successfully")
-        
-        # Get our custom and color CSS content
-        logger.debug("Reading custom CSS and color CSS")
-        with open(color_css_path, 'r', encoding='utf-8') as f:
-            color_css_content = f.read()    
-    
-        with open(css_path, 'r', encoding='utf-8') as f:
-            css_content = f.read()
-        
-        # Generate final HTML with embedded CSS and XML processing instruction
-        html_str = f"""<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="X-UA-Compatible" content="ie=edge">
-    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-    <meta http-equiv="Content-Style-Type" content="text/css">
-    <title>CDA Document</title>
-    <style>
-        {color_css_content}
-        {css_content}
-    </style>
-    <script>
-        // Check if user has a preferred color scheme
-        function updateTheme() {{
-            if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {{
-                document.documentElement.setAttribute('data-theme', 'dark');
-            }} else {{
-                document.documentElement.setAttribute('data-theme', 'light');
-            }}
-        }}
-        
-        // Initial theme check
-        document.addEventListener('DOMContentLoaded', updateTheme);
-        
-        // Listen for changes in system dark mode
-        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', updateTheme);
-    </script>
-</head>
-<body>
-    {str(html)}
-</body>
-</html>"""
-        
-        # Create temporary HTML file with diagnostic info
-        temp_suffix = '.xhtml' if '<?xml' in html_str else '.html'
-        with tempfile.NamedTemporaryFile(suffix=temp_suffix, delete=False) as f:
-            html_path = f.name
-            
-            # Add diagnostic comments at the top of the file
-            diagnostic_info = f"""
-<!-- 
-CDA Document Transformation Info:
-Source XML: {xml_path}
-XSL Path: {xsl_path}
-CSS Path: {css_path}
-Transformation Time: {datetime.datetime.now().isoformat()}
-Content-Type: {'application/xhtml+xml' if temp_suffix == '.xhtml' else 'text/html'}
--->
-"""
-            html_str = diagnostic_info + html_str
-            
-            # Write the file
-            f.write(html_str.encode('utf-8'))
-            
-            # Create a debug copy that won't be deleted
-            debug_path = Path(tempfile.gettempdir()) / f"debug_final_{Path(xml_path).name}{temp_suffix}"
-            with open(debug_path, 'wb') as debug_f:
-                debug_f.write(html_str.encode('utf-8'))
-            
-            logger.info(f"Transformation successful")
-            logger.debug(f"Output saved as: {temp_suffix} file")
-            logger.debug(f"File saved to: {html_path}")
-            logger.debug(f"Debug copy saved to: {debug_path}")
-            
-        return html_path
-        
-    except Exception as e:
-        logger.error(f"Error in transformation: {str(e)}")
-        if xml_content:  # Debug the state when error occurred
-            debug_xml(xml_content, 'error')
+        # Step 1: Handle encryption
+        xml_path = _ensure_value(
+            xml_transform_helpers.handle_encrypted_file(xml_path),
+            "Unable to prepare encrypted XML file",
+        )
+
+        logger.debug("Transforming XML file: %s", xml_path)
+
+        # Step 2: Load resources (stylesheets and CSS)
+        resources = _ensure_value(
+            xml_transform_helpers.load_transformation_resources(),
+            "Failed to load transformation resources",
+        )
+
+        # Step 3: Load and validate XML
+        xml_content = _ensure_value(
+            xml_transform_helpers.load_and_validate_xml(xml_path),
+            "XML validation failed",
+        )
+
+        # Step 4: Parse XML securely
+        xml_doc = _ensure_value(
+            xml_transform_helpers.parse_xml_securely(xml_content),
+            "Secure XML parsing failed",
+        )
+
+        # Step 5: Build transformer
+        transformer = _ensure_value(
+            xml_transform_helpers.build_xslt_transformer(str(resources["xsl"])),
+            "Unable to build XSLT transformer",
+        )
+
+        # Step 6: Perform transformation
+        html_body = _ensure_value(
+            xml_transform_helpers.perform_xslt_transformation(transformer, xml_doc),
+            "XSLT transformation returned no content",
+        )
+
+        # Step 7: Load CSS files
+        css_content = _ensure_value(
+            xml_transform_helpers.load_css_files(resources),
+            "CSS resources missing",
+        )
+
+        assets = html_generator.HtmlAssets(
+            color_css=css_content["color_css"],
+            css=css_content["css"],
+            xml_path=xml_path,
+            xsl_path=str(resources["xsl"]),
+            css_path=str(resources["css"]),
+        )
+
+        # Step 8: Generate final HTML file
+        return html_generator.generate_html_file(html_body=html_body, assets=assets)
+
+    except TransformationError as exc:
+        logger.error("CDA transformation failed: %s", exc)
         return None

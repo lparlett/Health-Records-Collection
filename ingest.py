@@ -1,28 +1,34 @@
-from __future__ import annotations
-
 # Purpose: Orchestrate ingestion of CCD archives into the project SQLite datastore.
 # Author: Codex + Lauren
 # Date: 2025-10-11
 # Related tests: tests/test_ingest.py
 # AI-assisted: Portions of this file were generated with AI assistance.
-
 """Main ingestion workflow for CCD archives."""
 
+from __future__ import annotations
+
 import argparse
+from collections.abc import Iterable
+from contextlib import closing
+from datetime import datetime, timezone
 import hashlib
 import logging
 import mimetypes
+from pathlib import Path
 import sqlite3
 import zipfile
-from contextlib import closing
-from datetime import datetime, timezone
-from pathlib import Path
-from collections.abc import Iterable
-from typing import Any, Dict, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Callable, Optional, Sequence
 
-from lxml import etree
-from db.schema import ensure_schema
-from parsers import (
+import yaml  # type: ignore
+from defusedxml.lxml import parse as safe_parse  # type: ignore
+from defusedxml.common import DefusedXmlException as XMLSyntaxError
+from lxml import etree  # type: ignore # nosec import_lxml
+from lxml.etree import _Element, _ElementTree  # type: ignore # nosec import_lxml
+
+
+from health_records_collection import settings
+from health_records_collection.db.schema import ensure_schema
+from health_records_collection.parsers import (
     parse_allergies,
     parse_conditions,
     parse_encounters,
@@ -35,22 +41,36 @@ from parsers import (
     parse_progress_notes,
     parse_vitals,
 )
-from services.allergies import insert_allergies
-from services.archives import archive_was_ingested, register_ingested_archive
-from services.attachments import upsert_attachment
-from services.common import clean_str
-from services.conditions import insert_conditions
-from services.data_sources import link_attachment, upsert_data_source
-from services.encounters import insert_encounters
-from services.insurance import upsert_insurance
-from services.immunizations import insert_immunizations
-from services.labs import insert_labs
-from services.medications import insert_medications
-from services.patient import insert_patient
-from services.procedures import insert_procedures
-from services.progress_notes import insert_progress_notes
-from services.vitals import insert_vitals
-import settings
+from health_records_collection.security import encryption
+from health_records_collection.services.allergies import insert_allergies
+from health_records_collection.services.archives import (
+    archive_was_ingested,
+    register_ingested_archive,
+)
+from health_records_collection.services.attachments import upsert_attachment
+from health_records_collection.services.common import clean_str
+from health_records_collection.services.conditions import insert_conditions
+from health_records_collection.services.data_sources import (
+    link_attachment,
+    upsert_data_source,
+)
+from health_records_collection.services.encounters import insert_encounters
+from health_records_collection.services.immunizations import insert_immunizations
+from health_records_collection.services.insurance import upsert_insurance
+from health_records_collection.services.labs import insert_labs
+from health_records_collection.services.medications import insert_medications
+from health_records_collection.services.patient import insert_patient
+from health_records_collection.services.procedures import insert_procedures
+from health_records_collection.services.progress_notes import insert_progress_notes
+from health_records_collection.services.vitals import insert_vitals
+
+if TYPE_CHECKING:
+    # Use cleaner type aliases for type hints
+    EtreeElement = _Element  # type: ignore
+    EtreeElementTree = _ElementTree  # type: ignore
+else:  # pragma: no cover - runtime-only fallback for typing
+    EtreeElement = _Element  # type: ignore
+    EtreeElementTree = _ElementTree  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +78,23 @@ SCHEMA_FILE: Path = Path("schema.sql")
 CCD_NAMESPACE = {"hl7": "urn:hl7-org:v3"}
 
 ParsedCCD = dict[str, Any]
+
+SectionInserter = Callable[
+    [sqlite3.Connection, int, Sequence[dict[str, Any]]],
+    Any,
+]
+SECTION_INSERTORS: tuple[tuple[str, SectionInserter], ...] = (
+    ("encounters", insert_encounters),
+    ("conditions", insert_conditions),
+    ("allergies", insert_allergies),
+    ("procedures", insert_procedures),
+    ("medications", insert_medications),
+    ("labs", insert_labs),
+    ("vitals", insert_vitals),
+    ("immunizations", insert_immunizations),
+    ("progress_notes", insert_progress_notes),
+    ("insurance", upsert_insurance),
+)
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -108,6 +145,7 @@ def init_db() -> sqlite3.Connection:
 
     Raises:
         sqlite3.Error: If the database connection cannot be established.
+        OSError: If the schema file cannot be read.
     """
     paths = settings.load_paths()
     db_path = paths["db_path"]
@@ -128,22 +166,22 @@ def init_db() -> sqlite3.Connection:
 
 
 def _xpath_elements(
-    node: etree._Element | etree._ElementTree,
+    node: EtreeElement | EtreeElementTree,
     expression: str,
     ns: dict[str, str],
-) -> list[etree._Element]:
+) -> list[EtreeElement]:
     """Return a list of element nodes extracted via XPath."""
-    if isinstance(node, etree._ElementTree):
+    if isinstance(node, EtreeElementTree):
         node = node.getroot()
     if node is None or not hasattr(node, "xpath"):
         return []
     raw = node.xpath(expression, namespaces=ns)
-    elements: list[etree._Element] = []
-    if isinstance(raw, etree._Element):
+    elements: list[EtreeElement] = []
+    if isinstance(raw, EtreeElement):
         elements.append(raw)
     elif isinstance(raw, Iterable) and not isinstance(raw, (str, bytes)):
         for item in raw:
-            if isinstance(item, etree._Element):
+            if isinstance(item, EtreeElement):
                 elements.append(item)
     return elements
 
@@ -183,22 +221,31 @@ def parse_ccd(xml_file: Path) -> ParsedCCD:
         ParsedCCD: A dictionary with parsed patient and clinical sections.
     """
     try:
-        tree = etree.parse(str(xml_file))
-    except (OSError, etree.XMLSyntaxError) as exc:
+        tree = safe_parse(str(xml_file))  # safe_parse mitigates XML entity attacks.
+    except (OSError, XMLSyntaxError) as exc:
         logger.warning("Skipping malformed XML %s: %s", xml_file.name, exc)
         return {}
 
-    patient = parse_patient(tree, CCD_NAMESPACE)
-    encounters = parse_encounters(tree, CCD_NAMESPACE)
-    allergies = parse_allergies(tree, CCD_NAMESPACE)
-    medications = parse_medications(tree, CCD_NAMESPACE)
-    labs = parse_labs(tree, CCD_NAMESPACE)
-    conditions = parse_conditions(tree, CCD_NAMESPACE)
-    procedures = parse_procedures(tree, CCD_NAMESPACE)
-    progress_notes = parse_progress_notes(tree, CCD_NAMESPACE)
-    vitals = parse_vitals(tree, CCD_NAMESPACE)
-    immunizations = parse_immunizations(tree, CCD_NAMESPACE)
-    insurance = parse_insurance(tree, CCD_NAMESPACE)
+    try:
+        patient = parse_patient(tree, CCD_NAMESPACE)
+        encounters = parse_encounters(tree, CCD_NAMESPACE)
+        allergies = parse_allergies(tree, CCD_NAMESPACE)
+        medications = parse_medications(tree, CCD_NAMESPACE)
+        labs = parse_labs(tree, CCD_NAMESPACE)
+        conditions = parse_conditions(tree, CCD_NAMESPACE)
+        procedures = parse_procedures(tree, CCD_NAMESPACE)
+        progress_notes = parse_progress_notes(tree, CCD_NAMESPACE)
+        vitals = parse_vitals(tree, CCD_NAMESPACE)
+        immunizations = parse_immunizations(tree, CCD_NAMESPACE)
+        insurance = parse_insurance(tree, CCD_NAMESPACE)
+    except RuntimeError as exc:
+        logger.error(
+            "Error parsing CCD sections from %s: %s. "
+            "Document may have missing or malformed sections.",
+            xml_file.name,
+            exc,
+        )
+        return {}
 
     return {
         "patient": patient,
@@ -226,24 +273,17 @@ def ingest_archive(
     Args:
         conn: Open SQLite connection.
         archive_path: ZIP archive to ingest.
+        archive_sha256: Optional precomputed archive hash to avoid re-hashing.
     """
+    archive_sha256 = _resolve_archive_hash(archive_path, archive_sha256)
     if archive_sha256 is None:
-        try:
-            archive_sha256 = _compute_archive_sha256(archive_path)
-        except OSError as exc:
-            logger.warning("Unable to hash %s: %s", archive_path, exc)
-            return
-
-    existing_archive = archive_was_ingested(conn, archive_sha256)
-    if existing_archive:
-        logger.info(
-            "Skipping %s; previously ingested on %s.",
-            archive_path.name,
-            existing_archive.get("last_ingested_at") or existing_archive.get("first_ingested_at"),
-        )
+        return
+    if _archive_previously_ingested(conn, archive_sha256, archive_path):
         return
 
     paths = settings.load_paths()
+    ingestion_settings = _load_ingestion_settings()
+
     destination = paths["parsed_dir"] / archive_path.stem
     unzip_raw_files(archive_path, destination)
 
@@ -257,11 +297,77 @@ def ingest_archive(
             metadata_lookup,
             archive_name=archive_path.name,
         )
-    except Exception:
+    except (OSError, sqlite3.Error, XMLSyntaxError, etree.XMLSyntaxError):
         logger.exception("Ingestion failed for archive %s.", archive_path.name)
         raise
 
-    archive_id = register_ingested_archive(conn, archive_path.name, archive_sha256)
+    _register_archive_sources(conn, archive_path.name, archive_sha256, data_source_ids)
+    delete_archive_flag, delete_non_xml_flag = _determine_cleanup_flags(
+        archive_path, paths, ingestion_settings
+    )
+
+    _finalise_ingestion_artifacts(
+        archive_path,
+        destination,
+        delete_archive=delete_archive_flag,
+        delete_non_xml=delete_non_xml_flag,
+    )
+
+
+def _resolve_archive_hash(
+    archive_path: Path, archive_sha256: Optional[str]
+) -> Optional[str]:
+    """Return a SHA-256 hash for the archive, logging failures."""
+    if archive_sha256:
+        return archive_sha256
+    try:
+        return _compute_archive_sha256(archive_path)
+    except OSError as exc:
+        logger.warning("Unable to hash %s: %s", archive_path, exc)
+        return None
+
+
+def _archive_previously_ingested(
+    conn: sqlite3.Connection, archive_sha256: str, archive_path: Path
+) -> bool:
+    """Return True when the provided archive hash was already ingested."""
+    existing_archive = archive_was_ingested(conn, archive_sha256)
+    if not existing_archive:
+        return False
+    logger.info(
+        "Skipping %s; previously ingested on %s.",
+        archive_path.name,
+        existing_archive.get("last_ingested_at")
+        or existing_archive.get("first_ingested_at"),
+    )
+    return True
+
+
+def _load_ingestion_settings() -> dict[str, Any]:
+    """Return merged ingestion settings from defaults and user config."""
+    ingestion_settings: dict[str, Any] = {
+        **getattr(settings, "DEFAULT_SETTINGS", {}).get("ingestion", {})
+    }
+    load_settings_fn = getattr(settings, "load_settings", None)
+    if callable(load_settings_fn):
+        try:
+            loaded_settings = load_settings_fn()
+        except (IOError, yaml.YAMLError):  # pragma: no cover - defensive fallback
+            logger.debug("Falling back to default ingestion settings.", exc_info=True)
+        else:
+            if isinstance(loaded_settings, dict) and "ingestion" in loaded_settings:
+                ingestion_settings = loaded_settings["ingestion"]
+    return ingestion_settings
+
+
+def _register_archive_sources(
+    conn: sqlite3.Connection,
+    archive_name: str,
+    archive_sha256: str,
+    data_source_ids: Sequence[int],
+) -> int:
+    """Create archive row and link related data sources."""
+    archive_id = register_ingested_archive(conn, archive_name, archive_sha256)
     if data_source_ids:
         conn.executemany(
             "UPDATE data_source SET source_archive_id = ? WHERE id = ?",
@@ -270,10 +376,82 @@ def ingest_archive(
         conn.commit()
     logger.debug(
         "Registered archive %s with hash %s (id=%s).",
-        archive_path.name,
+        archive_name,
         archive_sha256,
         archive_id,
     )
+    return archive_id
+
+
+def _determine_cleanup_flags(
+    archive_path: Path,
+    paths: dict[str, Path],
+    ingestion_settings: dict[str, Any],
+) -> tuple[bool, bool]:
+    """Return cleanup preferences derived from settings."""
+    delete_archive_flag = bool(ingestion_settings.get("delete_uploaded_archives", True))
+    delete_non_xml_flag = bool(
+        ingestion_settings.get("delete_unencrypted_extracted_files", True)
+    )
+    if delete_archive_flag:
+        try:
+            if archive_path.resolve().parent != paths["raw_dir"].resolve():
+                delete_archive_flag = False
+        except OSError:
+            delete_archive_flag = False
+    return delete_archive_flag, delete_non_xml_flag
+
+
+def _delete_non_xml_files(destination: Path) -> int:
+    """Remove non-XML, non-encrypted files from an extracted archive directory."""
+    if not destination.exists():
+        return 0
+    removed = 0
+    for file_path in destination.rglob("*"):
+        if not file_path.is_file():
+            continue
+        suffixes = [suffix.lower() for suffix in file_path.suffixes]
+        if ".xml" in suffixes or ".enc" in suffixes:
+            continue
+        try:
+            file_path.unlink()
+            removed += 1
+        except OSError as exc:
+            logger.warning("Failed to delete %s: %s", file_path, exc)
+    for directory in sorted(
+        (path for path in destination.rglob("*") if path.is_dir()),
+        key=lambda path: len(path.parts),
+        reverse=True,
+    ):
+        try:
+            directory.rmdir()
+        except OSError:
+            continue
+    return removed
+
+
+def _finalise_ingestion_artifacts(
+    archive_path: Path,
+    extraction_root: Path,
+    *,
+    delete_archive: bool,
+    delete_non_xml: bool,
+) -> None:
+    """Apply configured cleanup steps after a successful ingestion."""
+    if delete_non_xml:
+        removed = _delete_non_xml_files(extraction_root)
+        if removed:
+            logger.debug(
+                "Removed %s non-XML file(s) from %s after ingestion.",
+                removed,
+                extraction_root,
+            )
+    if delete_archive and archive_path.exists():
+        try:
+            archive_path.unlink()
+            logger.debug("Deleted ingested archive %s.", archive_path.name)
+        except OSError as exc:
+            logger.warning("Unable to delete archive %s: %s", archive_path, exc)
 
 
 def _compute_archive_sha256(archive_path: Path) -> str:
@@ -296,125 +474,157 @@ def _ingest_documents_from_archive(
     archive_name: str,
 ) -> list[int]:
     """Process all CCD documents within a prepared archive directory."""
+    logger.debug(
+        "Scanning %s for CCD documents extracted from %s.",
+        destination,
+        archive_path,
+    )
     data_source_ids: set[int] = set()
-    for xml_file in destination.rglob("*.xml"):
-        if xml_file.name.lower() == "metadata.xml":
-            logger.debug("Skipping metadata descriptor %s.", xml_file)
-            continue
-        parsed = parse_ccd(xml_file)
-        if not parsed:
-            continue
-
-        patient_data = parsed.get("patient")
-        if not isinstance(patient_data, dict):
-            logger.warning("Skipping %s due to missing patient section.", xml_file.name)
-            continue
-
-        given = clean_str(patient_data.get("given"))
-        family = clean_str(patient_data.get("family"))
-        if not (given or family):
-            logger.warning("Skipping %s due to incomplete patient identity.", xml_file.name)
-            continue
-
-        try:
-            meta_key = str(xml_file.resolve()).lower()
-            data_source_id = upsert_data_source(
-                conn,
-                xml_file,
-                metadata=metadata_lookup.get(meta_key),
-            )
+    for xml_file in _iter_ccd_documents(destination):
+        data_source_id = _process_document(
+            conn,
+            xml_file,
+            metadata_lookup,
+            archive_name=archive_name,
+        )
+        if data_source_id is not None:
             data_source_ids.add(data_source_id)
-        except (OSError, sqlite3.DatabaseError) as exc:
-            logger.warning(
-                "Skipping %s due to provenance capture error: %s",
-                xml_file.name,
-                exc,
-            )
-            continue
-
-        record_metadata = {
-            "data_source_id": data_source_id,
-            "source_archive": archive_name,
-            "source_document": xml_file.name,
-        }
-        patient_record = {**patient_data, **record_metadata}
-
-        pid = insert_patient(conn, patient_record)
-        attachment_id = _record_attachment(
-            conn,
-            patient_id=pid,
-            data_source_id=data_source_id,
-            file_path=xml_file,
-        )
-        if attachment_id is not None:
-            try:
-                link_attachment(conn, data_source_id, attachment_id)
-            except sqlite3.DatabaseError as exc:
-                logger.warning(
-                    "Failed to link attachment %s to data source %s: %s",
-                    attachment_id,
-                    data_source_id,
-                    exc,
-                )
-        insert_encounters(
-            conn,
-            pid,
-            _annotate_records(_as_record_list(parsed.get("encounters")), record_metadata),
-        )
-        insert_conditions(
-            conn,
-            pid,
-            _annotate_records(_as_record_list(parsed.get("conditions")), record_metadata),
-        )
-        insert_allergies(
-            conn,
-            pid,
-            _annotate_records(_as_record_list(parsed.get("allergies")), record_metadata),
-        )
-        insert_procedures(
-            conn,
-            pid,
-            _annotate_records(_as_record_list(parsed.get("procedures")), record_metadata),
-        )
-        insert_medications(
-            conn,
-            pid,
-            _annotate_records(_as_record_list(parsed.get("medications")), record_metadata),
-        )
-        insert_labs(
-            conn,
-            pid,
-            _annotate_records(_as_record_list(parsed.get("labs")), record_metadata),
-        )
-        insert_vitals(
-            conn,
-            pid,
-            _annotate_records(_as_record_list(parsed.get("vitals")), record_metadata),
-        )
-        insert_immunizations(
-            conn,
-            pid,
-            _annotate_records(_as_record_list(parsed.get("immunizations")), record_metadata),
-        )
-        insert_progress_notes(
-            conn,
-            pid,
-            _annotate_records(_as_record_list(parsed.get("progress_notes")), record_metadata),
-        )
-        upsert_insurance(
-            conn,
-            pid,
-            _annotate_records(_as_record_list(parsed.get("insurance")), record_metadata),
-        )
-        conn.commit()
-        logger.info("Ingested %s.", xml_file.name)
-        logger.debug(
-            "Ingested %s for patient %s %s.",
-            xml_file.name,
-            given,
-            family,
-        )
     return list(data_source_ids)
+
+
+def _iter_ccd_documents(destination: Path) -> Iterable[Path]:
+    """Yield each CCD document path within the extracted archive."""
+    for candidate in destination.rglob("*"):
+        if not candidate.is_file():
+            continue
+        if candidate.suffix.lower() != ".xml":
+            continue
+        if candidate.name.lower() == "metadata.xml":
+            logger.debug("Skipping metadata descriptor %s.", candidate)
+            continue
+        yield candidate
+
+
+def _process_document(
+    conn: sqlite3.Connection,
+    xml_file: Path,
+    metadata_lookup: dict[str, dict[str, Any]],
+    *,
+    archive_name: str,
+) -> Optional[int]:
+    """Ingest a single CCD document and return its data source ID."""
+    parsed = parse_ccd(xml_file)
+    if not parsed:
+        return None
+
+    patient_payload = _validate_patient_payload(parsed, xml_file)
+    if patient_payload is None:
+        return None
+    patient_data, given, family = patient_payload
+
+    data_source_id = _create_data_source_entry(conn, xml_file, metadata_lookup)
+    if data_source_id is None:
+        return None
+
+    record_metadata = {
+        "data_source_id": data_source_id,
+        "source_archive": archive_name,
+        "source_document": xml_file.name,
+    }
+    patient_record = {**patient_data, **record_metadata}
+
+    patient_id = insert_patient(conn, patient_record)
+    _link_attachment_to_data_source(conn, patient_id, data_source_id, xml_file)
+    _persist_patient_sections(conn, patient_id, parsed, record_metadata)
+    conn.commit()
+
+    logger.info("Ingested %s.", xml_file.name)
+    logger.debug("Ingested %s for patient %s %s.", xml_file.name, given, family)
+    return data_source_id
+
+
+def _validate_patient_payload(
+    parsed: ParsedCCD, xml_file: Path
+) -> Optional[tuple[dict[str, Any], Optional[str], Optional[str]]]:
+    """Ensure the parsed document contains identifiable patient data."""
+    patient_data = parsed.get("patient")
+    if not isinstance(patient_data, dict):
+        logger.warning("Skipping %s due to missing patient section.", xml_file.name)
+        return None
+
+    given = clean_str(patient_data.get("given"))
+    family = clean_str(patient_data.get("family"))
+    if not (given or family):
+        logger.warning("Skipping %s due to incomplete patient identity.", xml_file.name)
+        return None
+
+    return patient_data, given, family
+
+
+def _create_data_source_entry(
+    conn: sqlite3.Connection,
+    xml_file: Path,
+    metadata_lookup: dict[str, dict[str, Any]],
+) -> Optional[int]:
+    """Persist provenance information for a CCD document."""
+    try:
+        meta_key = str(xml_file.resolve()).lower()
+        return upsert_data_source(
+            conn,
+            xml_file,
+            metadata=metadata_lookup.get(meta_key),
+        )
+    except (OSError, sqlite3.DatabaseError) as exc:
+        logger.warning(
+            "Skipping %s due to provenance capture error: %s",
+            xml_file.name,
+            exc,
+        )
+        return None
+
+
+def _persist_patient_sections(
+    conn: sqlite3.Connection,
+    patient_id: int,
+    parsed: ParsedCCD,
+    metadata: dict[str, Any],
+) -> None:
+    """Insert or update all supported patient sections for a CCD document."""
+    for section_name, inserter in SECTION_INSERTORS:
+        records = _annotate_records(
+            _as_record_list(parsed.get(section_name)),
+            metadata,
+        )
+        if not records:
+            continue
+        inserter(conn, patient_id, records)
+
+
+def _link_attachment_to_data_source(
+    conn: sqlite3.Connection,
+    patient_id: int,
+    data_source_id: int,
+    xml_file: Path,
+) -> None:
+    """Encrypt raw documents and associate them with their data sources."""
+    attachment_id = _record_attachment(
+        conn,
+        patient_id=patient_id,
+        data_source_id=data_source_id,
+        file_path=xml_file,
+    )
+    if attachment_id is None:
+        return
+    try:
+        link_attachment(conn, data_source_id, attachment_id)
+    except sqlite3.DatabaseError as exc:
+        logger.warning(
+            "Failed to link attachment %s to data source %s: %s",
+            attachment_id,
+            data_source_id,
+            exc,
+        )
+
 
 def _load_metadata(root: Path) -> dict[str, dict[str, Any]]:
     """Return a mapping of document path -> metadata extracted from METADATA.XML."""
@@ -422,8 +632,10 @@ def _load_metadata(root: Path) -> dict[str, dict[str, Any]]:
     ns = {"rim": "urn:oasis:names:tc:ebxml-regrep:xsd:rim:3.0"}
     for metadata_path in root.rglob("METADATA.XML"):
         try:
-            tree = etree.parse(str(metadata_path))
-        except (OSError, etree.XMLSyntaxError) as exc:
+            tree = safe_parse(
+                str(metadata_path)
+            )  # Using defusedxml for secure XML parsing.
+        except (OSError, XMLSyntaxError) as exc:
             logger.warning("Unable to parse metadata %s: %s", metadata_path, exc)
             continue
         base_dir = metadata_path.parent.resolve()
@@ -434,7 +646,9 @@ def _load_metadata(root: Path) -> dict[str, dict[str, Any]]:
                 continue
 
             meta_payload = {
-                "document_created": _normalise_creation_time(_first(slots.get("creationTime"))),
+                "document_created": _normalise_creation_time(
+                    _first(slots.get("creationTime"))
+                ),
                 "repository_unique_id": _first(slots.get("repositoryUniqueId")),
                 "document_hash": _first(slots.get("hash")),
                 "document_size": _to_int(_first(slots.get("size"))),
@@ -445,12 +659,16 @@ def _load_metadata(root: Path) -> dict[str, dict[str, Any]]:
                 doc_path = (base_dir / uri).resolve()
                 # copy to avoid sharing between documents
                 metadata[str(doc_path).lower()] = {
-                    key: value for key, value in meta_payload.items() if value is not None
+                    key: value
+                    for key, value in meta_payload.items()
+                    if value is not None
                 }
     return metadata
 
 
-def _extract_slot_values(node: etree._Element, ns: dict[str, str]) -> dict[str, list[str]]:
+def _extract_slot_values(
+    node: etree._Element, ns: dict[str, str]
+) -> dict[str, list[str]]:
     values: dict[str, list[str]] = {}
     for slot in _xpath_elements(node, "rim:Slot", ns):
         name = slot.get("name")
@@ -466,7 +684,9 @@ def _extract_slot_values(node: etree._Element, ns: dict[str, str]) -> dict[str, 
     return values
 
 
-def _extract_author_institution(node: etree._Element, ns: dict[str, str]) -> Optional[str]:
+def _extract_author_institution(
+    node: etree._Element, ns: dict[str, str]
+) -> Optional[str]:
     for classification in _xpath_elements(node, "rim:Classification", ns):
         for slot in _xpath_elements(classification, "rim:Slot", ns):
             if slot.get("name") != "authorInstitution":
@@ -514,14 +734,20 @@ def _record_attachment(
     file_path: Path,
 ) -> Optional[int]:
     """Persist attachment metadata for the raw document."""
+    manager = encryption.get_encryption_manager()
     try:
-        relative_path = _relative_attachment_path(file_path)
-    except Exception as exc:  # pragma: no cover - defensive
-        logger.warning("Unable to resolve attachment path for %s: %s", file_path, exc)
-        relative_path = file_path
+        secure_path = manager.encrypt_file(file_path)
+    except (OSError, RuntimeError, ValueError) as exc:  # pragma: no cover - defensive
+        logger.warning("Unable to encrypt attachment %s: %s", file_path, exc)
+        secure_path = file_path
+    try:
+        relative_path = _relative_attachment_path(secure_path)
+    except ValueError as exc:  # pragma: no cover - defensive
+        logger.warning("Unable to resolve attachment path for %s: %s", secure_path, exc)
+        relative_path = secure_path
 
-    mime_type, _ = mimetypes.guess_type(str(file_path))
-    description = f"Raw CCD document ({file_path.name})"
+    mime_type, _ = mimetypes.guess_type(str(secure_path))
+    description = f"Raw CCD document ({secure_path.name})"
 
     try:
         attachment_id = upsert_attachment(
@@ -529,13 +755,14 @@ def _record_attachment(
             patient_id=patient_id,
             data_source_id=data_source_id,
             file_path=relative_path,
-            mime_type=mime_type or "application/xml",
+            mime_type=mime_type or "application/octet-stream",
             description=description,
         )
     except sqlite3.DatabaseError as exc:
-        logger.warning("Failed to record attachment for %s: %s", file_path, exc)
+        logger.warning("Failed to record attachment for %s: %s", secure_path, exc)
         return None
     return attachment_id
+
 
 def _relative_attachment_path(file_path: Path) -> Path:
     """Return a path suitable for storage (relative to repo root when possible)."""

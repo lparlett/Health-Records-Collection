@@ -13,37 +13,74 @@ from pathlib import Path
 from typing import Optional, Union
 import webbrowser
 
-from . import static_resources, xml_utils
+from health_records_collection.security import encryption
+from health_records_collection.frontend import static_resources, xml_utils
+
+
+logger = logging.getLogger(__name__)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 PathLike = Union[str, os.PathLike[str]]
 
 
+# Extract decryption into its own helper
+def _decrypt_if_needed(path: Path) -> Path:
+    """Decrypt encrypted files, return original path if not encrypted."""
+    if path.suffix == ".enc":
+        try:
+            return encryption.decrypt_to_temp(path)
+        except (FileNotFoundError, OSError) as exc:
+            logger.error("Failed to decrypt %s: %s", path, exc)
+            raise
+    return path
+
+
+# Extract UNC path handling
+def _is_unc_path(path: Path) -> bool:
+    """Check if path is a UNC network path."""
+    return str(path).startswith("\\")
+
+
+def _unc_to_uri(path: Path) -> str:
+    """Convert UNC path to file:// URI."""
+    unc_body = str(path)[2:].replace("\\", "/")
+    return f"file://{unc_body}"
+
+
 def build_file_uri(file_path: PathLike, *, validate: bool = True) -> Optional[str]:
     """Return a file:// URI for the provided path, handling UNC shares."""
     path = Path(file_path)
+
+    # Make absolute
     if not path.is_absolute():
         path = REPO_ROOT / path
+
+    # Decrypt if needed
     try:
-        resolved = path.resolve(strict=False)
-    except OSError:
-        resolved = path.absolute()
-
-    resolved_str = str(resolved)
-    is_unc_path = resolved_str.startswith("\\\\")
-
-    if validate and not resolved.exists() and not is_unc_path:
+        path = _decrypt_if_needed(path)
+    except (FileNotFoundError, OSError):
         return None
 
-    if is_unc_path:
-        unc_body = resolved_str[2:].replace("\\", "/")
-        return f"file://{unc_body}"
+    # Resolve path
+    try:
+        path = path.resolve(strict=False)
+    except OSError:
+        path = path.absolute()
+
+    # Validate exists (unless UNC or validation disabled)
+    if validate and not path.exists() and not _is_unc_path(path):
+        return None
+
+    # Convert to URI
+    if _is_unc_path(path):
+        return _unc_to_uri(path)
 
     try:
-        return resolved.as_uri()
+        return path.as_uri()
     except ValueError:
-        normalized = resolved_str.replace("\\", "/")
+        # Fallback for edge cases
+        normalized = str(path).replace("\\", "/")
         return f"file:///{normalized.lstrip('/')}"
 
 
@@ -55,7 +92,6 @@ def open_file(file_path: str) -> None:
     render CDA documents with the bundled stylesheet.
     """
     try:
-        logger = logging.getLogger(__name__)
         logger.debug("Opening file: %s", file_path)
 
         abs_path = str(Path(file_path).absolute())
@@ -88,5 +124,5 @@ def open_file(file_path: str) -> None:
             return
 
         webbrowser.open(uri)
-    except Exception as exc:
-        print(f"Error opening file {file_path}: {exc}")
+    except (FileNotFoundError, OSError, ValueError) as exc:
+        logger.error("Error opening file %s: %s", file_path, exc)

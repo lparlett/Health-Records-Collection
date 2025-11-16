@@ -2,7 +2,7 @@
 
 This roadmap describes the next development stages for Health-Records-Collection, focusing on a unified Streamlit interface, improved usability, transparent data provenance, and clean local resource management.
 
-## Past plans 
+## Past plans
 
 ### v0.2.0 — Schema Growth & Notes Handling
 
@@ -19,6 +19,7 @@ Goal: extend structured data without widening ingestion scope.
 Goal: unify ingestion and display under the Streamlit front end.
 
 * [ ] Upload ZIPs directly through Streamlit.
+* [ ] Encrypt data at rest and in transit.
 * [ ] Display progress indicators and error messages in real time.
 * [ ] Maintain a configurable local data directory for SQLite and imported archives.
 * [ ] Add error-sandbox tab for ingestion diagnostics and downloadable logs.

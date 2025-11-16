@@ -28,12 +28,13 @@ References
 
 from __future__ import annotations
 
-from lxml import etree
+from .common import safe_xpath_attr, safe_xpath_text
+from .xml_types import ElementTreeType
 
 PatientData = dict[str, str | None]
 
 
-def parse_patient(tree: etree._ElementTree, ns: dict[str, str]) -> PatientData:
+def parse_patient(tree: ElementTreeType, ns: dict[str, str]) -> PatientData:
     """Return core demographics for the patient described in a CCD.
 
     Args:
@@ -43,10 +44,13 @@ def parse_patient(tree: etree._ElementTree, ns: dict[str, str]) -> PatientData:
     Returns:
         PatientData: A dictionary containing patient demographics.
     """
-    given = tree.findtext(".//hl7:patient//hl7:given", namespaces=ns)
-    family = tree.findtext(".//hl7:patient//hl7:family", namespaces=ns)
-    dob = tree.findtext(".//hl7:patient//hl7:birthTime", namespaces=ns)
-    gender = tree.findtext(".//hl7:patient//hl7:administrativeGenderCode", namespaces=ns)
+    root = tree.getroot()
+    given = safe_xpath_text(root, ".//hl7:patient//hl7:given", ns)
+    family = safe_xpath_text(root, ".//hl7:patient//hl7:family", ns)
+    dob = safe_xpath_attr(root, ".//hl7:patient//hl7:birthTime", "value", ns)
+    gender = safe_xpath_attr(
+        root, ".//hl7:patient//hl7:administrativeGenderCode", "code", ns
+    )
 
     return {
         "given": given,

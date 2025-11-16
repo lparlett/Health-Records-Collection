@@ -2,33 +2,8 @@
 
 ## Purpose
 
-Defines Codex’s expected behavior and project conventions for the **Health-Records-Collection** repository.
+Defines Codex's expected behavior and project conventions for the **Health-Records-Collection** repository.
 Goals: reproducibility, privacy, and clarity.
-
----
-
-## Prompt Logging
-
-* Ask once per session: “Where should I store this session’s prompts?”. Skip logging if no path is given in user response.
-* Record **only prompts** verbatim.
-* DO NOT record:
-  * your responses
-  * IDE context information
-  * active file
-  * this file
-* Append each prompt chronologically with UTC timestamps.
-* Do not duplicate prompts with the same UTC timestamp.
-* Log entry format while complying with Markdown syntax:
-
-  ```txt
-  [YYYY-MM-DD HH:MM:SS UTC]
-  <prompt text>
-  ```
-
-* For each response, include a confirmation that the prompt was logged. Do not stop logging unless requested by the user.
-* When the user wraps part of a prompt in `[redact this from logging] ... [stop redaction]`, replace that inner text with `[redacted]` in the log entry while keeping the rest of the prompt verbatim.
-  * Example: `Please note [redact this from logging]secret[/stop redaction] info` is logged as `Please note [redacted] info`.
-* Strip or redact diagnostic dumps (for instance, copy and pasted error information) before logging; replace pasted troubleshooting details with `[troubleshooting redacted]`.
 
 ---
 
@@ -43,11 +18,33 @@ Goals: reproducibility, privacy, and clarity.
 /data/      → synthetic or de-identified samples only
 ```
 
+### Project layout & imports
+
+* The Git repo root (`health-records-collection/`) hosts Poetry metadata, CI workflows, docs, etc., while the actual Python package lives in the nested `health_records_collection/` directory (with its own `.git`, `pyproject.toml`, requirements, etc.).
+* When installing or linting, **cd into** `health_records_collection/` first and run `pip install -e .` (or Poetry commands) there so `pip` sees the package metadata.
+* When invoking tools from the outer repo, set `PYTHONPATH=$PWD` (or add the parent directory to `sys.path`) so imports resolve exactly as they do in CI. GitHub Actions' "Expose package import path" step mirrors this behavior.
+* Place all new Python modules inside the inner `health_records_collection/` package; avoid creating additional top-level packages in the outer repo.
+
+### PowerShell tips
+
+* Use parentheses for index ranges when calling `Select-Object -Index (start..end)`; literal `10..25` without parentheses is parsed as a string.
+* Prefer `python -c "<script>"` for quick transformations; multiline scripts are easiest via a here-string (`$script = @'...'@; python -c $script`) to avoid escaping.
+* When editing files via PowerShell loops, read to an array, modify, then `Set-Content`—avoids quoting issues compared to inline `sed`/`perl`.
+* Always set `Set-Location -Path ...` inside each command instead of relying on `cd`, because the CLI resets the working directory per invocation.
+* If you need literal backticks inside python strings, escape them aggressively (`\``) or build the snippet using triple quotes in Python to reduce escaping overhead.
+
+### Encoding & line endings
+
+* Default `python -c "..."` writes use the shell’s code page (cp1252 on Windows). When emitting Unicode (e.g., arrows), call `Path.write_text(..., encoding="utf-8")` or add `# -*- coding: utf-8 -*-` to temp scripts.
+* Normalize files with `text.splitlines()` and join using `"\n".join(...) + "\n"` to avoid CRLF/LF oscillation, but ensure you never clobber binary blobs—only use on text sources.
+* When replacing large blocks via one-off scripts, write the script to a temp file and run it (avoids quoting issues) and verify the result with `git diff` before proceeding.
+* Never overwrite a file with an empty string; if a transformation fails, restore from `git checkout -- path` immediately rather than re-running on a zero-length file.
+
 ---
 
 ## Environment
 
-* Python 3.12 (virtual env `.venv/`)
+* Python 3.12 (Poetry-managed virtual environment)
 * SQLite database (`sqlite3`)
 * Key libraries: `lxml`, `pandas`, `sqlite-utils`, `pytest`
 * Do not assume root/sudo access or system-level writes.
@@ -59,6 +56,7 @@ Goals: reproducibility, privacy, and clarity.
 * Follow **PEP 8** for style, **PEP 484** for typing, **Google-style** for docstrings.
 * Use modular, testable functions with clear naming.
 * Header comment in each file: purpose, author (Codex + user), date, and related tests.
+* Verify every script passes `pylint` and is formatted with `black` before returning results to the user.
 * Keep imports explicit and alphabetized.
 * As often as practical, keep line length to 80.
 * Favor clarity over brevity; avoid one-liners that obscure logic.
@@ -116,6 +114,7 @@ Source: [StackHawk](https://www.stackhawk.com/blog/4-best-practices-for-ai-code-
 * Prefer packages with strong security track records
 * Flag any dependencies that haven't been updated in 12+ months
 * Always check for known vulnerabilities before suggesting packages
+* Before commits, ensure `pyproject.toml` and `poetry.lock` reflect any dependency changes (`poetry lock` / `poetry update`)
 
 ### Code Review Requirements
 
@@ -144,6 +143,7 @@ Source: [StackHawk](https://www.stackhawk.com/blog/4-best-practices-for-ai-code-
 
 * Generated code must include a brief comment noting that it was AI-assisted.
 * Do not inject this comment into private data or schema dumps.
+* Every commit with an agent must include the AI agent and model acknowledgement.
 
 ---
 
@@ -169,9 +169,13 @@ Source: [StackHawk](https://www.stackhawk.com/blog/4-best-practices-for-ai-code-
 * **main** — always stable, production-ready code  
 * **release/X.Y.Z** — branch from `main`  
   * Used to integrate multiple features, test, and prepare for tagging  
-* **feature/short-slug** — branch from a `release/X.Y.Z` branch  
+* **feature/short-slug** — branch from a current `release/X.Y.Z` branch  
   * Used for developing or refactoring specific features or fixes  
+  * When the feature is complete and verified, merge it back into that same release branch immediately.
+  * The release branch should therefore accumulate all completed features.
+* Subsequent features for the same release must branch from the updated release branch so they include all previously merged work.
 * Merge completed `release/X.Y.Z` branches back into `main` when verified
+* When the release is ready, merge the release branch back into `main` (and tag as needed) before starting the next release.
 
 ### Merging & tagging
 
@@ -204,4 +208,4 @@ Source: [StackHawk](https://www.stackhawk.com/blog/4-best-practices-for-ai-code-
 
 ---
 
-Last updated: 2025-10-29
+Last updated: 2025-11-15
