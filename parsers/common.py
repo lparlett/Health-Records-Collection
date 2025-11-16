@@ -179,6 +179,9 @@ def get_text_by_id(
         return None
 
     ref_id = ref_value.lstrip("#")
+    # Only allow XML ID-safe characters: letters, digits, '_', '-', and '.'
+    if not re.fullmatch(r"[\w\-.]+", ref_id):
+        return None
     root = tree.getroot()
     nodes = cast(Sequence[Any], root.xpath(f"//*[@ID='{ref_id}']", namespaces=ns))
     for candidate in nodes:
