@@ -70,18 +70,24 @@ jobs:
             *.py
 
       - name: Type check with mypy
-        working-directory: health_records_collection
         run: |
+          if [ -d health_records_collection ]; then
+            cd health_records_collection
+          fi
           mypy --install-types --non-interactive --exclude 'tests|.venv' .
 
       - name: Run Bandit security scan
-        working-directory: health_records_collection
         run: |
+          if [ -d health_records_collection ]; then
+            cd health_records_collection
+          fi
           bandit -r parsers services frontend db security ingest.py -x tests,.venv
 
       - name: Run tests with coverage
-        working-directory: health_records_collection
         run: |
+          if [ -d health_records_collection ]; then
+            cd health_records_collection
+          fi
           coverage run -m pytest
           coverage xml
 
