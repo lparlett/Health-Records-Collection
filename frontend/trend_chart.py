@@ -91,7 +91,7 @@ def build_combined_chart(
     if reference_band_df is not None and not reference_band_df.empty:
         band_chart = build_reference_band_chart(reference_band_df)
         layered = alt.layer(band_chart, line_chart).resolve_scale(y="shared")
-        return cast(alt.Chart, alt.Chart.from_dict(layered.to_dict()))
+        return cast(alt.Chart, layered)
     return cast(alt.Chart, line_chart)
 
 
