@@ -11,7 +11,11 @@ import html
 from dataclasses import dataclass
 from typing import Callable, Dict, Sequence
 
-from health_records_collection.frontend.common_types import Anchor, EdgeSpec
+from health_records_collection.frontend.common_types import (
+    Anchor,
+    DiagramLayout,
+    EdgeSpec,
+)
 
 
 @dataclass(frozen=True)
@@ -86,21 +90,6 @@ class AnchorRequest:
 class DiagramBuilder:
     """Generate SVG markup for database schema ER diagram."""
 
-    # Layout constants
-    BASE_CARD_WIDTH = 250.0
-    BASE_CARD_HEIGHT = 250.0
-    BASE_H_GAP = 80.0
-    BASE_V_GAP = 60.0
-    BASE_MARGIN = 60.0
-    REL_SECTION_MARGIN = 8.0
-    REL_HEADER_OFFSET = 0.0
-    REL_LINE_SPACING = 12.0
-    REL_FOOTER_PADDING = 8.0
-    HEADER_BLOCK_HEIGHT = 36.0
-    FIELD_LINE_SPACING = 16.0
-    FIELD_BOTTOM_MARGIN = 12.0
-    REL_SECTION_GAP = 12.0
-
     def __init__(
         self,
         nodes: list[PositionedNode],
@@ -110,6 +99,7 @@ class DiagramBuilder:
         text_color: str = "#202124",
         show_edges: bool = True,
         focus_table: str | None = None,
+        layout: DiagramLayout | None = None,
     ) -> None:
         """Initialize builder with positioned nodes and edges.
 
@@ -124,6 +114,7 @@ class DiagramBuilder:
         self.style = DiagramStyle.from_zoom(zoom, text_color)
         self.show_edges = show_edges
         self.focus_table = focus_table
+        self.layout = layout or DiagramLayout()
 
     @property
     def scale(self) -> float:
@@ -191,8 +182,8 @@ class DiagramBuilder:
         extent_y = (
             max((node.y + node.height) for node in self.nodes) if self.nodes else 0.0
         )
-        diagram_width = int((extent_x + self.BASE_MARGIN) * self.scale)
-        diagram_height = int((extent_y + self.BASE_MARGIN) * self.scale)
+        diagram_width = int((extent_x + self.layout.margin) * self.scale)
+        diagram_height = int((extent_y + self.layout.margin) * self.scale)
 
         return [
             (
@@ -441,14 +432,21 @@ class DiagramBuilder:
             title="References",
             edges=outgoing,
             layout=RelationshipLayout(
-                x=x, width=width, cursor=cursor, top_margin=self.REL_SECTION_MARGIN
+                x=x,
+                width=width,
+                cursor=cursor,
+                top_margin=self.layout.relationship_section_margin,
             ),
             formatter=self._format_outgoing_label,
             text_opacity=node_opacity,
         )
         node_lines.extend(rel_lines)
 
-        gap = self.REL_SECTION_GAP if outgoing else self.REL_SECTION_MARGIN
+        gap = (
+            self.layout.relationship_section_gap
+            if outgoing
+            else self.layout.relationship_section_margin
+        )
         rel_lines, _ = self._render_relationship_section(
             title="Referenced by",
             edges=incoming,
@@ -497,8 +495,8 @@ class DiagramBuilder:
         for idx, field in enumerate(node.fields, start=1):
             line_y = (
                 title_y
-                + (self.HEADER_BLOCK_HEIGHT - 8.0) * self.scale
-                + (idx - 1) * self.FIELD_LINE_SPACING * self.scale
+                + (self.layout.header_block_height - 8.0) * self.scale
+                + (idx - 1) * self.layout.field_line_spacing * self.scale
             )
             if line_y + 16 * self.scale > metrics.y + metrics.height:
                 break
@@ -512,7 +510,10 @@ class DiagramBuilder:
                     "</text>"
                 )
             )
-        return self.HEADER_BLOCK_HEIGHT + len(node.fields) * self.FIELD_LINE_SPACING
+        return (
+            self.layout.header_block_height
+            + len(node.fields) * self.layout.field_line_spacing
+        )
 
     def _render_relationship_section(
         self,
@@ -529,7 +530,7 @@ class DiagramBuilder:
 
         lines: list[str] = []
         cursor = layout.cursor + layout.top_margin * self.scale
-        header_y = cursor + self.REL_HEADER_OFFSET * self.scale
+        header_y = cursor + self.layout.relationship_header_offset * self.scale
         lines.append(
             (
                 f'<text x="{layout.x + layout.width / 2:.1f}" y="{header_y:.1f}" '
@@ -541,7 +542,9 @@ class DiagramBuilder:
             )
         )
         for rel_idx, edge in enumerate(edges, start=1):
-            rel_y = header_y + rel_idx * (self.REL_LINE_SPACING * self.scale)
+            rel_y = header_y + rel_idx * (
+                self.layout.relationship_line_spacing * self.scale
+            )
             lines.append(
                 (
                     f'<text x="{layout.x + 12 * self.scale:.1f}" y="{rel_y:.1f}" '
@@ -556,8 +559,8 @@ class DiagramBuilder:
 
         cursor = (
             header_y
-            + len(edges) * (self.REL_LINE_SPACING * self.scale)
-            + self.REL_FOOTER_PADDING * self.scale
+            + len(edges) * (self.layout.relationship_line_spacing * self.scale)
+            + self.layout.relationship_footer_padding * self.scale
         )
         return lines, cursor
 
@@ -642,10 +645,10 @@ class DiagramBuilder:
     def _compute_diagram_height(self) -> float:
         """Compute the total SVG diagram height based on nodes."""
         if not self.nodes:
-            return self.BASE_MARGIN * 2
+            return self.layout.margin * 2
 
         extent_y = max((node.y + node.height) for node in self.nodes)
-        return (extent_y + self.BASE_MARGIN) * self.scale
+        return (extent_y + self.layout.margin) * self.scale
 
     def _node_opacity(self, node_id: str) -> float:
         """Return opacity for card/text based on focus selection."""

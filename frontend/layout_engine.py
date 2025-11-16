@@ -13,6 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Sequence
 
+from health_records_collection.frontend.common_types import DiagramLayout
 from health_records_collection.frontend.schema_parser import (
     TableDefinition,
 )
@@ -49,27 +50,12 @@ class LayoutEngine:
     - Anchor point inference for edge routing
     """
 
-    # Layout constants (must match DiagramBuilder)
-    BASE_CARD_WIDTH = 250.0
-    BASE_CARD_HEIGHT = 250.0
-    BASE_H_GAP = 80.0
-    BASE_V_GAP = 60.0
-    BASE_MARGIN = 60.0
-
-    # Relationship section sizing
-    HEADER_BLOCK_HEIGHT = 36.0
-    FIELD_LINE_SPACING = 16.0
-    FIELD_BOTTOM_MARGIN = 12.0
-    REL_SECTION_MARGIN = 8.0
-    REL_HEADER_OFFSET = 0.0
-    REL_LINE_SPACING = 12.0
-    REL_FOOTER_PADDING = 8.0
-    REL_SECTION_GAP = 12.0
-
     def __init__(
         self,
         definitions: Sequence[TableDefinition],
         layout_hints: Dict[str, tuple[int, int]],
+        *,
+        layout: DiagramLayout | None = None,
     ) -> None:
         """Initialize layout engine with schema and layout hints.
 
@@ -83,6 +69,7 @@ class LayoutEngine:
         self.relationship_counts: Dict[str, RelationshipCount] = {}
         self.row_max_heights: Dict[int, float] = {}
         self.row_offsets: Dict[int, float] = {}
+        self.layout = layout or DiagramLayout()
 
     def compute_layout(self) -> list[LayoutNode]:
         """Compute complete layout for all nodes.
@@ -155,11 +142,11 @@ class LayoutEngine:
             # Base height: header + fields
             field_count = len(definition.columns)
             base_height = (
-                self.HEADER_BLOCK_HEIGHT
-                + field_count * self.FIELD_LINE_SPACING
-                + self.FIELD_BOTTOM_MARGIN
+                self.layout.header_block_height
+                + field_count * self.layout.field_line_spacing
+                + self.layout.field_bottom_margin
             )
-            base_height = max(self.BASE_CARD_HEIGHT, base_height)
+            base_height = max(self.layout.card_height, base_height)
 
             # Extra height for relationship sections
             extra_height = 0.0
@@ -167,23 +154,23 @@ class LayoutEngine:
 
             if rel_count.outgoing_count > 0:
                 extra_height += (
-                    self.REL_SECTION_MARGIN
-                    + self.REL_HEADER_OFFSET
-                    + rel_count.outgoing_count * self.REL_LINE_SPACING
-                    + self.REL_FOOTER_PADDING
+                    self.layout.relationship_section_margin
+                    + self.layout.relationship_header_offset
+                    + rel_count.outgoing_count * self.layout.relationship_line_spacing
+                    + self.layout.relationship_footer_padding
                 )
 
             if rel_count.incoming_count > 0:
                 gap = (
-                    self.REL_SECTION_MARGIN
+                    self.layout.relationship_section_margin
                     if rel_count.outgoing_count == 0
-                    else self.REL_SECTION_GAP
+                    else self.layout.relationship_section_gap
                 )
                 extra_height += (
                     gap
-                    + self.REL_HEADER_OFFSET
-                    + rel_count.incoming_count * self.REL_LINE_SPACING
-                    + self.REL_FOOTER_PADDING
+                    + self.layout.relationship_header_offset
+                    + rel_count.incoming_count * self.layout.relationship_line_spacing
+                    + self.layout.relationship_footer_padding
                 )
 
             final_height = base_height + extra_height
@@ -199,11 +186,11 @@ class LayoutEngine:
         Rows are stacked vertically with gaps between them.
         """
         self.row_offsets = {}
-        current_y = self.BASE_MARGIN
+        current_y = self.layout.margin
 
         for row in sorted(self.row_max_heights.keys()):
             self.row_offsets[row] = current_y
-            current_y += self.row_max_heights[row] + self.BASE_V_GAP
+            current_y += self.row_max_heights[row] + self.layout.vertical_gap
 
     def _build_layout_nodes(self) -> list[LayoutNode]:
         """Build final LayoutNode objects with computed dimensions."""
@@ -211,18 +198,20 @@ class LayoutEngine:
 
         for definition in self.definitions:
             col, row = self.table_layout[definition.name]
-            x = self.BASE_MARGIN + col * (self.BASE_CARD_WIDTH + self.BASE_H_GAP)
-            y = self.row_offsets.get(row, self.BASE_MARGIN)
+            x = self.layout.margin + col * (
+                self.layout.card_width + self.layout.horizontal_gap
+            )
+            y = self.row_offsets.get(row, self.layout.margin)
 
             # Get height from pre-computed values
-            height = self.row_max_heights.get(row, self.BASE_CARD_HEIGHT)
+            height = self.row_max_heights.get(row, self.layout.card_height)
 
             nodes.append(
                 LayoutNode(
                     identifier=definition.name,
                     column=col,
                     row=row,
-                    width=self.BASE_CARD_WIDTH,
+                    width=self.layout.card_width,
                     height=height,
                     x=x,
                     y=y,
@@ -289,19 +278,19 @@ class LayoutEngine:
             Tuple of (total_width, total_height) before scaling.
         """
         if not self.row_max_heights:
-            return self.BASE_MARGIN * 2, self.BASE_MARGIN * 2
+            return self.layout.margin * 2, self.layout.margin * 2
 
         max_col = max((col for col, _ in self.table_layout.values()), default=0)
 
         extent_x = (
-            self.BASE_MARGIN
-            + (max_col + 1) * self.BASE_CARD_WIDTH
-            + max_col * self.BASE_H_GAP
+            self.layout.margin
+            + (max_col + 1) * self.layout.card_width
+            + max_col * self.layout.horizontal_gap
         )
         extent_y = (
-            self.BASE_MARGIN
+            self.layout.margin
             + sum(self.row_max_heights.values())
-            + len(self.row_max_heights) * self.BASE_V_GAP
+            + len(self.row_max_heights) * self.layout.vertical_gap
         )
 
         return extent_x, extent_y

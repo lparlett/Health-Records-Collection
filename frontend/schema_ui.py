@@ -17,7 +17,7 @@ import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 
-from health_records_collection.frontend.common_types import NodeSpec
+from health_records_collection.frontend.common_types import DiagramLayout, NodeSpec
 from health_records_collection.frontend.diagram_builder import (
     DiagramBuilder,
     EdgeSpec as DiagramEdgeSpec,
@@ -107,6 +107,7 @@ def render_diagram(
     node_specs: tuple,
     edge_specs: tuple,
     options: DisplayOptions,
+    layout: DiagramLayout,
 ) -> None:
     """Render the ER diagram with header and description.
 
@@ -114,6 +115,7 @@ def render_diagram(
         node_specs: Tuple of NodeSpec objects with table metadata.
         edge_specs: Tuple of EdgeSpec objects with relationships.
         options: Display options (zoom, color).
+        layout: Diagram layout metrics shared with the layout engine.
     """
     st.header("Database Schema")
     st.markdown(
@@ -131,8 +133,8 @@ def render_diagram(
             node_x = spec.x
             node_y = spec.y
         else:
-            node_x = spec.column * 330.0
-            node_y = spec.row * 310.0
+            node_x = spec.column * (layout.card_width + layout.horizontal_gap)
+            node_y = spec.row * (layout.card_height + layout.vertical_gap)
         positioned_nodes.append(
             DiagramPositionedNode(
                 identifier=spec.identifier,
@@ -165,6 +167,7 @@ def render_diagram(
         text_color=options.text_color,
         show_edges=options.show_connectors,
         focus_table=options.focus_table,
+        layout=layout,
     )
     diagram_html, diagram_height = builder.build()
     components.html(diagram_html, height=diagram_height, scrolling=True)

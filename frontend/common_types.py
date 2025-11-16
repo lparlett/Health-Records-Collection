@@ -13,6 +13,26 @@ from typing import Literal
 Anchor = Literal["left", "right", "top", "bottom"]
 
 
+# pylint: disable=too-many-instance-attributes
+@dataclass(frozen=True)
+class DiagramLayout:
+    """Shared layout metrics for schema diagrams."""
+
+    card_width: float = 250.0
+    card_height: float = 250.0
+    horizontal_gap: float = 80.0
+    vertical_gap: float = 60.0
+    margin: float = 60.0
+    header_block_height: float = 36.0
+    field_line_spacing: float = 16.0
+    field_bottom_margin: float = 12.0
+    relationship_section_margin: float = 8.0
+    relationship_header_offset: float = 20.0
+    relationship_line_spacing: float = 12.0
+    relationship_footer_padding: float = 8.0
+    relationship_section_gap: float = 12.0
+
+
 @dataclass(frozen=True)
 class NodeSpec:
     """Static definition for a table node in the ER diagram."""

@@ -10,7 +10,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Dict, cast
 
-from health_records_collection.frontend.common_types import Anchor, NodeSpec, EdgeSpec
+from health_records_collection.frontend.common_types import (
+    Anchor,
+    DiagramLayout,
+    EdgeSpec,
+    NodeSpec,
+)
 from health_records_collection.frontend.layout_engine import LayoutEngine
 from health_records_collection.frontend.schema_parser import (
     SchemaParser,
@@ -46,7 +51,9 @@ def _load_schema_definitions() -> tuple[TableDefinition, ...]:
     return parser.parse()
 
 
-def _build_specs() -> tuple[tuple[NodeSpec, ...], tuple[EdgeSpec, ...]]:
+def _build_specs(
+    layout: DiagramLayout,
+) -> tuple[tuple[NodeSpec, ...], tuple[EdgeSpec, ...]]:
     """Construct node and edge specifications from schema metadata.
 
     Uses LayoutEngine to compute table positions and anchor inference.
@@ -54,7 +61,7 @@ def _build_specs() -> tuple[tuple[NodeSpec, ...], tuple[EdgeSpec, ...]]:
     definitions = _load_schema_definitions()
 
     # Use LayoutEngine to compute layout
-    engine = LayoutEngine(definitions, LAYOUT_HINTS)
+    engine = LayoutEngine(definitions, LAYOUT_HINTS, layout=layout)
     layout_nodes = {node.identifier: node for node in engine.compute_layout()}
 
     node_specs: list[NodeSpec] = []
@@ -110,14 +117,16 @@ def render_schema_documentation() -> None:
     3. Render diagram with options
     4. Display entity summary
     """
+    layout = DiagramLayout()
+
     # Build diagram specifications
-    node_specs, edge_specs = _build_specs()
+    node_specs, edge_specs = _build_specs(layout)
 
     # Get display options from user
     options = get_display_options(node_specs)
 
     # Render the diagram
-    render_diagram(node_specs, edge_specs, options)
+    render_diagram(node_specs, edge_specs, options, layout)
 
     # Render entity summary
     render_entity_summary()
