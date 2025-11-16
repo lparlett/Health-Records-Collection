@@ -86,18 +86,18 @@ jobs:
 
       - name: Run Bandit security scan
         run: |
-          if [ -d health_records_collection ]; then
+          if [ ! -d .git ] && [ -d health_records_collection/.git ]; then
             cd health_records_collection
-          elif [ -d ../health_records_collection ]; then
+          elif [ ! -d .git ] && [ -d ../health_records_collection/.git ]; then
             cd ../health_records_collection
           fi
           bandit -r parsers services frontend db security ingest.py -x tests,.venv
 
       - name: Run tests with coverage
         run: |
-          if [ -d health_records_collection ]; then
+          if [ ! -d .git ] && [ -d health_records_collection/.git ]; then
             cd health_records_collection
-          elif [ -d ../health_records_collection ]; then
+          elif [ ! -d .git ] && [ -d ../health_records_collection/.git ]; then
             cd ../health_records_collection
           fi
           coverage run -m pytest

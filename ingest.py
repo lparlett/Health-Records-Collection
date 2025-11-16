@@ -22,8 +22,8 @@ from typing import TYPE_CHECKING, Any, Callable, Optional, Sequence
 import yaml  # type: ignore
 from defusedxml.lxml import parse as safe_parse  # type: ignore
 from defusedxml.common import DefusedXmlException as XMLSyntaxError
-from lxml import etree  # type: ignore # nosec
-from lxml.etree import _Element, _ElementTree  # type: ignore # nosec B410
+from lxml import etree  # type: ignore # nosec import_lxml
+from lxml.etree import _Element, _ElementTree  # type: ignore # nosec import_lxml
 
 
 from health_records_collection import settings
@@ -223,7 +223,7 @@ def parse_ccd(xml_file: Path) -> ParsedCCD:
     try:
         tree = safe_parse(
             str(xml_file)
-        )  # Bandit B320: safe_parse mitigates XML entity attacks.
+        )  # safe_parse mitigates XML entity attacks.
     except (OSError, XMLSyntaxError) as exc:
         logger.warning("Skipping malformed XML %s: %s", xml_file.name, exc)
         return {}

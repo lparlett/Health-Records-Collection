@@ -9,14 +9,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-# Bandit B410: etree usage is safe because upstream callers provide defused XML.
-from lxml import etree  # nosec B410
+# Bandit import_lxml: etree usage is safe because upstream callers provide defused XML.
+from lxml import etree  # nosec import_lxml
 
 if TYPE_CHECKING:
-    from lxml.etree import _Element as ElementType  # nosec B410
-    from lxml.etree import _ElementTree as ElementTreeType  # nosec B410
+    from lxml.etree import _Element as ElementType  # nosec import_lxml
+    from lxml.etree import _ElementTree as ElementTreeType  # nosec import_lxml
 else:  # pragma: no cover - runtime aliases needed for isinstance checks
-    from lxml.etree import _Element as ElementType  # nosec B410
-    from lxml.etree import _ElementTree as ElementTreeType  # nosec B410
+    from lxml.etree import _Element as ElementType  # nosec import_lxml
+    from lxml.etree import _ElementTree as ElementTreeType  # nosec import_lxml
 
 __all__ = ["etree", "ElementType", "ElementTreeType"]

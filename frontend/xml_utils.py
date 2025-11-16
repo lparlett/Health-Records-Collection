@@ -24,7 +24,7 @@ from defusedxml.common import (
     DTDForbidden as DocumentInvalid,
 )
 
-from lxml.etree import _Element  # nosec B410
+from lxml.etree import _Element  # nosec import_lxml
 
 from health_records_collection.frontend import html_generator
 from health_records_collection.frontend import xml_transform_helpers

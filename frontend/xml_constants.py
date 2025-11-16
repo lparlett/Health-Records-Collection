@@ -6,10 +6,10 @@ processing across multiple frontend modules.
 
 from typing import TYPE_CHECKING
 
-from lxml import etree as unsafe_etree  # nosec B410
+from lxml import etree as unsafe_etree  # nosec import_lxml
 
 if TYPE_CHECKING:
-    from lxml.etree import XMLParser as _XMLParser
+    from lxml.etree import XMLParser as _XMLParser # nosec import_lxml
 else:  # pragma: no cover - runtime access only
     _XMLParser = unsafe_etree.XMLParser  # type: ignore[attr-defined]
 

@@ -1,6 +1,6 @@
 import unittest
 
-from lxml import etree  # nosec B410
+from lxml import etree  # nosec import_lxml
 
 from health_records_collection.parsers import (
     allergies,
@@ -31,7 +31,7 @@ class TestParsers(unittest.TestCase):
           </recordTarget>
         </ClinicalDocument>
         """
-        root = etree.fromstring(sample_xml.encode("utf-8"))  # nosec B320
+        root = etree.fromstring(sample_xml.encode("utf-8"))  # nosec xml_bad_etree
         tree = etree.ElementTree(root)
         ns = {"hl7": "urn:hl7-org:v3"}
 
@@ -85,7 +85,7 @@ class TestParsers(unittest.TestCase):
           </component>
         </ClinicalDocument>
         """
-        root = etree.fromstring(sample_xml.encode("utf-8"))  # nosec B320
+        root = etree.fromstring(sample_xml.encode("utf-8"))  # nosec xml_bad_etree
         tree = etree.ElementTree(root)
         ns = {"hl7": "urn:hl7-org:v3"}
 
@@ -138,7 +138,7 @@ class TestParsers(unittest.TestCase):
           </component>
         </ClinicalDocument>
         """
-        root = etree.fromstring(sample_xml.encode("utf-8"))  # nosec B320
+        root = etree.fromstring(sample_xml.encode("utf-8"))  # nosec xml_bad_etree
         tree = etree.ElementTree(root)
         ns = {"hl7": "urn:hl7-org:v3"}
 
@@ -195,7 +195,7 @@ class TestParsers(unittest.TestCase):
           </component>
         </ClinicalDocument>
         """
-        root = etree.fromstring(sample_xml.encode("utf-8"))  # nosec B320
+        root = etree.fromstring(sample_xml.encode("utf-8"))  # nosec xml_bad_etree
         tree = etree.ElementTree(root)
         ns = {"hl7": "urn:hl7-org:v3"}
 
@@ -245,7 +245,7 @@ class TestParsers(unittest.TestCase):
           </component>
         </ClinicalDocument>
         """
-        root = etree.fromstring(sample_xml.encode("utf-8"))  # nosec B320
+        root = etree.fromstring(sample_xml.encode("utf-8"))  # nosec xml_bad_etree
         tree = etree.ElementTree(root)
         ns = {"hl7": "urn:hl7-org:v3"}
 
@@ -289,7 +289,7 @@ class TestParsers(unittest.TestCase):
           </component>
         </ClinicalDocument>
         """
-        root = etree.fromstring(sample_xml.encode("utf-8"))  # nosec B320
+        root = etree.fromstring(sample_xml.encode("utf-8"))  # nosec xml_bad_etree
         tree = etree.ElementTree(root)
         ns = {"hl7": "urn:hl7-org:v3"}
 
@@ -359,7 +359,7 @@ class TestParsers(unittest.TestCase):
           </component>
         </ClinicalDocument>
         """
-        root = etree.fromstring(sample_xml.encode("utf-8"))  # nosec B320
+        root = etree.fromstring(sample_xml.encode("utf-8"))  # nosec xml_bad_etree
         tree = etree.ElementTree(root)
         ns = {"hl7": "urn:hl7-org:v3"}
 
@@ -379,7 +379,7 @@ class TestParsers(unittest.TestCase):
 
     def test_parse_insurance_basic(self):
         sample_xml = helpers.SAMPLE_INSURANCE_XML
-        root = etree.fromstring(sample_xml.encode("utf-8"))  # nosec B320
+        root = etree.fromstring(sample_xml.encode("utf-8"))  # nosec xml_bad_etree
         tree = etree.ElementTree(root)
         ns = {"hl7": "urn:hl7-org:v3"}
 

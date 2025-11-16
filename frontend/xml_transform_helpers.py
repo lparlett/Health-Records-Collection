@@ -11,7 +11,7 @@ from typing import Optional
 
 import logging
 
-from lxml import etree as unsafe_etree  # nosec B410
+from lxml import etree as unsafe_etree  # nosec import_lxml
 from defusedxml.lxml import fromstring
 from defusedxml.common import (
     DefusedXmlException as XMLSyntaxError,
@@ -23,7 +23,7 @@ from health_records_collection.frontend import static_resources
 from health_records_collection.frontend.xml_constants import RESTRICTED_PARSER
 from health_records_collection.security import encryption
 
-ElementType = unsafe_etree._Element  # type: ignore[attr-defined]  # nosec B410  # pylint: disable=protected-access
+ElementType = unsafe_etree._Element  # type: ignore[attr-defined]  # nosec import_lxml  # pylint: disable=protected-access
 
 logger = logging.getLogger(__name__)
 
@@ -141,7 +141,7 @@ def build_xslt_transformer(xsl_path: str) -> Optional[unsafe_etree.XSLT]:
         xsl_text = Path(xsl_path).read_text(encoding="utf-8")
 
         # Parse stylesheet with restricted settings
-        xsl_doc = unsafe_etree.fromstring(  # nosec B320
+        xsl_doc = unsafe_etree.fromstring(  # nosec xml_bad_etree
             xsl_text.encode("utf-8"), parser=RESTRICTED_PARSER
         )
 
@@ -181,7 +181,7 @@ def perform_xslt_transformation(
         xml_str = unsafe_etree.tostring(xml_doc)
         safe_doc = unsafe_etree.fromstring(
             xml_str, parser=RESTRICTED_PARSER
-        )  # nosec B320
+        )  # nosec xml_bad_etree
 
         if not isinstance(safe_doc, ElementType):
             logger.error(
