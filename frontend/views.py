@@ -52,7 +52,7 @@ def _rerun() -> None:
         rerun_callable()
 
 
-def render_patient_encounter_experience(conn) -> bool:
+def render_patient_encounter_experience(conn: sqlite3.Connection) -> bool:
     """Render the encounter experience. Returns True when overview is active."""
     _ensure_state()
     state = st.session_state
@@ -101,7 +101,7 @@ def _navigation_controls() -> str:
         ("Settings", "settings"),
     ]
     labels = [label for label, _ in options]
-    nav_view = state.get("nav_view", "overview")
+    nav_view = str(state.get("nav_view", "overview"))
     default_index = next(
         (idx for idx, (_, value) in enumerate(options) if value == nav_view),
         0,
@@ -115,7 +115,8 @@ def _navigation_controls() -> str:
     selected_view = dict(options)[selected_label]
     if selected_view != state.get("nav_view"):
         state["nav_view"] = selected_view
-    return state["nav_view"]
+        nav_view = selected_view
+    return nav_view
 
 
 def _select_patient(
@@ -154,7 +155,7 @@ def _select_patient(
     return patient_id, patient_row
 
 
-def _show_encounter_overview(conn) -> None:
+def _show_encounter_overview(conn: sqlite3.Connection) -> None:
     st.header("Encounter Overview")
 
     patients = db_utils.get_patients(conn)
@@ -193,7 +194,7 @@ def _show_encounter_overview(conn) -> None:
         render_encounter_card(row, encounter_id, handle_detail_click)
 
 
-def _show_patient_trends_page(conn) -> None:
+def _show_patient_trends_page(conn: sqlite3.Connection) -> None:
     st.header("Patient Trends")
 
     patients = db_utils.get_patients(conn)

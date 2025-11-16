@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass
-from typing import Mapping, Optional, Sequence, TypedDict
+from typing import Any, Mapping, Optional, Sequence, TypedDict, cast
 
 from health_records_collection.db.utils import execute_update
 from health_records_collection.services.common import (
@@ -111,9 +111,9 @@ def _find_existing_condition(
     cur: sqlite3.Cursor,
     patient_id: int,
     condition_data: ConditionData,
-) -> tuple | None:
+) -> tuple[Any, ...] | None:
     """Find existing condition record in database."""
-    return cur.execute(
+    row = cur.execute(
         """
         SELECT id, status, notes, provider_id, encounter_id, data_source_id
           FROM condition
@@ -129,6 +129,7 @@ def _find_existing_condition(
             condition_data.get("onset_date") or "",
         ),
     ).fetchone()
+    return cast("tuple[Any, ...] | None", row)
 
 
 def _insert_new_condition(

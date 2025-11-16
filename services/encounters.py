@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass, field
-from typing import Any, Mapping, Optional, Sequence
+from typing import Any, Mapping, Optional, Sequence, cast
 
 from health_records_collection.db.utils import update_single_field
 from health_records_collection.services.common import clean_str, coerce_int
@@ -335,7 +335,7 @@ def _find_existing_encounter(
     encounter: EncounterData,
 ) -> Optional[tuple[Any, ...]]:
     """Find existing encounter record if any."""
-    return cur.execute(
+    row = cur.execute(
         """
         SELECT id, encounter_type, notes, reason_for_visit, 
                 data_source_id, provider_id, organization_id
@@ -350,6 +350,7 @@ def _find_existing_encounter(
             encounter.provider_id,
         ),
     ).fetchone()
+    return cast("tuple[Any, ...] | None", row)
 
 
 def _update_encounter(

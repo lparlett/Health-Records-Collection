@@ -256,14 +256,17 @@ def get_patient_encounters(conn: SQLCipherConnection, patient_id: int) -> pd.Dat
 
 
 def _fetch_records(
-    conn: SQLCipherConnection, query: str, params: tuple, drop: list[str] | None = None
-) -> list[dict]:
+    conn: SQLCipherConnection,
+    query: str,
+    params: tuple,
+    drop: list[str] | None = None,
+) -> list[dict[str, Any]]:
     df = pd.read_sql(query, conn, params=params)
     if df.empty:
         return []
     if drop:
         df = df.drop(columns=drop)
-    return df.to_dict("records")
+    return cast("list[dict[str, Any]]", df.to_dict("records"))
 
 
 def _encounter_metadata(

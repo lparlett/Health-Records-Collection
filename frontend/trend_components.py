@@ -8,7 +8,10 @@
 from __future__ import annotations
 
 import sqlite3
+from typing import Any, Mapping
 
+import altair as alt
+import pandas as pd
 import streamlit as st
 
 from health_records_collection.frontend import (
@@ -85,11 +88,11 @@ def render_patient_trends(
 
 
 def _prepare_series(
-    selected_meta: dict,
-    vitals_df,
-    labs_df,
+    selected_meta: Mapping[str, Any],
+    vitals_df: pd.DataFrame,
+    labs_df: pd.DataFrame,
     selected_label: str,
-):
+) -> tuple[pd.DataFrame, str, list[alt.Tooltip], list[str], pd.DataFrame | None]:
     """Prepare series dataframe based on selection.
 
     Args:
@@ -102,7 +105,7 @@ def _prepare_series(
         Tuple of (series_df, display_name, tooltip_fields, table_columns,
         reference_band_df).
     """
-    reference_band_df = None
+    reference_band_df: pd.DataFrame | None = None
 
     if selected_meta["dataset"] == "vital":
         series_df = trend_data.filter_vitals_by_type(
@@ -111,7 +114,7 @@ def _prepare_series(
         display_name = trend_formatting.format_display_name_vital(
             selected_meta.get("name")
         )
-        tooltip_fields = trend_formatting.get_vital_tooltips()
+        tooltip_fields = list(trend_formatting.get_vital_tooltips())
         table_columns = trend_formatting.get_vital_table_columns()
     else:
         series_df = trend_data.filter_labs_by_loinc(
@@ -120,7 +123,7 @@ def _prepare_series(
         display_name = trend_formatting.format_display_name_lab(
             selected_meta.get("loinc_code"), selected_meta.get("test_name")
         )
-        tooltip_fields = trend_formatting.get_lab_tooltips()
+        tooltip_fields = list(trend_formatting.get_lab_tooltips())
         table_columns = trend_formatting.get_lab_table_columns()
 
         # Add reference bounds for labs
@@ -138,10 +141,16 @@ def _prepare_series(
             if show_band:
                 reference_band_df = band_data
 
-    return series_df, display_name, tooltip_fields, table_columns, reference_band_df
+    return (
+        series_df,
+        display_name,
+        tooltip_fields,
+        table_columns,
+        reference_band_df,
+    )
 
 
-def _display_series_warnings(series_df) -> None:
+def _display_series_warnings(series_df: pd.DataFrame) -> None:
     """Display warnings about series data quality.
 
     Args:
@@ -161,10 +170,10 @@ def _display_series_warnings(series_df) -> None:
 
 
 def _render_series_chart(
-    series_df,
-    tooltip_fields,
+    series_df: pd.DataFrame,
+    tooltip_fields: list[alt.Tooltip],
     *,
-    reference_band_df=None,
+    reference_band_df: pd.DataFrame | None = None,
 ) -> None:
     """Render trend chart if sufficient data exists.
 

@@ -24,6 +24,8 @@ from defusedxml.common import (
     DTDForbidden as DocumentInvalid,
 )
 
+from lxml.etree import _Element #nosec B410
+
 from health_records_collection.frontend import html_generator
 from health_records_collection.frontend import xml_transform_helpers
 from health_records_collection.frontend.xml_constants import XSLT_NS
@@ -95,7 +97,7 @@ def _read_stylesheet(file_path: Path) -> str:
     return content
 
 
-def _validate_stylesheet_tree(tree, file_path: Path) -> None:
+def _validate_stylesheet_tree(tree: _Element, file_path: Path) -> None:
     """Validate parsed stylesheet tree."""
     namespace = getattr(tree, "nsmap", {}).get(None)
     if namespace != XSLT_NS:

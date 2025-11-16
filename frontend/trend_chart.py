@@ -9,7 +9,7 @@ AI-assisted: Module generated with AI assistance.
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, cast
 
 import altair as alt
 import pandas as pd
@@ -34,7 +34,7 @@ def build_line_chart(
     x_encoding = alt.X("measurement_time:T", title="Measurement Date")
     y_encoding = alt.Y("value_numeric:Q", title=y_title)
 
-    return (
+    chart = (
         alt.Chart(chart_df)
         .mark_line(point=True)
         .encode(
@@ -43,6 +43,7 @@ def build_line_chart(
             tooltip=tooltip_fields,
         )
     )
+    return cast(alt.Chart, chart)
 
 
 def build_reference_band_chart(
@@ -62,7 +63,7 @@ def build_reference_band_chart(
         Altair Chart object.
     """
     x_encoding = alt.X("measurement_time:T", title="Measurement Date")
-    return (
+    chart = (
         alt.Chart(reference_band_df)
         .mark_area(opacity=opacity, color=color)
         .encode(
@@ -71,6 +72,7 @@ def build_reference_band_chart(
             y2="reference_high:Q",
         )
     )
+    return cast(alt.Chart, chart)
 
 
 def build_combined_chart(
@@ -88,10 +90,9 @@ def build_combined_chart(
     """
     if reference_band_df is not None and not reference_band_df.empty:
         band_chart = build_reference_band_chart(reference_band_df)
-        return alt.Chart.from_dict(
-            alt.layer(band_chart, line_chart).resolve_scale(y="shared").to_dict()
-        )
-    return line_chart
+        layered = alt.layer(band_chart, line_chart).resolve_scale(y="shared")
+        return cast(alt.Chart, alt.Chart.from_dict(layered.to_dict()))
+    return cast(alt.Chart, line_chart)
 
 
 def finalize_chart(chart: alt.Chart) -> alt.Chart:
@@ -103,4 +104,4 @@ def finalize_chart(chart: alt.Chart) -> alt.Chart:
     Returns:
         Interactive chart.
     """
-    return chart.interactive()
+    return cast(alt.Chart, chart.interactive())

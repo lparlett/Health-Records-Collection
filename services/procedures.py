@@ -9,7 +9,7 @@
 from __future__ import annotations
 
 import sqlite3
-from typing import Mapping, Sequence, TypedDict
+from typing import Mapping, Sequence, TypedDict, cast
 
 from health_records_collection.db.utils import execute_update
 from health_records_collection.services.common import (
@@ -119,7 +119,7 @@ def _find_existing_procedure(
     Returns:
         Tuple with procedure details if found, None otherwise.
     """
-    return cur.execute(
+    row = cur.execute(
         """
         SELECT id, status, notes, provider_id, encounter_id, data_source_id
           FROM procedure
@@ -130,6 +130,10 @@ def _find_existing_procedure(
         """,
         (patient_id, name or "", code_value or "", date or ""),
     ).fetchone()
+    return cast(
+        "tuple[int, str | None, str | None, int | None, int | None, int | None] | None",
+        row,
+    )
 
 
 def _insert_procedure_record(

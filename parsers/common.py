@@ -336,6 +336,16 @@ def extract_encounter_details(
     return source_id, start, end
 
 
+def _coerce_xpath_value(result: Any) -> str | None:
+    """Return a coerced string for common XPath result containers."""
+    if isinstance(result, (str, bytes)):
+        return clean_text(result)
+    if isinstance(result, Sequence) and not isinstance(result, (str, bytes)):
+        first = next(iter(result), None)
+        return clean_text(first)
+    return clean_text(result)
+
+
 def safe_xpath_text(element: ElementType, path: str, ns: dict[str, str]) -> str | None:
     """Safely extract text using xpath, with namespace fallback.
 
@@ -352,12 +362,12 @@ def safe_xpath_text(element: ElementType, path: str, ns: dict[str, str]) -> str 
     """
     try:
         results = element.xpath(f"{path}/text()", namespaces=ns)
-        return results[0] if results else None
+        return _coerce_xpath_value(results)
     except (KeyError, AttributeError):  # Namespace not found or xpath failed
         try:
             simple_path = path.replace("hl7:", "").replace("//", "/")
             results = element.xpath(f".//{simple_path}/text()")
-            return results[0] if results else None
+            return _coerce_xpath_value(results)
         except (KeyError, AttributeError):
             return None
 
@@ -381,11 +391,11 @@ def safe_xpath_attr(
     """
     try:
         results = element.xpath(f"{path}/@{attr}", namespaces=ns)
-        return results[0] if results else None
+        return _coerce_xpath_value(results)
     except (KeyError, AttributeError):  # Namespace not found or xpath failed
         try:
             simple_path = path.replace("hl7:", "").replace("//", "/")
             results = element.xpath(f".//{simple_path}/@{attr}")
-            return results[0] if results else None
+            return _coerce_xpath_value(results)
         except (KeyError, AttributeError):
             return None

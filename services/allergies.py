@@ -9,7 +9,7 @@
 from __future__ import annotations
 
 import sqlite3
-from typing import Mapping, Sequence, Tuple, TypedDict
+from typing import Any, Mapping, Sequence, Tuple, TypedDict, cast
 
 from health_records_collection.db.utils import update_single_field
 from health_records_collection.services.common import (
@@ -149,9 +149,9 @@ def _find_existing_allergy(
     cur: sqlite3.Cursor,
     patient_id: int,
     allergy_data: AllergyData,
-) -> tuple | None:
+) -> tuple[Any, ...] | None:
     """Find existing allergy record in database."""
-    return cur.execute(
+    row = cur.execute(
         """
         SELECT
             id,
@@ -182,6 +182,7 @@ def _find_existing_allergy(
             allergy_data.get("status") or "",
         ),
     ).fetchone()
+    return cast("tuple[Any, ...] | None", row)
 
 
 def _build_update_queries(
