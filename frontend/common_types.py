@@ -22,6 +22,10 @@ class NodeSpec:
     fields: tuple[str, ...]
     column: int
     row: int
+    x: float = 0.0
+    y: float = 0.0
+    width: float = 250.0
+    height: float = 250.0
 
 
 @dataclass

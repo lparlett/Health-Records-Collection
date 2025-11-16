@@ -108,6 +108,8 @@ class DiagramBuilder:
         *,
         zoom: float = 1.0,
         text_color: str = "#202124",
+        show_edges: bool = True,
+        focus_table: str | None = None,
     ) -> None:
         """Initialize builder with positioned nodes and edges.
 
@@ -120,6 +122,8 @@ class DiagramBuilder:
         self.nodes = nodes
         self.edges = edges
         self.style = DiagramStyle.from_zoom(zoom, text_color)
+        self.show_edges = show_edges
+        self.focus_table = focus_table
 
     @property
     def scale(self) -> float:
@@ -169,7 +173,8 @@ class DiagramBuilder:
         """
         svg_lines = self._build_svg_header()
         svg_lines.extend(self._build_legend())
-        svg_lines.extend(self._build_edges())
+        if self.show_edges:
+            svg_lines.extend(self._build_edges())
         svg_lines.extend(self._build_nodes())
         svg_lines.append("</svg></div>")
 
@@ -271,8 +276,9 @@ class DiagramBuilder:
         """Generate SVG paths for relationship edges."""
         svg_lines: list[str] = []
         node_lookup = self._node_lookup()
-        edges_by_pair = self._edges_grouped_by_pair()
-        source_slots, target_slots = self._anchor_slot_maps()
+        filtered_edges = self._edges_for_paths()
+        edges_by_pair = self._edges_grouped_by_pair(filtered_edges)
+        source_slots, target_slots = self._anchor_slot_maps(filtered_edges)
 
         for edges_for_pair in edges_by_pair.values():
             for edge in edges_for_pair:
@@ -284,6 +290,7 @@ class DiagramBuilder:
                     (
                         f'<path d="{path}" '
                         f'stroke="{self.edge_color}" '
+                        f'stroke-opacity="{self._edge_opacity(edge):.2f}" '
                         f'stroke-width="{1.2 * self.scale:.2f}" '
                         'fill="none" marker-end="url(#arrowhead)" />'
                     )
@@ -291,27 +298,37 @@ class DiagramBuilder:
 
         return svg_lines
 
+    def _edges_for_paths(self) -> list[EdgeSpec]:
+        """Return edges included when rendering connector paths."""
+        if not self.focus_table:
+            return self.edges
+        return [
+            edge
+            for edge in self.edges
+            if self.focus_table in (edge.source, edge.target)
+        ]
+
     def _node_lookup(self) -> Dict[str, PositionedNode]:
         """Return dictionary of nodes keyed by identifier."""
         return {node.identifier: node for node in self.nodes}
 
-    def _edges_grouped_by_pair(self) -> Dict[tuple[str, str], list[EdgeSpec]]:
+    def _edges_grouped_by_pair(
+        self, edges: list[EdgeSpec]
+    ) -> Dict[tuple[str, str], list[EdgeSpec]]:
         """Group edges by their (source, target) pair."""
         grouped: Dict[tuple[str, str], list[EdgeSpec]] = {}
-        for edge in self.edges:
+        for edge in edges:
             grouped.setdefault((edge.source, edge.target), []).append(edge)
         return grouped
 
-    def _anchor_slot_maps(
-        self,
-    ) -> tuple[
+    def _anchor_slot_maps(self, edges: list[EdgeSpec]) -> tuple[
         Dict[str, Dict[Anchor, list[EdgeSpec]]],
         Dict[str, Dict[Anchor, list[EdgeSpec]]],
     ]:
         """Return mappings of edges per anchor for parallel routing."""
         source_slots: Dict[str, Dict[Anchor, list[EdgeSpec]]] = {}
         target_slots: Dict[str, Dict[Anchor, list[EdgeSpec]]] = {}
-        for edge in self.edges:
+        for edge in edges:
             source_slots.setdefault(edge.source, {}).setdefault(
                 edge.source_anchor, []
             ).append(edge)
@@ -405,16 +422,18 @@ class DiagramBuilder:
         y = node.y * self.scale
         width = node.width * self.scale
         height = node.height * self.scale
+        node_opacity = self._node_opacity(node.identifier)
         metrics = CardMetrics(x=x, y=y, width=width, height=height)
 
-        node_lines.append(self._card_rect(x, y, width, height))
+        node_lines.append(self._card_rect(metrics, node_opacity))
         title_y = y + 28 * self.scale
-        node_lines.append(self._card_title(node.title, x, width, title_y))
+        node_lines.append(self._card_title(node.title, metrics, title_y, node_opacity))
         field_stack_height = self._append_fields(
             node_lines,
             node,
             metrics,
-            title_y,
+            title_y=title_y,
+            text_opacity=node_opacity,
         )
 
         cursor = y + field_stack_height * self.scale
@@ -425,6 +444,7 @@ class DiagramBuilder:
                 x=x, width=width, cursor=cursor, top_margin=self.REL_SECTION_MARGIN
             ),
             formatter=self._format_outgoing_label,
+            text_opacity=node_opacity,
         )
         node_lines.extend(rel_lines)
 
@@ -434,26 +454,31 @@ class DiagramBuilder:
             edges=incoming,
             layout=RelationshipLayout(x=x, width=width, cursor=cursor, top_margin=gap),
             formatter=self._format_incoming_label,
+            text_opacity=node_opacity,
         )
         node_lines.extend(rel_lines)
 
         return node_lines
 
-    def _card_rect(self, x: float, y: float, width: float, height: float) -> str:
+    def _card_rect(self, metrics: CardMetrics, opacity: float) -> str:
         """Return SVG rect string for the node card."""
         return (
-            f'<rect x="{x:.1f}" y="{y:.1f}" width="{width:.1f}" '
-            f'height="{height:.1f}" '
+            f'<rect x="{metrics.x:.1f}" y="{metrics.y:.1f}" '
+            f'width="{metrics.width:.1f}" height="{metrics.height:.1f}" '
             f'rx="{12 * self.scale:.1f}" ry="{12 * self.scale:.1f}" '
-            f'fill="{self.card_fill}" stroke="{self.card_border}" '
+            f'fill="{self.card_fill}" fill-opacity="{opacity:.2f}" '
+            f'stroke="{self.card_border}" stroke-opacity="{max(opacity, 0.45):.2f}" '
             f'stroke-width="{1.2 * self.scale:.2f}" />'
         )
 
-    def _card_title(self, title: str, x: float, width: float, title_y: float) -> str:
+    def _card_title(
+        self, title: str, metrics: CardMetrics, title_y: float, text_opacity: float
+    ) -> str:
         """Return SVG text element for a card title."""
         return (
-            f'<text x="{x + width / 2:.1f}" y="{title_y:.1f}" '
+            f'<text x="{metrics.x + metrics.width / 2:.1f}" y="{title_y:.1f}" '
             f'fill="{self.text_color}" font-size="{self.title_size:.1f}" '
+            f'opacity="{text_opacity:.2f}" '
             'font-family="Helvetica" font-weight="600" text-anchor="middle">'
             f"{html.escape(title)}"
             "</text>"
@@ -464,7 +489,9 @@ class DiagramBuilder:
         node_lines: list[str],
         node: PositionedNode,
         metrics: CardMetrics,
+        *,
         title_y: float,
+        text_opacity: float,
     ) -> float:
         """Append field lines to node_lines and return base block height."""
         for idx, field in enumerate(node.fields, start=1):
@@ -479,6 +506,7 @@ class DiagramBuilder:
                 (
                     f'<text x="{metrics.x + metrics.width / 2:.1f}" y="{line_y:.1f}" '
                     f'fill="{self.text_color}" font-size="{self.field_size:.1f}" '
+                    f'opacity="{text_opacity:.2f}" '
                     'font-family="Helvetica" text-anchor="middle">'
                     f"{html.escape(field)}"
                     "</text>"
@@ -493,6 +521,7 @@ class DiagramBuilder:
         edges: Sequence[EdgeSpec],
         layout: RelationshipLayout,
         formatter: Callable[[EdgeSpec], str],
+        text_opacity: float,
     ) -> tuple[list[str], float]:
         """Render a relationship subsection and return lines plus updated cursor."""
         if not edges:
@@ -505,6 +534,7 @@ class DiagramBuilder:
             (
                 f'<text x="{layout.x + layout.width / 2:.1f}" y="{header_y:.1f}" '
                 f'fill="{self.edge_color}" font-size="{self.label_size:.1f}" '
+                f'opacity="{text_opacity:.2f}" '
                 'font-family="Helvetica" text-anchor="middle" font-weight="600">'
                 f"{title}"
                 "</text>"
@@ -517,6 +547,7 @@ class DiagramBuilder:
                     f'<text x="{layout.x + 12 * self.scale:.1f}" y="{rel_y:.1f}" '
                     f'fill="{self.edge_color}" '
                     f'font-size="{self.label_size:.1f}" '
+                    f'opacity="{text_opacity:.2f}" '
                     'font-family="Helvetica" text-anchor="start">'
                     f"{formatter(edge)}"
                     "</text>"
@@ -615,3 +646,15 @@ class DiagramBuilder:
 
         extent_y = max((node.y + node.height) for node in self.nodes)
         return (extent_y + self.BASE_MARGIN) * self.scale
+
+    def _node_opacity(self, node_id: str) -> float:
+        """Return opacity for card/text based on focus selection."""
+        if not self.focus_table:
+            return 1.0
+        return 1.0 if node_id == self.focus_table else 0.35
+
+    def _edge_opacity(self, edge: EdgeSpec) -> float:
+        """Return opacity for connector lines."""
+        if not self.focus_table:
+            return 1.0
+        return 1.0 if self.focus_table in (edge.source, edge.target) else 0.15

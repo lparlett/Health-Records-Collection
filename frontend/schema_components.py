@@ -55,28 +55,32 @@ def _build_specs() -> tuple[tuple[NodeSpec, ...], tuple[EdgeSpec, ...]]:
 
     # Use LayoutEngine to compute layout
     engine = LayoutEngine(definitions, LAYOUT_HINTS)
-    layout = engine.get_layout()
+    layout_nodes = {node.identifier: node for node in engine.compute_layout()}
 
     node_specs: list[NodeSpec] = []
     edge_specs: list[EdgeSpec] = []
 
     # Build node specs with layout positions
     for table in definitions:
-        column, row = layout[table.name]
+        layout_node = layout_nodes[table.name]
         node_specs.append(
             NodeSpec(
                 identifier=table.name,
                 title=table.name,
                 fields=table.columns,
-                column=column,
-                row=row,
+                column=layout_node.column,
+                row=layout_node.row,
+                x=layout_node.x,
+                y=layout_node.y,
+                width=layout_node.width,
+                height=layout_node.height,
             )
         )
 
     # Build edge specs using anchor inference from engine
     for table in definitions:
         for fk in table.foreign_keys:
-            if fk.target_table not in layout:
+            if fk.target_table not in layout_nodes:
                 continue
             source_anchor_str, target_anchor_str = engine.infer_anchor(
                 table.name, fk.target_table
@@ -106,11 +110,11 @@ def render_schema_documentation() -> None:
     3. Render diagram with options
     4. Display entity summary
     """
-    # Get display options from user
-    options = get_display_options()
-
     # Build diagram specifications
     node_specs, edge_specs = _build_specs()
+
+    # Get display options from user
+    options = get_display_options(node_specs)
 
     # Render the diagram
     render_diagram(node_specs, edge_specs, options)

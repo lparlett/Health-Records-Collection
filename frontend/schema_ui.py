@@ -17,6 +17,7 @@ import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 
+from health_records_collection.frontend.common_types import NodeSpec
 from health_records_collection.frontend.diagram_builder import (
     DiagramBuilder,
     EdgeSpec as DiagramEdgeSpec,
@@ -30,16 +31,18 @@ class DisplayOptions:
 
     zoom: float
     text_color: str
+    show_connectors: bool
+    focus_table: str | None
 
 
-def get_display_options() -> DisplayOptions:
+def get_display_options(node_specs: tuple[NodeSpec, ...]) -> DisplayOptions:
     """Render display option controls and return selected values.
 
     Returns:
         DisplayOptions with zoom level and text color.
     """
     st.markdown("### Display options")
-    col_zoom, col_color = st.columns([2, 1])
+    col_zoom, col_color, col_edges = st.columns([2, 1, 1])
 
     with col_zoom:
         zoom_options = {
@@ -69,7 +72,35 @@ def get_display_options() -> DisplayOptions:
             help="Adjust label contrast within the diagram.",
         )
 
-    return DisplayOptions(zoom=zoom, text_color=text_color)
+    with col_edges:
+        show_connectors = st.checkbox(
+            "Show connectors",
+            value=True,
+            key="schema_show_edges",
+            help="Toggle visual connector lines on/off.",
+        )
+
+    table_options = ["Show all tables", *sorted(spec.title for spec in node_specs)]
+    focus_label = st.selectbox(
+        "Highlight relationships for",
+        options=table_options,
+        index=0,
+        key="schema_focus_table",
+        help="Highlight relationships for a single table to reduce clutter.",
+    )
+    focus_table = None
+    if focus_label != "Show all tables":
+        for spec in node_specs:
+            if spec.title == focus_label:
+                focus_table = spec.identifier
+                break
+
+    return DisplayOptions(
+        zoom=zoom,
+        text_color=text_color,
+        show_connectors=show_connectors,
+        focus_table=focus_table,
+    )
 
 
 def render_diagram(
@@ -96,15 +127,21 @@ def render_diagram(
     # Convert specs to diagram builder format
     positioned_nodes: list[DiagramPositionedNode] = []
     for spec in node_specs:
+        if spec.x or spec.y:
+            node_x = spec.x
+            node_y = spec.y
+        else:
+            node_x = spec.column * 330.0
+            node_y = spec.row * 310.0
         positioned_nodes.append(
             DiagramPositionedNode(
                 identifier=spec.identifier,
                 title=spec.title,
                 fields=spec.fields,
-                x=spec.column * 330.0,  # col * (width + gap)
-                y=spec.row * 310.0,  # row * (height + gap)
-                width=250.0,
-                height=250.0,
+                x=node_x,
+                y=node_y,
+                width=spec.width,
+                height=spec.height,
             )
         )
 
@@ -126,6 +163,8 @@ def render_diagram(
         diagram_edges,
         zoom=options.zoom,
         text_color=options.text_color,
+        show_edges=options.show_connectors,
+        focus_table=options.focus_table,
     )
     diagram_html, diagram_height = builder.build()
     components.html(diagram_html, height=diagram_height, scrolling=True)
