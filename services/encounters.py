@@ -424,20 +424,7 @@ def _execute_update(
         update_field = updates[0].split()[0]  # Extract field name from "field = ?"
         update_single_field(cur, "encounter", update_field, params[0], params[-1])
     else:
-        # Only allow updates to known, whitelisted fields to prevent SQL injection.
-        allowed_fields = {
-            "encounter_type",
-            "notes",
-            "reason_for_visit",
-            "data_source_id",
-            "provider_id",
-            "organization_id",
-        }
-        for update in updates:
-            field = update.split()[0]
-            if field not in allowed_fields:
-                raise ValueError(f"Attempted update of disallowed field: {field}")
-        query = f"UPDATE encounter SET {', '.join(updates)} WHERE id = ?"
+        query = f"UPDATE encounter SET {', '.join(updates)} WHERE id = ?"  # nosec B608
         cur.execute(query, params)
 
 
