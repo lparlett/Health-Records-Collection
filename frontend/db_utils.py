@@ -43,7 +43,8 @@ SCHEMA_SQL_PATH = Path(__file__).resolve().parents[1] / "schema.sql"
 def _resolve_db_path() -> Path:
     try:
         paths = settings.load_paths()
-        return paths["db_path"]
+        db_path = paths["db_path"]
+        return Path(db_path) if not isinstance(db_path, Path) else db_path
     except (KeyError, FileNotFoundError, yaml.YAMLError):  # pragma: defensive fallback
         # KeyError: Missing db_path in settings
         # FileNotFoundError: Settings file not found
