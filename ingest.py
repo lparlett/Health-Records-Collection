@@ -221,9 +221,7 @@ def parse_ccd(xml_file: Path) -> ParsedCCD:
         ParsedCCD: A dictionary with parsed patient and clinical sections.
     """
     try:
-        tree = safe_parse(
-            str(xml_file)
-        )  # safe_parse mitigates XML entity attacks.
+        tree = safe_parse(str(xml_file))  # safe_parse mitigates XML entity attacks.
     except (OSError, XMLSyntaxError) as exc:
         logger.warning("Skipping malformed XML %s: %s", xml_file.name, exc)
         return {}
