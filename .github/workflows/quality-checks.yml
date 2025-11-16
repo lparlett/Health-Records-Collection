@@ -71,22 +71,28 @@ jobs:
 
       - name: Type check with mypy
         run: |
-          if [ ! -d .git ] && [ -d health_records_collection/.git ]; then
+          if [ -d health_records_collection ]; then
             cd health_records_collection
+          elif [ -d ../health_records_collection ]; then
+            cd ../health_records_collection
           fi
-          mypy --install-types --non-interactive --exclude 'tests|.venv' db frontend parsers security services ingest.py
+          mypy --install-types --non-interactive --exclude 'tests|.venv' .
 
       - name: Run Bandit security scan
         run: |
-          if [ ! -d .git ] && [ -d health_records_collection/.git ]; then
+          if [ -d health_records_collection ]; then
             cd health_records_collection
+          elif [ -d ../health_records_collection ]; then
+            cd ../health_records_collection
           fi
           bandit -r parsers services frontend db security ingest.py -x tests,.venv
 
       - name: Run tests with coverage
         run: |
-          if [ ! -d .git ] && [ -d health_records_collection/.git ]; then
+          if [ -d health_records_collection ]; then
             cd health_records_collection
+          elif [ -d ../health_records_collection ]; then
+            cd ../health_records_collection
           fi
           coverage run -m pytest
           coverage xml
