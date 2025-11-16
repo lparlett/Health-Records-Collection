@@ -71,12 +71,18 @@ jobs:
 
       - name: Type check with mypy
         run: |
-          if [ -d health_records_collection ]; then
-            cd health_records_collection
-          elif [ -d ../health_records_collection ]; then
-            cd ../health_records_collection
+          if [ -d health_records_collection ] && [ -f health_records_collection/mypy.ini ]; then
+            TARGET="health_records_collection"
+            CONFIG="health_records_collection/mypy.ini"
+          elif [ -d ../health_records_collection ] && [ -f ../health_records_collection/mypy.ini ]; then
+            TARGET="../health_records_collection"
+            CONFIG="../health_records_collection/mypy.ini"
+          else
+            TARGET="."
+            CONFIG="mypy.ini"
           fi
-          mypy --install-types --non-interactive --exclude 'tests|.venv' .
+          echo "Running mypy on ${TARGET} using config ${CONFIG}"
+          mypy --install-types --non-interactive --exclude 'tests|.venv' --config-file "${CONFIG}" "${TARGET}"
 
       - name: Run Bandit security scan
         run: |
