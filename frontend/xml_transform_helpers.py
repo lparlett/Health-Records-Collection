@@ -138,21 +138,20 @@ def build_xslt_transformer(xsl_path: str) -> Optional[unsafe_etree.XSLT]:
     """
     try:
         logger.debug("Creating XSLT transformer")
-        xsl_text = Path(xsl_path).read_text(encoding="utf-8")
 
-        # Parse stylesheet with restricted settings
-        xsl_doc = unsafe_etree.fromstring(  # nosec xml_bad_etree
-            xsl_text.encode("utf-8"), parser=RESTRICTED_PARSER
+        parser = RESTRICTED_PARSER
+        xsl_tree = unsafe_etree.parse(  # nosec xml_bad_etree
+            str(Path(xsl_path)), parser=parser
         )
 
-        if not isinstance(xsl_doc, ElementType):
-            logger.error("XSL parsing returned unexpected type: %s", type(xsl_doc))
+        root = xsl_tree.getroot()
+        if not isinstance(root, ElementType):
+            logger.error("XSL parsing returned unexpected type: %s", type(root))
             return None
 
-        logger.debug("XSL document root tag: %s", getattr(xsl_doc, "tag", "unknown"))
-        logger.debug("XSL document size: %s bytes", len(xsl_text))
+        logger.debug("XSL document root tag: %s", getattr(root, "tag", "unknown"))
 
-        return unsafe_etree.XSLT(xsl_doc)
+        return unsafe_etree.XSLT(xsl_tree)
     except unsafe_etree.XSLTError as exc:
         logger.error("XSLT transformer creation failed: %s", exc)
         return None
