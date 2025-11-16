@@ -494,11 +494,15 @@ def _ingest_documents_from_archive(
 
 def _iter_ccd_documents(destination: Path) -> Iterable[Path]:
     """Yield each CCD document path within the extracted archive."""
-    for xml_file in destination.rglob("*.xml"):
-        if xml_file.name.lower() == "metadata.xml":
-            logger.debug("Skipping metadata descriptor %s.", xml_file)
+    for candidate in destination.rglob("*"):
+        if not candidate.is_file():
             continue
-        yield xml_file
+        if candidate.suffix.lower() != ".xml":
+            continue
+        if candidate.name.lower() == "metadata.xml":
+            logger.debug("Skipping metadata descriptor %s.", candidate)
+            continue
+        yield candidate
 
 
 def _process_document(
