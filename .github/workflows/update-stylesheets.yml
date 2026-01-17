@@ -16,10 +16,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: pwd && ls -la && echo "---" && ls -la health_records_collection/ 2>/dev/null || echo "health_records_collection dir not found"
-      - run: pip install -r health_records_collection/requirements.txt
-      - run: cd health_records_collection && pip install -e . && cd ..
-      - run: python .github/scripts/update_stylesheets.py
+      - run: pip install -r requirements.txt
+      - run: pip install -e .
+      - run: PYTHONPATH=. python .github/scripts/update_stylesheets.py
       - name: Detect stylesheet changes
         id: detect_stylesheet_changes
         run: |
