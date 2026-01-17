@@ -18,7 +18,7 @@ jobs:
           python-version: '3.12'
       - run: pip install -r requirements.txt
       - run: pip install -e .
-      - run: PYTHONPATH=.. python .github/scripts/update_stylesheets.py
+      - run: python .github/scripts/update_stylesheets.py
       - name: Detect stylesheet changes
         id: detect_stylesheet_changes
         run: |
