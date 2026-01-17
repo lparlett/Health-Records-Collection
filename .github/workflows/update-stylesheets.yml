@@ -17,7 +17,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install -r requirements.txt
-      - run: cd health_records_collection && pip install -e . && cd ..
+      - run: pip install -e .
       - run: python .github/scripts/update_stylesheets.py
       - name: Detect stylesheet changes
         id: detect_stylesheet_changes
