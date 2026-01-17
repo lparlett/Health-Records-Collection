@@ -23,6 +23,9 @@ dev = [
   "coverage[toml]"
 ]
 
+[tool.setuptools]
+packages = ["parsers", "services", "frontend", "db", "security", "user"]
+
 [tool.pylint.MASTER]
 ignore = [".venv", "build", "dist", "data", "docs/_build", "AI_tests_reports"]
 extension-pkg-allow-list = ["lxml", "defusedxml"]
